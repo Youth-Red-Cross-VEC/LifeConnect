@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template , request , redirect , url_for , flash , session
+from flask import Blueprint, render_template , request , redirect , url_for , flash , session , current_app
 from app.models import AdminDetails , AuthenticationDetailsAdmin , db
 from werkzeug.security import check_password_hash , generate_password_hash
 from datetime import datetime
@@ -15,7 +15,7 @@ def generate_secure_numeric_otp(length=6):
     return otp
 
 def send_email(subject, recipient, body):
-    msg = MIMEText(body)
+    msg = MIMEText(body,"html")
     msg['Subject'] = subject
     msg['From'] = cred.BASE_MAIL_ADDRESS
     msg['To'] = recipient
@@ -45,6 +45,11 @@ def get_next_id_secondary(table,prefix):
 def validate_admin():
     email = request.form.get('email')
     password = request.form.get('password')
+    captcha = current_app.extensions.get('captcha')
+
+    if not captcha or not captcha.validate():
+        flash("Invalid CAPTCHA. Please try again.", "error")
+        return redirect(url_for('admin.render_admin_login'))
 
     admin = AdminDetails.query.filter_by(email=email).first()
 
@@ -85,41 +90,61 @@ def register_new_admin():
         admin_id = get_next_id(AdminDetails, 'ADMIN')
         authentication_id = get_next_id_secondary(AdminDetails,'AUTHADM')
 
-
         if password != confirm_password:
             flash('Make sure you enter similar passwords', 'danger')
-            return render_template('register_donor.html')
+            return render_template('admin_signup.html')
         
         one_time_password = generate_secure_numeric_otp()
 
-        active_admins = AdminDetails.query.filter_by(active_status='Active').all()
-        active_admin_emails = [admin.email for admin in active_admins]
-        for admin_email in active_admin_emails:
-            subject = "New Admin Registration Request"
-            recipient = admin_email
-            body = f"""
-            Dear Admin,
+        subject = "New Admin Registration Request"
+        recipient = cred.BASE_MAIL_ADDRESS
+        body = f"""
+        <!DOCTYPE html>
+        <html>
+        <body style="font-family: Arial, sans-serif; line-height: 1.6; background-color: #f9f9f9; margin: 0; padding: 0;">
+            <div style="background-color: #ffffff; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; max-width: 600px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);">
+                <div style="background-color: #8B0000; color: white; padding: 15px; text-align: center; border-radius: 8px 8px 0 0; font-size: 20px; font-weight: bold;">
+                    New Admin Sign-Up Verification
+                </div>
+                <div style="padding: 20px; font-size: 16px; color: #333;">
+                    <p>Dear Admin,</p>
+                    
+                    <p style="font-size: 16px; color: #333;">
+                        A new admin sign-up has been generated. Kindly verify the admin details and share the OTP only if the information is valid.
+                    </p>
+                    
+                    <p style="font-size: 16px; color: #333;">
+                        <strong style="color: #8B0000;">New Admin Details:</strong>
+                    </p>
+                    <ul style="font-size: 16px; color: #333;">
+                        <li><strong>Email:</strong> {email}</li>
+                        <li><strong>Name:</strong> {username}</li>
+                        <li><strong>VEC Registration Number:</strong> {vec_registration_number}</li>
+                        <li><strong>Date of Birth:</strong> {date_of_birth}</li>
+                        <li><strong>Mobile Number:</strong> {mobile_number}</li>
+                        <li><strong>Department:</strong> {department}</li>
+                        <li><strong>Generated Admin ID:</strong> {admin_id}</li>
+                        <li><strong>Generated Authentication ID:</strong> {authentication_id}</li>
+                    </ul>
+                    
+                    <p style="font-size: 16px; color: #333;">
+                        Please share the below credentials with the new admin for further verification:
+                    </p>
+                    <p style="font-size: 18px; font-weight: bold; color: #8B0000;">
+                        {one_time_password}
+                    </p>
 
-            A New Admin SignUp has been Generated , Kindly verify the Admin details
-            and Share the OTP only if the Informations are valid.
+                    <p style="margin-top: 20px; text-align: center; font-size: 14px; color: #555;">
+                        Regards,<br>
+                        <strong>Youth Red Cross Blood Donation Site</strong>
+                    </p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
 
-            New Admin Details : 
-            - Email : {email}
-            - Name : {username}
-            - VEC Registration Number : {vec_registration_number}
-            - Date of Birth : {date_of_birth}
-            - Mobile Number : {mobile_number}
-            - Department : {department}
-            - Generated Admin ID : {admin_id}
-            - Generated Authentication ID : {authentication_id}
-
-            Share the Below Credential
-            {one_time_password}
-
-            Regards,
-            Youth Red Cross Blood Donation Site
-            """
-            send_email(subject, recipient, body)
+        send_email(subject, recipient, body)
 
         return render_template(
             'admin_otp_verification_page.html',
@@ -151,6 +176,7 @@ def verify_otp_and_data_injection():
     active_status = 'Active'
     last_login_date = None
     approved_donation = 0
+    closed_donations = 0
 
     if entered_otp == generated_otp:
         hashed_password = generate_password_hash(password)
@@ -166,7 +192,8 @@ def verify_otp_and_data_injection():
             department = department,
             active_status = active_status,
             last_login_date = last_login_date,
-            approved_donation = approved_donation
+            approved_donation_count = approved_donation,
+            closed_requests_count = closed_donations
         )
         db.session.add(new_admin)
         db.session.commit()
@@ -188,19 +215,48 @@ def manage_forget_password_admin():
         recipient = email
         link = "http://127.0.0.1:5000/main/render_query_page"
         body = f"""
-        Dear Admin,
+        <!DOCTYPE html>
+        <html>
+        <body style="font-family: Arial, sans-serif; line-height: 1.6; background-color: #f9f9f9; margin: 0; padding: 0;">
+            <div style="background-color: #ffffff; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; max-width: 600px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);">
+                <div style="background-color: #8B0000; color: white; padding: 15px; text-align: center; border-radius: 8px 8px 0 0; font-size: 20px; font-weight: bold;">
+                    Password Change Request Verification
+                </div>
+                <div style="padding: 20px; font-size: 16px; color: #333;">
+                    <p>Dear Admin,</p>
+                    
+                    <p style="font-size: 16px; color: #333;">
+                        We have received a request from your YRC-LBS account to change your password. If you did not initiate this request, please let us know by clicking the link below:
+                    </p>
+                    
+                    <p style="text-align: center;">
+                        <a href="{link}" style="font-size: 16px; text-decoration: none; color: white; background-color: #007bff; padding: 10px 20px; border-radius: 5px;">
+                            Report Issue
+                        </a>
+                    </p>
+                    
+                    <p style="font-size: 16px; color: #333;">
+                        If you did request the password change, please use the following OTP to proceed with updating your password:
+                    </p>
+                    
+                    <p style="font-size: 18px; font-weight: bold; color: #8B0000; text-align: center;">
+                        {one_time_password}
+                    </p>
 
-        We Have got a Request from your YRC-LBS Account for Changing your password.
-        if You haven't generated it , let us Know in the below link
-        {link}
-        if You have requested for it , use the below OTP to change your password
+                    <p style="font-size: 16px; color: #333;">
+                        Please note: Do not share this OTP with any third parties to ensure the security of your account.
+                    </p>
 
-        One Time Password ! Don't Share it with any third parties !
-        {one_time_password}
-
-        Regards,
-        Youth Red Cross Blood Donation Site
+                    <p style="margin-top: 20px; text-align: center; font-size: 14px; color: #555;">
+                        Regards,<br>
+                        <strong>Youth Red Cross Blood Donation Site</strong>
+                    </p>
+                </div>
+            </div>
+        </body>
+        </html>
         """
+
         send_email(subject, recipient, body)
 
         return render_template('otp_validation_admin.html',one_time_password=one_time_password,email=email)
@@ -213,7 +269,6 @@ def otp_validation_admin():
     generate_otp = request.form.get('generated_otp')
     typed_otp = request.form.get('typed_otp')
     email = request.form.get('email')
-    print("here also")
 
     if str(generate_otp) == str(typed_otp):
         return render_template('admin_new_password.html',email=email)
@@ -231,7 +286,6 @@ def new_password_admin():
         hashed_password = generate_password_hash(password)
         donor.password = hashed_password
         db.session.commit()
-        print("here")
         return redirect(url_for('admin.render_admin_login'))
     else:
         return "Couldnt Update the password"
@@ -245,8 +299,8 @@ def update_admin_details():
     vec_registration_number = request.form.get('vec_registration_number')
     active_status = request.form.get('active_status')
     department = request.form.get('department')
-    approved_donation = request.form.get('approved_donation')
-    closed_requests = request.form.get('closed_requests')
+    approved_donation_count = request.form.get('approved_donation')
+    closed_requests_count = request.form.get('closed_requests')
     contact_number = request.form.get('contact_number')
     date_of_birth = request.form.get('date_of_birth')
 
@@ -261,10 +315,10 @@ def update_admin_details():
         admin_details.active_status = active_status
     if department and department != admin_details.department:
         admin_details.department = department
-    if approved_donation and approved_donation != admin_details.approved_donation:
-        admin_details.approved_donation = approved_donation
-    if closed_requests and closed_requests != admin_details.closed_requests:
-        admin_details.closed_requests = closed_requests
+    if approved_donation_count and approved_donation_count != admin_details.approved_donation_count:
+        admin_details.approved_donation_count = approved_donation_count
+    if closed_requests_count and closed_requests_count != admin_details.closed_requests_count:
+        admin_details.closed_requests_count = closed_requests_count
     if contact_number and contact_number != admin_details.mobile_number:
         admin_details.mobile_number = contact_number
     if date_of_birth and date_of_birth != admin_details.date_of_birth:

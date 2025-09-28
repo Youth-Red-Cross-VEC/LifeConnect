@@ -1,6 +1,6 @@
-# Life Blood Squad - Youth Red Cross Blood Donation Site
+# LifeConnect - Youth Red Cross Blood Donation Site
 
-Welcome to the **Life Blood Squad** website! This platform has been created by the Youth Red Cross (YRC) at Velammal Engineering College to streamline blood donation services and foster a community of active blood donors. Our mission is to make it easy for people in need to find blood donors quickly, while also promoting safe and efficient blood donation practices across our community.
+Welcome to the **LifeConnect** website! This platform has been created by the Youth Red Cross (YRC) at Velammal Engineering College to streamline blood donation services and foster a community of active blood donors. Our mission is to make it easy for people in need to find blood donors quickly, while also promoting safe and efficient blood donation practices across our community.
 
 ## About Life Blood Squad
 
@@ -35,5 +35,5 @@ Visit our website and explore how Life Blood Squad can support you and your love
 **Built by the Youth Red Cross team at Velammal Engineering College. Together, let's make a difference!**
 
 **Contact Us**  
-📞 Phone: 9876543210  
-📧 Email: yrclifebloodsupport@gmail.com
+📞 Phone: 9150450401  
+📧 Email: yrclifeconnect@gmail.com

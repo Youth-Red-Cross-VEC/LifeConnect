@@ -1,12 +1,13 @@
-from flask import Blueprint , render_template , request , flash , redirect , url_for
+from flask import Blueprint , render_template , request , flash , redirect , url_for , session
 from app.utils.data_manipulations_toDB import FetchDetails
-from app.models import DonorDetail , PersonalDetailsUser , DiseaseDetailsUser , db , AddressDetailsUser
+from app.models import DonorDetail , PersonalDetailsUser , DiseaseDetailsUser , db , AddressDetailsUser , QueryTable
 from app.utils.certificate_generation import generate_certificate
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email import encoders
 import smtplib
+from datetime import date
 from app.config import Config
 import os
 
@@ -19,7 +20,7 @@ def send_email(subject, recipient, body, attachment_path):
     msg['From'] = cred.BASE_MAIL_ADDRESS
     msg['To'] = recipient
 
-    msg.attach(MIMEText(body, 'plain'))
+    msg.attach(MIMEText(body, 'html'))
 
     with open(attachment_path, 'rb') as attachment:
         mime_base = MIMEBase('application', 'octet-stream')
@@ -132,26 +133,85 @@ def generate_and_send_certificate():
 
     subject = "Your Blood Donation Certificate"
     body = f"""
-    Dear {donor_name},
-
-    Thank you for your generous blood donation! Your contribution has made a meaningful difference,
-    and we deeply appreciate your support.
-
-    Please find your donation certificate attached as a token of our gratitude. 
-    We hope it serves as a reminder of the lives you've helped.
-
-    With warm regards,
-    Youth Red Cross Team
-
-    Contact us
-    Phone: 9876543210
-    Email: yrclifebloodsupport@gmail.com
-    """
+            <!DOCTYPE html>
+            <html>
+            <body style="font-family: Arial, sans-serif; line-height: 1.6; background-color: #f9f9f9; margin: 0; padding: 0;">
+                <div style="background-color: #ffffff; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; max-width: 600px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);">
+                    <div style="background-color: #8B0000; color: white; padding: 15px; text-align: center; border-radius: 8px 8px 0 0; font-size: 20px; font-weight: bold;">
+                        LifeConnect - Certificate of Gratitude
+                    </div>
+                    <div style="padding: 20px; font-size: 16px; color: #333;">
+                        <p>Dear <strong>{donor_name}</strong>,</p>
+                        
+                        <p>
+                            On behalf of the entire LifeConnect Team, we extend our heartfelt gratitude for your selfless blood donation.
+                            Your contribution has made a profound impact, and your generosity exemplifies the true spirit of compassion and service.
+                        </p>
+                        
+                        <p>
+                            As a token of our appreciation, we have <strong>attached your donation certificate below</strong>. We hope it serves as a meaningful reminder
+                            of the lives you have helped and the difference you continue to make in our community.
+                        </p>
+                        
+                        <p>
+                            Thank you once again for your unwavering support and commitment to saving lives.
+                        </p>
+                    </div>
+                    <div style="font-size: 14px; color: #555; text-align: center; margin-top: 20px;">
+                        <p>For any inquiries, please feel free to reach out to us:</p>
+                        <p><strong>Phone:</strong> 9150450401</p>
+                        <p><strong>Email:</strong> yrclifeconnect@gmail.com</p>
+                    </div>
+                </div>
+            </body>
+            </html>
+            """
 
     send_email(subject, donor_email, body, certificate_path)
 
     return "Success"
 
-@manage_donors.route('/generate_certificates_regsitered_donors',methods=['POST','GET'])
-def generate_certificates_regsitered_donors():
-    return "Success"
+@manage_donors.route('/reply_user_query',methods = ['POST','GET'])
+def reply_user_query():
+    if request.method == 'POST':
+        query_id = request.form.get('query_id')
+        admin_response = request.form.get('admin_response')
+        admin_id = session.get('admin_id')
+        admin_name = session.get('admin_name')
+        
+        # Fetch the query and update
+        query = QueryTable.query.filter_by(id=query_id).first()
+        if query:
+            query.admin_response = admin_response
+            query.admin_response_date = date.today()
+            query.admin_id = admin_id
+            query.admin_name = admin_name
+            db.session.commit()
+            flash("Response submitted successfully!", "success")
+        else:
+            flash("Query not found.", "error")
+        return redirect(url_for('admin.render_query_page_admin_side'))
+    
+    # Render admin query page
+    queries = QueryTable.query.all()
+    return render_template('admin_query.html', queries=queries)
+
+@manage_donors.route('/search_donors_admin',methods=['POST','GET'])
+def search_donors_admin():
+    name = request.args.get('name', '').strip()
+    blood_group = request.args.get('blood_group', '').strip()
+
+    if name and blood_group:
+        details = FetchDetails.fetch_donor_detail_by_blood_group_and_name(
+            name=name,
+            blood_group=blood_group
+        )
+        return render_template('manage_donors_admin.html',donors = details)
+    elif blood_group:
+        details = FetchDetails.fetch_donor_detail_by_blood_group(blood_group=blood_group)
+        return render_template('manage_donors_admin.html',donors = details)
+    elif name:
+        details = FetchDetails.fetch_donor_detail_by_name(name=name)
+        return render_template('manage_donors_admin.html',donors = details)
+    else:
+        return redirect(url_for('admin.render_manage_donors_admin_page'))

@@ -1,14 +1,16 @@
-from flask import Blueprint, render_template, request
+from flask import Blueprint, render_template, request , flash , redirect , url_for
 from app.models import db, BloodRequestDetails, HospitalDetails, ResponseDetails , AdminDetails
 from app.config import Config
 import smtplib
 from email.mime.text import MIMEText
+import os
+import csv
 
 cred = Config() 
 generate_blood_request = Blueprint('generate_blood_request', __name__)
 
 def send_email(subject, recipient, body):
-    msg = MIMEText(body)
+    msg = MIMEText(body,"html")
     msg['Subject'] = subject
     msg['From'] = cred.BASE_MAIL_ADDRESS 
     msg['To'] = recipient
@@ -29,6 +31,7 @@ def get_next_id(table, prefix):
 @generate_blood_request.route('/generate_bloodRequest', methods=['POST', 'GET'])
 def generate_bloodRequest():
     if request.method == 'POST':
+        CSV_FILE = r'D:\YouthRedCross-BloodRequest\docs\requestdata.csv'
         patient_name = request.form.get('patient_name')
         attendant_name = request.form.get('attendant_name')
         blood_group = request.form.get('blood_group')
@@ -42,6 +45,28 @@ def generate_bloodRequest():
         due_date = request.form.get('due_date')
         request_reason = request.form.get('request_reason')
         units_required = request.form.get('units_required')
+
+        #Replace the below code before going into production
+        headers = [
+            "Patient Name", "Attendant Name", "Blood Group", "Hospital ID", "Hospital Name",
+            "Contact Number", "Patient Age", "Hospital Address", "Pincode", "Landmark",
+            "Due Date", "Request Reason", "Units Required"
+        ]
+        data_row = [
+            patient_name, attendant_name, blood_group, hospital_id, hospital_name,
+            contact_number, patient_age, hospital_address, pincode, landmark,
+            due_date, request_reason, units_required
+        ]
+        file_exists = os.path.isfile(CSV_FILE)
+        with open(CSV_FILE, mode='a', newline='') as file:
+            writer = csv.writer(file)
+            if not file_exists:
+                writer.writerow(headers)
+            writer.writerow(data_row)
+
+        flash("Blood request generated successfully!", "success")
+        return redirect(url_for('main.index'))
+        #Remove till here
 
         if hospital_id in [None, '', 'None']: 
             new_hospital_id = get_next_id(HospitalDetails, 'HOSP')
@@ -95,24 +120,60 @@ def generate_bloodRequest():
         active_admins = AdminDetails.query.filter_by(active_status='Active').all()
         active_admin_emails = [admin.email for admin in active_admins]
 
-        # Send email notification to admin
         for admin_email in active_admin_emails:
             subject = "New Blood Request Generated"
             recipient = admin_email
-            link = "http://127.0.0.1:5000/admin/render_admin_login"  # Placeholder link
+            link = "http://127.0.0.1:5000/admin/render_admin_login" 
             body = f"""
-            Dear Admin,
-
-            A new blood request has been generated and is pending your authorization.
-            Please review the request at the following link:
-
-            {link}
-
-            Regards,
-            Youth Red Cross Blood Donation Site
+            <html>
+                <body style="margin: 0; padding: 0; font-family: Arial, sans-serif; background-color: #f4f4f4;">
+                    <table align="center" width="600" style="margin: 20px auto; border-collapse: collapse; background-color: #ffffff; border-radius: 8px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+                        <!-- Header -->
+                        <tr>
+                            <td style="background-color: #8B0000; padding: 20px; text-align: center; border-top-left-radius: 8px; border-top-right-radius: 8px;">
+                                <h1 style="margin: 0; color: #ffffff; font-size: 24px; font-weight: bold;">Blood Request Notification</h1>
+                            </td>
+                        </tr>
+                        <!-- Content -->
+                        <tr>
+                            <td style="padding: 30px; color: #333;">
+                                <p style="font-size: 18px; margin: 0 0 15px;">Dear Admin,</p>
+                                <p style="font-size: 16px; margin: 0 0 20px; line-height: 1.6;">
+                                    This is to inform you that a new <strong style="color: #8B0000;">blood request</strong> has been initiated and requires your immediate attention. 
+                                </p>
+                                <p style="font-size: 16px; margin: 0 0 20px; line-height: 1.6;">
+                                    Kindly review and process the request at your earliest convenience by accessing the link provided below.
+                                </p>
+                                <p style="text-align: center;">
+                                    <a href="{link}" style="display: inline-block; font-size: 16px; text-decoration: none; color: white; background-color: #8B0000; padding: 15px 25px; border-radius: 5px; font-weight: bold;">
+                                        Review Request
+                                    </a>
+                                </p>
+                            </td>
+                        </tr>
+                        <!-- Footer -->
+                        <tr>
+                            <td style="padding: 20px; text-align: center; background-color: #f8f9fa; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px; font-size: 14px; color: #555;">
+                                <p style="margin: 0;">
+                                    Best regards,<br>
+                                    <strong>LifeConnect Team</strong>
+                                </p>
+                                <p style="margin: 10px 0 0; font-size: 12px; color: #888;">
+                                    © 2024 LifeConnect Donation Team. All rights reserved.
+                                </p>
+                            </td>
+                        </tr>
+                    </table>
+                </body>
+            </html>
             """
+
             send_email(subject, recipient, body)
 
-        return render_template('bloodrequest_confirmation.html')
+        confirmation_details = [
+            patient_name,blood_group,hospital_name,contact_number,hospital_address,
+        ]
+
+        return render_template('bloodrequest_confirmation.html',details = confirmation_details)
 
     return render_template('generate_blood_request.html')

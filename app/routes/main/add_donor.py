@@ -1,6 +1,6 @@
-from flask import Blueprint, render_template, request, flash , redirect , url_for
+from flask import Blueprint, render_template, request, flash , redirect , url_for , current_app
 from werkzeug.security import generate_password_hash
-from app.models import db, PersonalDetailsUser, AddressDetailsUser, DiseaseDetailsUser, AuthenticationDetailsDonor, DonorDetail
+from app.models import db, PersonalDetailsUser, AddressDetailsUser, DiseaseDetailsUser, AuthenticationDetailsDonor, DonorDetail , TermsAndConditions
 from werkzeug.security import check_password_hash
 from datetime import datetime
 from app.utils.data_manipulations_toDB import FetchDetails
@@ -8,6 +8,8 @@ import secrets
 import smtplib
 from email.mime.text import MIMEText
 from app.config import Config
+import csv
+import os
 
 cred = Config()
 new_donor = Blueprint('add_donor', __name__)
@@ -17,7 +19,7 @@ def generate_secure_numeric_otp(length=6):
     return otp
 
 def send_email(subject, recipient, body):
-    msg = MIMEText(body)
+    msg = MIMEText(body,"html")
     msg['Subject'] = subject
     msg['From'] = cred.BASE_MAIL_ADDRESS
     msg['To'] = recipient
@@ -28,26 +30,29 @@ def send_email(subject, recipient, body):
         server.sendmail(cred.BASE_MAIL_ADDRESS, recipient, msg.as_string())
 
 def get_next_id(table, prefix):
-    # Fetch the current maximum ID, strip the prefix and convert to an integer
     max_id = db.session.query(table.id).order_by(table.id.desc()).first()
     next_id_num = 1
     if max_id:
-        # Extract the numeric part of the ID
         current_num = int(max_id[0][len(prefix):])
         next_id_num = current_num + 1
-    # Format the new ID
     return f"{prefix}{str(next_id_num).zfill(3)}"
 
 #used only for generating authentication ID
 def get_next_id_secondary_function(table, prefix):
-    # Fetch the current maximum ID, strip the prefix and convert to an integer
     max_id = db.session.query(table.authentication_id).order_by(table.authentication_id.desc()).first()
     next_id_num = 1
     if max_id:
-        # Extract the numeric part of the ID
         current_num = int(max_id[0][len(prefix):])
         next_id_num = current_num + 1
-    # Format the new ID
+    return f"{prefix}{str(next_id_num).zfill(3)}"
+
+#used only for generating Terms and Conditions ID
+def get_next_id_third_function(table, prefix):
+    max_id = db.session.query(table.terms_and_conditions_id).order_by(table.terms_and_conditions_id.desc()).first()
+    next_id_num = 1
+    if max_id:
+        current_num = int(max_id[0][len(prefix):])
+        next_id_num = current_num + 1
     return f"{prefix}{str(next_id_num).zfill(3)}"
 
 @new_donor.route('/register_new_donors', methods=['GET', 'POST'])
@@ -58,9 +63,14 @@ def register_new_donors():
             email = request.form.get('Email')
             password = request.form.get('password')
             confirm_password = request.form.get('confirm_password')
-            
+
+            user_existance = FetchDetails.check_user_existance(email)
+            if user_existance:
+                flash(f"User already exists with this email id {email}, kindly login with this account or try with another email", "info")
+                return redirect(url_for('main.render_donor_login'))
+        
             if password != confirm_password:
-                flash('Make sure you enter similar passwords', 'danger')
+                flash('The Passwords needs to be similar', 'danger')
                 return render_template('register_donor.html')
 
             hashed_password = generate_password_hash(password)
@@ -87,7 +97,6 @@ def register_new_donors():
             if last_donation == '':
                 last_donation=None
 
-            # Create and add PersonalDetails entry
             personal_id = get_next_id(PersonalDetailsUser, 'PDDNR')
             personal_details = PersonalDetailsUser(
                 id=personal_id,
@@ -110,7 +119,6 @@ def register_new_donors():
             country = request.form.get('country')
             full_address = f"{address}, {city}, {state}, {pincode}".strip()
 
-            # Create and add AddressDetails entry
             address_id = get_next_id(AddressDetailsUser, 'ADDR')
             address_details = AddressDetailsUser(
                 id=address_id,
@@ -126,7 +134,6 @@ def register_new_donors():
             disease_name = request.form.get('disease_name')
             description = request.form.get('description')
 
-            # Create and add DiseaseDetails entry
             disease_id = get_next_id(DiseaseDetailsUser, 'DIS')
             disease_details = DiseaseDetailsUser(
                 id=disease_id,
@@ -135,8 +142,16 @@ def register_new_donors():
             )
             db.session.add(disease_details)
 
-            # Create and add AuthenticationDetails entry
             auth_id = get_next_id_secondary_function(DonorDetail, 'AUTHDNR')
+            
+            # terms and Conditions
+            terms_and_conditions_id = get_next_id_third_function(DonorDetail, 'TCDNR')
+            term_condtions = TermsAndConditions(
+                id = terms_and_conditions_id,
+                version = "1.0",
+                effective_date = datetime.now()
+            )
+            db.session.add(term_condtions)
 
             # Create and add DonorDetail entry
             donor_id = get_next_id(DonorDetail, 'DNR')
@@ -146,7 +161,8 @@ def register_new_donors():
                 email = email,
                 password = hashed_password,
                 blood_group = blood_group,
-                personal_details_id=personal_id,  # Foreign key
+                personal_details_id=personal_id,
+                terms_and_conditions_id=terms_and_conditions_id,
                 address_id = address_id,
                 active_status = True,
                 disease_id = disease_id,
@@ -158,8 +174,42 @@ def register_new_donors():
             db.session.add(donor_detail)
 
             db.session.commit()
+
+            csv_file_path = '/YouthRedCross-BloodRequest/docs/donorsdata.csv'
+            csv_header = [
+                'Email', 'Password', 'ConfirmPassword','Name', 'Age', 'DOB', 'Contact Number', 'Secondary Contact',
+                'Marital Status', 'Aadhar Number', 'Blood Group', 'Full Address','State', 'City', 'Pincode'
+                'Disease Name', 'Description', 'Last Donation', 'Blood Donation Count'
+            ]
+            if not os.path.exists(csv_file_path):
+                with open(csv_file_path, mode='w', newline='') as file:
+                    writer = csv.writer(file)
+                    writer.writerow(csv_header)
+
+            with open(csv_file_path, mode='a', newline='') as file:
+                writer = csv.writer(file)
+                writer.writerow([
+                    email, password , confirm_password,name, age, dob, contact_number, secondary_contact,
+                    marital_status, aadhar_number, blood_group, full_address, state, city, pincode ,
+                    disease_name, description, last_donation, blood_donation_count
+                ])
+
             flash('Donor successfully added!', 'success')
-            return render_template('new_donor_registration_confirmation.html')
+            confirmation_details = [
+                email,
+                name,
+                age,
+                dob,
+                contact_number,
+                secondary_contact,
+                marital_status,
+                aadhar_number,
+                blood_group,
+                full_address,
+                disease_name,
+                description
+            ]
+            return render_template('new_donor_registration_confirmation.html',details = confirmation_details)
 
         except Exception as e:
             db.session.rollback()
@@ -174,7 +224,15 @@ def donor_login_validation():
     email = request.form.get('email')
     password = request.form.get('password')
 
+    captcha = current_app.extensions.get('captcha')
+    if not captcha or not captcha.validate():
+        flash("Invalid CAPTCHA. Please try again.", "error")
+        return redirect(url_for('main.render_donor_login'))
+
     donor = DonorDetail.query.filter_by(email=email).first()
+    if not donor:
+        flash("Email not registered. Please sign up.", "error")
+        return redirect(url_for('main_bp.render_donor_login'))
     
     if donor and check_password_hash(donor.password,password):
         current_datetime = datetime.now()
@@ -268,7 +326,26 @@ def modify_donor_details():
     try:
         db.session.commit()
         flash("Donor details updated successfully.")
-        return render_template('donor_details_updation_confirmation.html')
+        confirmation_details = [
+            name,
+            blood_group,
+            first_name,
+            last_name,
+            age,
+            contact_number,
+            secondary_contact_number,
+            marital_status,
+            aadhar_number,
+            address, 
+            city, 
+            state,
+            country,
+            pincode,
+            disease_name,
+            disease_description
+        ]
+        print(confirmation_details)
+        return render_template('donor_details_updation_confirmation.html',details = confirmation_details)
     except Exception as e:
         db.session.rollback()
         flash(f"An error occurred: {e}")
@@ -286,18 +363,56 @@ def manage_forget_password_donor():
         recipient = email
         link = "http://127.0.0.1:5000/main/render_query_page"
         body = f"""
-        Dear User,
-
-        We Have got a Request from your YRC-LBS Account for Changing your password.
-        if You haven't generated it , let us Know in the below link
-        {link}
-        if You have requested for it , use the below OTP to change your password
-
-        One Time Password ! Don't Share it with any third parties !
-        {one_time_password}
-
-        Regards,
-        Youth Red Cross Blood Donation Site
+        <html>
+            <body style="margin: 0; padding: 0; font-family: Arial, sans-serif; background-color: #f4f4f4;">
+                <table align="center" width="600" style="margin: 20px auto; border-collapse: collapse; background-color: #ffffff; border-radius: 8px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+                    <!-- Header -->
+                    <tr>
+                        <td style="background-color: #8B0000; padding: 20px; text-align: center; border-top-left-radius: 8px; border-top-right-radius: 8px;">
+                            <h1 style="margin: 0; color: #ffffff; font-size: 24px; font-weight: bold;">Password Reset Request</h1>
+                        </td>
+                    </tr>
+                    <!-- Content -->
+                    <tr>
+                        <td style="padding: 30px; color: #333;">
+                            <p style="font-size: 18px; margin: 0 0 15px;">Dear User,</p>
+                            <p style="font-size: 16px; margin: 0 0 20px; line-height: 1.6;">
+                                We have received a request from your <strong style="color: #8B0000;">LifeConnect Account</strong> to change your password. 
+                            </p>
+                            <p style="font-size: 16px; margin: 0 0 20px; line-height: 1.6;">
+                                If you did not generate this request, please let us know by clicking the link below:
+                            </p>
+                            <p style="text-align: center;">
+                                <a href="{link}" style="display: inline-block; font-size: 16px; text-decoration: none; color: white; background-color: #8B0000; padding: 15px 25px; border-radius: 5px; font-weight: bold;">
+                                    Report Unauthorized Request
+                                </a>
+                            </p>
+                            <p style="font-size: 16px; margin: 20px 0; line-height: 1.6;">
+                                If you did request this change, use the OTP below to reset your password:
+                            </p>
+                            <p style="text-align: center; font-size: 20px; font-weight: bold; color: #8B0000; margin: 20px 0;">
+                                {one_time_password}
+                            </p>
+                            <p style="font-size: 14px; color: #555; margin: 0;">
+                                <em>Note: Do not share this OTP with any third parties.</em>
+                            </p>
+                        </td>
+                    </tr>
+                    <!-- Footer -->
+                    <tr>
+                        <td style="padding: 20px; text-align: center; background-color: #f8f9fa; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px; font-size: 14px; color: #555;">
+                            <p style="margin: 0;">
+                                Best regards,<br>
+                                <strong>Youth Red Cross Blood Donation Team</strong>
+                            </p>
+                            <p style="margin: 10px 0 0; font-size: 12px; color: #888;">
+                                © 2024 Youth Red Cross Blood Donation. All rights reserved.
+                            </p>
+                        </td>
+                    </tr>
+                </table>
+            </body>
+        </html>
         """
         send_email(subject, recipient, body)
 
