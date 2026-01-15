@@ -6,15 +6,15 @@ services:
     image: postgres:16-alpine
     container_name: lifeconnect-db
     environment:
-      POSTGRES_USER: lifeconnect
-      POSTGRES_PASSWORD: lifeconnect_password
-      POSTGRES_DB: lifeconnect
+      POSTGRES_USER: ${POSTGRES_USER:-lifeconnect}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-lifeconnect}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U lifeconnect"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-lifeconnect}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -27,17 +27,11 @@ services:
     container_name: lifeconnect-api
     ports:
       - "8000:8000"
+    env_file:
+      - .env  # Load all environment variables from .env file
     environment:
-      - DATABASE_URL=postgresql://lifeconnect:lifeconnect_password@postgres:5432/lifeconnect
-      - SECRET_KEY=docker-dev-secret-key-change-in-production-32chars
-      - GOOGLE_MAPS_API_KEY=placeholder-for-dev
-      - MAIL_SERVER=smtp.gmail.com
-      - MAIL_PORT=587
-      - MAIL_USERNAME=dev@example.com
-      - MAIL_PASSWORD=dev-password
-      - MAIL_FROM=dev@example.com
-      - APP_ENV=development
-      - DEBUG=true
+      # Override DATABASE_URL to use Docker network hostname
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-lifeconnect}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-lifeconnect}
     depends_on:
       postgres:
         condition: service_healthy
@@ -45,4 +39,3 @@ services:
 
 volumes:
   postgres_data:
-
