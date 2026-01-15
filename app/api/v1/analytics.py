@@ -76,11 +76,13 @@ async def get_donors_by_blood_group(
     # current_admin = Depends(get_current_admin),
 ):
     """Get donor count by blood group."""
+    from sqlalchemy import case
+    
     query = (
         select(
             DonorDetail.blood_group,
             func.count().label("total"),
-            func.sum(func.cast(DonorDetail.active_status, type_=int)).label("active"),
+            func.sum(case((DonorDetail.active_status == True, 1), else_=0)).label("active"),
         )
         .group_by(DonorDetail.blood_group)
     )
@@ -88,7 +90,7 @@ async def get_donors_by_blood_group(
     result = await session.execute(query)
 
     return {
-        row.blood_group: {"total": row.total, "active": row.active or 0}
+        row.blood_group: {"total": row.total, "active": int(row.active or 0)}
         for row in result.all()
     }
 
