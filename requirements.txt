@@ -1,37 +1,50 @@
-APScheduler
-captcha
-certifi
-cffi
-Flask
-Flask-APScheduler
-Flask-Session
-Flask-SQLAlchemy
-Flask-WTF
-flask_session_captcha
-google-api-core
-google-api-python-client
-google-auth
-google-auth-httplib2
-google-auth-oauthlib
-googleapis-common-protos
-httplib2
-Jinja2
-joblib
-matplotlib
-mysqlclient
-nltk
-numpy
-oauthlib
-pandas
-pillow
-python-dotenv
-requests
-requests-oauthlib
-secure-smtplib
-SQLAlchemy
-tqdm
-typing_extensions
-urllib3
-Werkzeug
-WTForms
-pymysql
+# LifeConnect API Dependencies
+
+# Core Framework
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+gunicorn>=21.2.0
+
+# Data Validation
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+email-validator>=2.1.0
+
+# Database
+sqlalchemy[asyncio]>=2.0.25
+asyncpg>=0.29.0
+alembic>=1.13.0
+
+# Authentication (Partner will use)
+python-jose[cryptography]>=3.3.0
+passlib[bcrypt]>=1.7.4
+python-multipart>=0.0.6
+
+# Background Tasks
+apscheduler>=3.10.4
+
+# HTTP Client (for Google Maps API)
+httpx>=0.26.0
+
+# Email
+aiosmtplib>=3.0.0
+
+# Logging
+structlog>=24.1.0
+
+# Rate Limiting (optional but recommended)
+slowapi>=0.1.9
+
+# Environment
+python-dotenv>=1.0.0
+
+# Testing
+pytest>=8.0.0
+pytest-asyncio>=0.23.0
+pytest-cov>=4.1.0
+httpx>=0.26.0
+
+# Development
+black>=24.1.0
+ruff>=0.1.14
+mypy>=1.8.0
