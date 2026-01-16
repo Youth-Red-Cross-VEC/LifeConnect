@@ -15,6 +15,7 @@ from app.core.database import init_db, db
 from app.core.scheduler import init_scheduler, get_scheduler
 from app.core.logging import setup_logging
 from app.core.exceptions import LifeConnectException
+from app.core.rate_limiter import setup_rate_limiting
 from app.api.v1 import router as v1_router
 from app.api.auth import router as auth_router
 from app.tasks import setup_scheduled_jobs
@@ -98,6 +99,9 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    # Configure rate limiting
+    setup_rate_limiting(app)
+
     # Exception handlers
     @app.exception_handler(LifeConnectException)
     async def lifeconnect_exception_handler(
@@ -125,3 +129,4 @@ def create_app() -> FastAPI:
 
 # Create the app instance
 app = create_app()
+

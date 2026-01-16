@@ -1,7 +1,8 @@
-# LifeConnect API - Multi-stage Dockerfile for minimal image size
+# LifeConnect API - Ultra-optimized Multi-stage Dockerfile
+# Target: Minimal production image size
 
-# Stage 1: Build dependencies
-FROM python:3.11-slim AS builder
+# Stage 1: Build dependencies with full toolchain
+FROM python:3.11-alpine AS builder
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -9,30 +10,41 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /build
 
-# Install build dependencies and uv
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Install build dependencies (will not be in final image)
+RUN apk add --no-cache \
     gcc \
-    libpq-dev \
+    musl-dev \
+    libffi-dev \
+    postgresql-dev \
     curl \
-    && curl -LsSf https://astral.sh/uv/install.sh | sh \
-    && rm -rf /var/lib/apt/lists/*
+    # Pillow dependencies
+    jpeg-dev \
+    zlib-dev \
+    libjpeg
 
+# Install uv for fast package installation
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 ENV PATH="/root/.local/bin:$PATH"
 
-# Copy dependency files
-COPY pyproject.toml .
-
-# Install dependencies (not editable, just deps)
+# Install Python dependencies to isolated directory
 RUN uv pip install --target=/deps \
-    fastapi uvicorn[standard] gunicorn \
+    fastapi uvicorn[standard] \
     pydantic pydantic-settings email-validator \
     sqlalchemy[asyncio] asyncpg alembic \
     python-jose[cryptography] passlib[bcrypt] python-multipart \
     apscheduler httpx aiosmtplib \
     structlog slowapi python-dotenv pillow
 
-# Stage 2: Production image
-FROM python:3.11-slim AS runtime
+# Remove unnecessary files from deps to reduce size
+RUN find /deps -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true && \
+    find /deps -type d -name "tests" -exec rm -rf {} + 2>/dev/null || true && \
+    find /deps -type d -name "test" -exec rm -rf {} + 2>/dev/null || true && \
+    find /deps -type f -name "*.pyc" -delete 2>/dev/null || true && \
+    find /deps -type f -name "*.pyo" -delete 2>/dev/null || true && \
+    find /deps -type f -name "*.so" -exec strip {} \; 2>/dev/null || true
+
+# Stage 2: Minimal production image
+FROM python:3.11-alpine AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -40,22 +52,20 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /code
 
-# Install runtime dependencies only (no gcc, no dev packages)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libpq5 \
-    && rm -rf /var/lib/apt/lists/* \
-    && useradd -m -u 1000 appuser
+# Install ONLY runtime dependencies (minimal)
+RUN apk add --no-cache \
+    libpq \
+    libjpeg \
+    zlib \
+    && adduser -D -u 1000 appuser
 
-# Copy installed dependencies from builder
+# Copy dependencies from builder
 COPY --from=builder /deps /deps
 
 # Copy application code
-COPY app/ ./app/
-COPY alembic.ini ./
-COPY migrations/ ./migrations/
-
-# Set ownership
-RUN chown -R appuser:appuser /code
+COPY --chown=appuser:appuser app/ ./app/
+COPY --chown=appuser:appuser alembic.ini ./
+COPY --chown=appuser:appuser migrations/ ./migrations/
 
 USER appuser
 
