@@ -29,7 +29,7 @@ RUN uv pip install --target=/deps \
     sqlalchemy[asyncio] asyncpg alembic \
     python-jose[cryptography] passlib[bcrypt] python-multipart \
     apscheduler httpx aiosmtplib \
-    structlog slowapi python-dotenv
+    structlog slowapi python-dotenv pillow
 
 # Stage 2: Production image
 FROM python:3.11-slim AS runtime

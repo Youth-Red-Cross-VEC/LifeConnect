@@ -240,3 +240,37 @@ class EmailService:
 
         for email in admin_emails:
             await self.send_email(to=email, subject=subject, html_body=html_body)
+
+    async def send_certificate(
+        self,
+        donor_name: str,
+        donor_email: str,
+        certificate_path: str,
+    ) -> bool:
+        """
+        Send donation certificate to donor (convenience method).
+        
+        This is a wrapper around send_certificate_email that works with
+        the certificate API.
+        """
+        from pathlib import Path
+        return await self.send_certificate_email(
+            email=donor_email,
+            name=donor_name,
+            certificate_path=Path(certificate_path),
+        )
+
+
+# Global service instance
+_email_service: EmailService = None
+
+
+def get_email_service() -> EmailService:
+    """Get or create email service instance."""
+    global _email_service
+    if _email_service is None:
+        from app.config import get_settings
+        settings = get_settings()
+        _email_service = EmailService(settings)
+    return _email_service
+

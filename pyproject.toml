@@ -51,6 +51,9 @@ dependencies = [
     
     # Environment
     "python-dotenv>=1.0.0",
+    
+    # Image Processing (certificates)
+    "pillow>=10.0.0",
 ]
 
 [project.optional-dependencies]

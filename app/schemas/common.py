@@ -17,6 +17,10 @@ class MessageResponse(BaseModel):
     success: bool = True
 
 
+# Alias for semantic clarity
+SuccessResponse = MessageResponse
+
+
 class ErrorResponse(BaseModel):
     """Standard error response."""
 

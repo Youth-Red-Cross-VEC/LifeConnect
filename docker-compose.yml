@@ -32,6 +32,9 @@ services:
     environment:
       # Override DATABASE_URL to use Docker network hostname
       - DATABASE_URL=postgresql://${POSTGRES_USER:-lifeconnect}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-lifeconnect}
+    volumes:
+      # Mount static files so certificates persist and are accessible on host
+      - ./app/static:/code/app/static
     depends_on:
       postgres:
         condition: service_healthy
