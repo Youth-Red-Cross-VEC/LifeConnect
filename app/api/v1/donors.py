@@ -59,9 +59,9 @@ async def register_donor(
     if await repo.exists_by_email(data.email):
         raise duplicate_exception("Donor", "email", data.email)
 
-    # Hash password (partner will provide proper hashing utility)
-    from hashlib import sha256
-    hashed_password = sha256(data.password.encode()).hexdigest()  # TODO: Use bcrypt
+    # Hash password using bcrypt (secure)
+    from app.core.security import hash_password
+    hashed_password = hash_password(data.password)
 
     # Create related entities
     personal_details = PersonalDetails(

@@ -69,8 +69,9 @@ async def register_admin(
     admin_id = generate_prefixed_id("ADM")
     auth_id = generate_prefixed_id("AUTHADM")
     
-    # Hash password (TODO: Partner should replace with passlib bcrypt)
-    hashed_password = hashlib.sha256(data.password.encode()).hexdigest()
+    # Hash password using bcrypt (secure)
+    from app.core.security import hash_password
+    hashed_password = hash_password(data.password)
     
     # Create admin
     admin = AdminDetails(

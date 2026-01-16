@@ -102,6 +102,10 @@ def create_app() -> FastAPI:
     # Configure rate limiting
     setup_rate_limiting(app)
 
+    # Add security headers middleware
+    from app.core.middleware import SecurityHeadersMiddleware
+    app.add_middleware(SecurityHeadersMiddleware)
+
     # Exception handlers
     @app.exception_handler(LifeConnectException)
     async def lifeconnect_exception_handler(
