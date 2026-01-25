@@ -50,11 +50,6 @@ export default function BloodRequestConfirmation({ details = sampleDetails }) {
         <button className="primary full" onClick={() => (window.location.href = "/")}>
           Go back to Home
         </button>
-
-        <div className="json-block">
-          <div className="small muted">Payload for backend</div>
-          <pre>{JSON.stringify(payload, null, 2)}</pre>
-        </div>
       </div>
     </main>
   );

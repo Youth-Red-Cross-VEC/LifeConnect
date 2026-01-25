@@ -37,8 +37,8 @@ export default function DonorLogin({ captcha = sampleCaptcha }) {
   const update = (key) => (value) => setForm((prev) => ({ ...prev, [key]: value }));
 
   return (
-    <div className="page auth">
-      <nav className="topbar">
+    <>
+      <nav className="topbar" style={{ padding: "18px 24px", marginBottom: "0" }}>
         <div className="logo">LifeConnect</div>
         <div className="nav-actions">
           <button className="ghost-btn" onClick={() => (window.location.href = "/signup")}>
@@ -50,74 +50,73 @@ export default function DonorLogin({ captcha = sampleCaptcha }) {
         </div>
       </nav>
 
-      <section className="cta-card">
-        <h3>New here?</h3>
-        <p>
-          "Give the gift of life with every drop you share. Become a hero—donate blood and inspire
-          hope!"
-        </p>
-        <button className="primary" onClick={() => (window.location.href = "/signup")}>
-          Sign Up
-        </button>
-        <img
-          className="cta-image"
-          src="https://dummyimage.com/320x200/8b0000/ffffff&text=Donate+Blood"
-          alt="Donate blood illustration"
-        />
-      </section>
-
-      <form className="card auth-card" onSubmit={onSubmit}>
-        <h2>Donor Login</h2>
-        {error ? <div className="error">{error}</div> : null}
-
-        <label className="field">
-          <span>Email</span>
-          <input
-            type="email"
-            value={form.email}
-            onChange={(e) => update("email")(e.target.value)}
-            required
-          />
-        </label>
-
-        <label className="field">
-          <span>Password</span>
-          <input
-            type="password"
-            value={form.password}
-            onChange={(e) => update("password")(e.target.value)}
-            required
-          />
-        </label>
-
-        <label className="field">
-          <span>Captcha</span>
-          <div className="captcha-row">
-            <input
-              value={form.captcha_value}
-              onChange={(e) => update("captcha_value")(e.target.value)}
-              required
-              placeholder="Enter text from image"
+      <div className="page" style={{ maxWidth: "1200px" }}>
+        <div className="auth">
+          <section className="cta-card">
+            <h3>New here?</h3>
+            <p>
+              "Give the gift of life with every drop you share. Become a hero—donate blood and
+              inspire hope!"
+            </p>
+            <button className="primary" onClick={() => (window.location.href = "/signup")}>
+              Sign Up
+            </button>
+            <img
+              className="cta-image"
+              src="https://dummyimage.com/320x200/8b0000/ffffff&text=Donate+Blood"
+              alt="Donate blood illustration"
             />
-            {captcha.imageUrl ? (
-              <img src={captcha.imageUrl} alt="captcha" className="captcha-img" />
-            ) : null}
-          </div>
-        </label>
+          </section>
 
-        <button className="primary full" type="submit">
-          Login
-        </button>
+          <form className="card auth-card" onSubmit={onSubmit}>
+            <h2>Donor Login</h2>
+            {error ? <div className="error">{error}</div> : null}
 
-        <a className="link" href="/forgot-password">
-          Forgot Password?
-        </a>
+            <label className="field">
+              <span>Email</span>
+              <input
+                type="email"
+                value={form.email}
+                onChange={(e) => update("email")(e.target.value)}
+                required
+              />
+            </label>
 
-        <div className="json-block">
-          <div className="small muted">Payload for backend</div>
-          <pre>{JSON.stringify(payload, null, 2)}</pre>
+            <label className="field">
+              <span>Password</span>
+              <input
+                type="password"
+                value={form.password}
+                onChange={(e) => update("password")(e.target.value)}
+                required
+              />
+            </label>
+
+            <label className="field">
+              <span>Captcha</span>
+              <div className="captcha-row">
+                <input
+                  value={form.captcha_value}
+                  onChange={(e) => update("captcha_value")(e.target.value)}
+                  required
+                  placeholder="Enter text from image"
+                />
+                {captcha.imageUrl ? (
+                  <img src={captcha.imageUrl} alt="captcha" className="captcha-img" />
+                ) : null}
+              </div>
+            </label>
+
+            <button className="primary full" type="submit">
+              Login
+            </button>
+
+            <a className="link" href="/forgot-password">
+              Forgot Password?
+            </a>
+          </form>
         </div>
-      </form>
-    </div>
+      </div>
+    </>
   );
 }

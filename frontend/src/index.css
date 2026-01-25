@@ -6,6 +6,7 @@
     --foreground: #ededed;
   }
 }
+
 html,
 body {
   /*background: var(--background);*/
@@ -298,4 +299,14 @@ body {
   .captcha-row {
     grid-template-columns: 1fr;
   }
+}
+
+/* Utilities added for page refactoring */
+.hidden {
+  display: none !important;
+}
+
+.btn-sm {
+  padding: 5px 10px;
+  font-size: 12px;
 }

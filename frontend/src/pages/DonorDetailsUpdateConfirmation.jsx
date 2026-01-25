@@ -69,11 +69,6 @@ export default function DonorDetailsUpdateConfirmation({ details = sampleDetails
             Donor Login
           </button>
         </div>
-
-        <div className="json-block">
-          <div className="small muted">Payload for backend</div>
-          <pre>{JSON.stringify(details, null, 2)}</pre>
-        </div>
       </div>
     </main>
   );

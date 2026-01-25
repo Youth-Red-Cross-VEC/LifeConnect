@@ -69,11 +69,6 @@ export default function DonorNewPassword({ email = "donor@example.com" }) {
             Reset Password
           </button>
         </form>
-
-        <div className="json-block">
-          <div className="small muted">Payload for backend</div>
-          <pre>{JSON.stringify(payload, null, 2)}</pre>
-        </div>
       </div>
     </main>
   );
