@@ -310,3 +310,8 @@ body {
   padding: 5px 10px;
   font-size: 12px;
 }
+
+.cta-card .primary {
+  display: inline-block; 
+  margin: 16px 0;
+}
