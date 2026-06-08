@@ -14,7 +14,7 @@ from app.api.v1.queries import router as queries_router
 from app.api.v1.certificates import router as certificates_router
 
 # Import auth router when partner implements it
-# from app.api.auth.router import router as auth_router
+from app.api.auth.router import router as auth_router
 
 router = APIRouter(prefix="/api/v1")
 
@@ -29,5 +29,5 @@ router.include_router(queries_router)
 router.include_router(certificates_router)
 
 # Auth router (partner's domain)
-# router.include_router(auth_router)
+router.include_router(auth_router)
 

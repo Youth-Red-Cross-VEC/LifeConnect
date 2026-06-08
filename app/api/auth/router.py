@@ -3,7 +3,11 @@ Authentication Router - Complete Implementation
 
 Login, logout, and password reset endpoints for donors and admins.
 """
+import random
+from app.services.email_service import get_email_service
 
+# Simple in-memory OTP store (temporary)
+otp_store = {}
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -391,11 +395,15 @@ async def request_donor_password_reset(
             return MessageResponse(
                 message="If this email exists, you will receive a reset link"
             )
-        
+         
         # TODO: Generate OTP and send email
         # otp = generate_otp()
         # await send_password_reset_email(donor.email, otp)
         # Store OTP in database with expiry
+        otp = str(random.randint(100000, 999999))
+        otp_store[donor.email] = otp
+        email_service = get_email_service()
+        await email_service.send_otp_email(donor.email, otp, donor.name)
         
         logger.info(f"Password reset requested for donor: {donor.id}")
         
@@ -441,18 +449,18 @@ async def confirm_donor_password_reset(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Donor not found",
             )
-        
         # TODO: Verify OTP
         # otp_record = await verify_otp(donor.id, data.otp)
         # if not otp_record or otp_record.is_expired():
         #     raise HTTPException(status_code=400, detail="Invalid or expired OTP")
         
         # For now, just check OTP format
-        if not data.otp or len(data.otp) < 6:
+        if otp_store.get(data.email) != data.otp:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid OTP",
+                detail="Invalid or expired OTP",
             )
+        del otp_store[data.email]
         
         # Hash new password
         donor.password = hash_password(data.new_password)
@@ -487,8 +495,12 @@ async def request_admin_password_reset(
         if not admin:
             logger.info(f"Admin password reset for non-existent email: {data.email}")
         else:
+            otp = str(random.randint(100000, 999999))
+            otp_store[admin.email] = otp
+            email_service = get_email_service()
+            await email_service.send_otp_email(admin.email, otp, admin.name)
             logger.info(f"Admin password reset requested for: {admin.id}")
-        
+
         return MessageResponse(
             message="If this email exists, you will receive a reset link"
         )
@@ -519,11 +531,9 @@ async def confirm_admin_password_reset(
             )
         
         # Verify OTP (simplified)
-        if not data.otp or len(data.otp) < 6:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid OTP",
-            )
+        if otp_store.get(data.email) != data.otp:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,detail="Invalid or expired OTP",)
+        del otp_store[data.email]
         
         # Hash new password
         admin.password = hash_password(data.new_password)
