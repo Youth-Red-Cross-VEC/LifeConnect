@@ -43,15 +43,19 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             "max-age=31536000; includeSubDomains"
         )
         
-        # Content Security Policy - restrict resource sources
-        response.headers["Content-Security-Policy"] = (
-            "default-src 'self'; "
-            "script-src 'self'; "
-            "style-src 'self' 'unsafe-inline'; "
-            "img-src 'self' data:; "
-            "font-src 'self'; "
-            "frame-ancestors 'none'"
-        )
+        # Content Security Policy - relaxed for docs pages
+        if request.url.path in ["/docs", "/redoc", "/openapi.json"]:
+            response.headers["Content-Security-Policy"] = ("default-src 'self'; ""script-src 'self' 'unsafe-inline' 'unsafe-eval' cdn.jsdelivr.net; "
+        "style-src 'self' 'unsafe-inline' cdn.jsdelivr.net; "
+        "img-src 'self' data: fastapi.tiangolo.com; "
+        "font-src 'self' cdn.jsdelivr.net")
+        else:
+            response.headers["Content-Security-Policy"] = ("default-src 'self'; "
+        "script-src 'self'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data:; "
+        "font-src 'self'; "
+        "frame-ancestors 'none'")
         
         # Control what referrer info is sent
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"

@@ -4,10 +4,31 @@ Authentication Router - Complete Implementation
 Login, logout, and password reset endpoints for donors and admins.
 """
 import random
+import time
 from app.services.email_service import get_email_service
 
-# Simple in-memory OTP store (temporary)
+# OTP store with expiry: {email: {"otp": "123456", "expires_at": timestamp}}
 otp_store = {}
+
+def store_otp(email: str, otp: str):
+    """Store OTP with 10 minute expiry."""
+    otp_store[email] = {
+        "otp": otp,
+        "expires_at": time.time() + 600  # 10 minutes
+    }
+
+def verify_otp(email: str, otp: str) -> bool:
+    """Verify OTP and check expiry."""
+    record = otp_store.get(email)
+    if not record:
+        return False
+    if time.time() > record["expires_at"]:
+        del otp_store[email]  # Clean up expired OTP
+        return False
+    if record["otp"] != otp:
+        return False
+    del otp_store[email]  # Clean up after successful verify
+    return True
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -401,7 +422,7 @@ async def request_donor_password_reset(
         # await send_password_reset_email(donor.email, otp)
         # Store OTP in database with expiry
         otp = str(random.randint(100000, 999999))
-        otp_store[donor.email] = otp
+        store_otp(donor.email, otp)
         email_service = get_email_service()
         await email_service.send_otp_email(donor.email, otp, donor.name)
         
@@ -455,13 +476,8 @@ async def confirm_donor_password_reset(
         #     raise HTTPException(status_code=400, detail="Invalid or expired OTP")
         
         # For now, just check OTP format
-        if otp_store.get(data.email) != data.otp:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid or expired OTP",
-            )
-        del otp_store[data.email]
-        
+        if not verify_otp(data.email, data.otp):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,detail="Invalid or expired OTP",)
         # Hash new password
         donor.password = hash_password(data.new_password)
         await session.commit()
@@ -531,10 +547,8 @@ async def confirm_admin_password_reset(
             )
         
         # Verify OTP (simplified)
-        if otp_store.get(data.email) != data.otp:
+        if not verify_otp(data.email, data.otp):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,detail="Invalid or expired OTP",)
-        del otp_store[data.email]
-        
         # Hash new password
         admin.password = hash_password(data.new_password)
         await session.commit()
