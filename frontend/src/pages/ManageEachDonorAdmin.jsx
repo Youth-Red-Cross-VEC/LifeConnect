@@ -8,7 +8,7 @@ export default function ManageEachDonorAdmin({ details = {}, onUpdate }) {
   };
 
   return (
-    <AdminBase active="manage-donors">
+    <AdminBase active="donors">
       <style>{`
         .manage-donor-page {
           font-family: Arial, sans-serif;

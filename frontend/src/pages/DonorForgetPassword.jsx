@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../services/api";
 
-const AdminForgetPassword = () => {
+export default function DonorForgetPassword() {
   const [email, setEmail] = useState("");
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -13,9 +13,9 @@ const AdminForgetPassword = () => {
     setError("");
     setIsLoading(true);
     try {
-      const res = await api.adminForgotPassword({ email });
-      if (res && (res.success || res.token || res.message === "OTP sent")) {
-        navigate("/admin/otp-verification");
+      const res = await api.donorForgotPassword({ email });
+      if (res && (res.success || res.message)) {
+        navigate("/donor/otp-validation");
       } else {
         setError(res?.message || "Failed to send OTP. Please try again.");
       }
@@ -46,7 +46,7 @@ const AdminForgetPassword = () => {
             <span>Email Address</span>
             <input
               type="email"
-              id="admin-fp-email"
+              id="email"
               name="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -66,11 +66,9 @@ const AdminForgetPassword = () => {
         </p>
 
         <div className="footer-links" style={{ textAlign: "center", marginTop: "12px" }}>
-          <a href="/admin/login">Back to Login</a>
+          <a href="/donor/login">Back to Login</a>
         </div>
       </div>
     </div>
   );
-};
-
-export default AdminForgetPassword;
+}

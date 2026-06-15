@@ -1,32 +1,37 @@
-"use client";
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { api } from "../services/api";
 
-import { useMemo, useState } from "react";
-
-export default function DonorNewPassword({ email = "donor@example.com" }) {
-  const [form, setForm] = useState({ password: "", confirmpassword: "" });
+export default function DonorNewPassword({ email = "" }) {
+  const [form, setForm] = useState({ password: "", confirm_password: "" });
   const [error, setError] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const navigate = useNavigate();
 
-  const payload = useMemo(
-    () => ({
-      email,
-      ...form,
-    }),
-    [email, form],
-  );
-
-  const onSubmit = (e) => {
+  const onSubmit = async (e) => {
     e.preventDefault();
     setError("");
-    if (!form.password || !form.confirmpassword) {
+    if (!form.password || !form.confirm_password) {
       setError("Both fields are required");
       return;
     }
-    if (form.password !== form.confirmpassword) {
+    if (form.password !== form.confirm_password) {
       setError("Passwords do not match");
       return;
     }
-    // eslint-disable-next-line no-console
-    console.log("Reset password payload", payload);
+    setIsLoading(true);
+    try {
+      const res = await api.donorNewPassword({ email, ...form });
+      if (res && res.success === true) {
+        navigate("/donor/login");
+      } else {
+        setError(res?.message || "Failed to reset password. Please try again.");
+      }
+    } catch {
+      setError("Server error. Try again.");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const update = (key) => (value) => setForm((prev) => ({ ...prev, [key]: value }));
@@ -35,15 +40,17 @@ export default function DonorNewPassword({ email = "donor@example.com" }) {
     <main className="center">
       <div className="card narrow">
         <h2 className="accent">Set Your New Password</h2>
-        <p className="muted">Create a strong and unique password.</p>
+        {/* <p className="muted">Create a strong and unique password.</p> */}
 
         {error ? <div className="error">{error}</div> : null}
 
         <form className="stack" onSubmit={onSubmit}>
-          <label className="field">
-            <span>Email</span>
-            <input value={email} readOnly />
-          </label>
+          {email && (
+            <label className="field">
+              <span>Email</span>
+              <input value={email} readOnly />
+            </label>
+          )}
 
           <label className="field">
             <span>New Password</span>
@@ -52,6 +59,7 @@ export default function DonorNewPassword({ email = "donor@example.com" }) {
               value={form.password}
               onChange={(e) => update("password")(e.target.value)}
               required
+              disabled={isLoading}
             />
           </label>
 
@@ -59,14 +67,15 @@ export default function DonorNewPassword({ email = "donor@example.com" }) {
             <span>Confirm Password</span>
             <input
               type="password"
-              value={form.confirmpassword}
-              onChange={(e) => update("confirmpassword")(e.target.value)}
+              value={form.confirm_password}
+              onChange={(e) => update("confirm_password")(e.target.value)}
               required
+              disabled={isLoading}
             />
           </label>
 
-          <button className="primary full" type="submit">
-            Reset Password
+          <button className="primary full" type="submit" disabled={isLoading}>
+            {isLoading ? "Resetting..." : "Reset Password"}
           </button>
         </form>
       </div>

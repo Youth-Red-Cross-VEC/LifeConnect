@@ -1,14 +1,11 @@
-import { useEffect, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 
 export default function ExpiredRequestsUpdationConfirmation({
   details = ["-", "-", "-", "-", "-", "-", "-"],
   onBackToExpiredRequests,
   onBackToDashboard,
 }) {
-  useEffect(() => {
-    // eslint-disable-next-line no-console
-    console.log("ExpiredRequestsUpdationConfirmation details:", details);
-  }, [details]);
+  const navigate = useNavigate();
 
   return (
     <div className="center">
@@ -45,28 +42,31 @@ export default function ExpiredRequestsUpdationConfirmation({
         </div>
 
         <div className="actions" style={{ justifyContent: "center" }}>
-          {onBackToExpiredRequests ? (
-            <button type="button" className="primary" onClick={onBackToExpiredRequests}>
-              Back to Expired Requests
-            </button>
-          ) : (
-            <a href="#" className="primary" style={{ textDecoration: "none" }}>
-              Back to Expired Requests
-            </a>
-          )}
+          <button
+            type="button"
+            className="primary"
+            onClick={() =>
+              onBackToExpiredRequests
+                ? onBackToExpiredRequests()
+                : navigate("/admin/requests/expired")
+            }
+          >
+            Back to Expired Requests
+          </button>
 
-          {onBackToDashboard ? (
-            <button type="button" className="primary" onClick={onBackToDashboard}>
-              Back to Dashboard
-            </button>
-          ) : (
-            <a href="#" className="primary" style={{ textDecoration: "none" }}>
-              Back to Dashboard
-            </a>
-          )}
+          <button
+            type="button"
+            className="primary"
+            onClick={() =>
+              onBackToDashboard
+                ? onBackToDashboard()
+                : navigate("/admin/dashboard")
+            }
+          >
+            Back to Dashboard
+          </button>
         </div>
       </div>
     </div>
   );
 }
-

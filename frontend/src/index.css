@@ -185,6 +185,10 @@ body {
 
 .accent {
   color: var(--red);
+  font-weight: 700;
+  font-size: 1.8rem;
+  text-align: center;
+  padding-bottom: 10px;
 }
 
 .actions {
@@ -312,6 +316,6 @@ body {
 }
 
 .cta-card .primary {
-  display: inline-block; 
+  display: inline-block;
   margin: 16px 0;
 }

@@ -8,7 +8,7 @@ export default function ManageEachHospitalAdmin({ details = {}, onUpdate }) {
   };
 
   return (
-    <AdminBase active="manage-hospitals">
+    <AdminBase active="hospitals">
       <style>{`
         .manage-hospital-page {
           font-family: Arial, sans-serif;

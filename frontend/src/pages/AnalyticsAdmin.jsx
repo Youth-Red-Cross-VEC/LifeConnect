@@ -1,14 +1,41 @@
-import React from "react";
+import { useState, useEffect } from "react";
 import AdminBase from "./AdminBase";
+import { api } from "../services/api";
 
-export default function AnalyticsAdmin({
-    hospitalCount = 0,
-    recentDonorCount = 0,
-    recentRequestCount = 0,
-}) {
-    return (
-        <AdminBase active="analytics">
-            <style>{`
+export default function AnalyticsAdmin() {
+  const [data, setData] = useState({
+    hospital_count: 0,
+    recent_donor_count: 0,
+    recent_request_count: 0,
+  });
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    const fetchAnalytics = async () => {
+      try {
+        const res = await api.getAdminAnalytics();
+        if (res && !res.error) {
+          setData({
+            hospital_count: res.hospital_count || 0,
+            recent_donor_count: res.recent_donor_count || 0,
+            recent_request_count: res.recent_request_count || 0,
+          });
+        } else {
+          setError(res?.error || "Failed to load analytics data.");
+        }
+      } catch {
+        setError("Error connecting to analytics API.");
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    fetchAnalytics();
+  }, []);
+
+  return (
+    <AdminBase active="analytics">
+      <style>{`
         .analytics-container {
           max-width: 1200px;
           margin: auto;
@@ -19,6 +46,7 @@ export default function AnalyticsAdmin({
           color: #333;
           margin-bottom: 30px;
           font-size: 2rem;
+          font-weight: bold;
         }
 
         .summary-stats {
@@ -43,6 +71,7 @@ export default function AnalyticsAdmin({
           font-size: 18px;
           color: #bf0001;
           margin-bottom: 10px;
+          font-weight: bold;
         }
 
         .stat p {
@@ -74,25 +103,17 @@ export default function AnalyticsAdmin({
           color: #bf0001;
           margin-bottom: 15px;
           font-size: 1.2rem;
+          font-weight: bold;
         }
 
         .chart img {
           width: 100%;
+          max-width: 350px;
           height: auto;
           border-radius: 8px;
           box-sizing: border-box;
-        }
-
-        .chart-placeholder {
-          width: 100%;
-          height: 300px;
-          background: linear-gradient(135deg, #f5f5f5 0%, #e0e0e0 100%);
-          border-radius: 8px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: #666;
-          font-size: 14px;
+          margin: 0 auto;
+          display: block;
         }
 
         @media (max-width: 768px) {
@@ -110,110 +131,60 @@ export default function AnalyticsAdmin({
         }
       `}</style>
 
-            <div className="analytics-container">
-                <h1>Admin Analytics</h1>
+      <div className="analytics-container">
+        <h1>Admin Analytics</h1>
 
-                <div className="summary-stats">
-                    <div className="stat">
-                        <h3>Total Hospitals</h3>
-                        <p>{hospitalCount}</p>
-                    </div>
-                    <div className="stat">
-                        <h3>New Donors (Last 30 Days)</h3>
-                        <p>{recentDonorCount}</p>
-                    </div>
-                    <div className="stat">
-                        <h3>Blood Requests (Last 30 Days)</h3>
-                        <p>{recentRequestCount}</p>
-                    </div>
-                </div>
+        {error && <div className="error" style={{ marginBottom: "20px" }}>{error}</div>}
 
-                <div className="analytics-charts">
-                    <div className="chart">
-                        <h3>Donor Analytics by Blood Group</h3>
-                        <div className="chart-placeholder">
-                            Donor Analytics Chart
-                            <br />
-                            (Chart visualization will be rendered here)
-                        </div>
-                        {/* 
-            <img
-              src="/static/images/admin_analytics/donor_analytics_chart.png"
-              alt="Donor Analytics Chart"
-            />
-            */}
-                    </div>
-
-                    <div className="chart">
-                        <h3>Blood Request Status Distribution</h3>
-                        <div className="chart-placeholder">
-                            Blood Request Status Chart
-                            <br />
-                            (Chart visualization will be rendered here)
-                        </div>
-                        {/*
-            <img
-              src="/static/images/admin_analytics/blood_request_status.png"
-              alt="Blood Request Status Chart"
-            />
-            */}
-                    </div>
-
-                    <div className="chart">
-                        <h3>Response Status Distribution</h3>
-                        <div className="chart-placeholder">
-                            Response Status Chart
-                            <br />
-                            (Chart visualization will be rendered here)
-                        </div>
-                        {/*
-            <img
-              src="/static/images/admin_analytics/response_status_distribution.png"
-              alt="Response Status Distribution Chart"
-            />
-            */}
-                    </div>
-                </div>
+        {isLoading ? (
+          <div style={{ padding: "20px", textAlign: "center", fontWeight: "bold", color: "#bf0001" }}>
+            Loading analytics data...
+          </div>
+        ) : (
+          <>
+            <div className="summary-stats">
+              <div className="stat">
+                <h3>Total Hospitals</h3>
+                <p>{data.hospital_count}</p>
+              </div>
+              <div className="stat">
+                <h3>New Donors (Last 30 Days)</h3>
+                <p>{data.recent_donor_count}</p>
+              </div>
+              <div className="stat">
+                <h3>Blood Requests (Last 30 Days)</h3>
+                <p>{data.recent_request_count}</p>
+              </div>
             </div>
 
-            {/*
-        ======================================================
-        BACKEND CALL STRUCTURE — Admin Analytics
-        ======================================================
+            <div className="analytics-charts">
+              <div className="chart">
+                <h3>Donor Analytics by Blood Group</h3>
+                <img
+                  src="/images/admin_analytics/donor_analytics_chart.png"
+                  alt="Donor Analytics Chart"
+                />
+              </div>
 
-        ENDPOINT
-        --------
-        GET /api/admin/analytics
+              <div className="chart">
+                <h3>Blood Request Status Distribution</h3>
+                <img
+                  src="/images/admin_analytics/blood_request_status.png"
+                  alt="Blood Request Status Chart"
+                />
+              </div>
 
-        AUTH
-        ----
-        Admin session / JWT required
-
-        RESPONSE (example)
-        ------------------
-        {
-          hospital_count: number,
-          recent_donor_count: number,
-          recent_request_count: number,
-          charts: {
-            donor_analytics_chart: string (URL or base64),
-            blood_request_status: string (URL or base64),
-            response_status_distribution: string (URL or base64)
-          }
-        }
-
-        FRONTEND RESPONSIBILITY
-        -----------------------
-        - Display summary statistics
-        - Render chart images or integrate with chart library (e.g., Chart.js, Recharts)
-        - Handle loading states
-
-        ERROR CASES
-        -----------
-        - 401 → redirect to /admin/login
-        - 403 → access denied
-        - 500 → analytics error page
-      */}
-        </AdminBase>
-    );
+              <div className="chart">
+                <h3>Response Status Distribution</h3>
+                <img
+                  src="/images/admin_analytics/response_status_distribution.png"
+                  alt="Response Status Distribution Chart"
+                />
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    </AdminBase>
+  );
 }

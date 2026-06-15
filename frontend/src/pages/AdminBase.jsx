@@ -136,6 +136,13 @@ export default function AdminBase({ children, active = "" }) {
           border-radius: 5px;
         }
 
+        .admin-corner-section {
+          background-color: #f8f9fa;
+          margin: 0 -20px -20px -20px;
+          padding: 20px;
+          min-height: calc(100vh - 60px - 550px); /* rough estimate to make it stretch */
+        }
+
         /* Sidebar Toggle */
         .sidebar-toggle-btn {
           background: none;
@@ -187,7 +194,7 @@ export default function AdminBase({ children, active = "" }) {
 
           <a href="/">
             <img
-              src="public/images/admin_dashboard/logo.png"
+              src="/images/index/LifeConnect_Logo.png"
               alt="Logo"
               className="logo-img"
             />
@@ -203,7 +210,7 @@ export default function AdminBase({ children, active = "" }) {
           <a className="help-btn" href="/help">
             <i className="fa-solid fa-circle-question"></i> Help
           </a>
-          <a className="logout-btn" href="/admin/logout">
+          <a className="logout-btn" href="/admin/login" onClick={() => localStorage.removeItem("lc_token")}>
             <i className="fa-solid fa-right-from-bracket"></i> Logout
           </a>
         </div>
@@ -212,28 +219,85 @@ export default function AdminBase({ children, active = "" }) {
       <div className="dashboard-container">
         {/* Sidebar */}
         <aside className={`sidebar ${sidebarOpen ? "visible" : ""}`}>
-          <nav>
-            <h4>Manage Requests</h4>
-            <ul>
-              <li>
-                <a href="/admin/dashboard" className={active === "dashboard" ? "active" : ""}>
-                  <i className="fa-solid fa-chart-line"></i> Dashboard
-                </a>
-              </li>
-              <li><a href="/admin/requests/new">New Requests</a></li>
-              <li><a href="/admin/requests/ongoing">Ongoing Requests</a></li>
-              <li><a href="/admin/requests/closed">Closed Requests</a></li>
-              <li><a href="/admin/requests/expired">Expired Requests</a></li>
-              <li><a href="/admin/requests/declined">Declined Requests</a></li>
-            </ul>
+          <nav style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+            <div style={{ flex: 1 }}>
+              <h4>Manage Requests</h4>
+              <ul>
+                <li>
+                  <a href="/admin/dashboard" className={active === "dashboard" ? "active" : ""}>
+                    <i className="fa-solid fa-chart-line"></i> Dashboard
+                  </a>
+                </li>
+                <li>
+                  <a href="/admin/requests/new" className={active === "new-requests" ? "active" : ""}>
+                    <i className="fa-solid fa-hand-holding-heart"></i> New Requests
+                  </a>
+                </li>
+                <li>
+                  <a href="/admin/requests/ongoing" className={active === "ongoing-requests" ? "active" : ""}>
+                    <i className="fa-solid fa-spinner"></i> Ongoing Requests
+                  </a>
+                </li>
+                <li>
+                  <a href="/admin/requests/closed" className={active === "closed-requests" ? "active" : ""}>
+                    <i className="fa-solid fa-check-circle"></i> Closed Requests
+                  </a>
+                </li>
+                <li>
+                  <a href="/admin/requests/expired" className={active === "expired-requests" ? "active" : ""}>
+                    <i className="fa-solid fa-clock"></i> Expired Requests
+                  </a>
+                </li>
+                <li>
+                  <a href="/admin/requests/declined" className={active === "declined-requests" ? "active" : ""}>
+                    <i className="fa-solid fa-times-circle"></i> Declined Requests
+                  </a>
+                </li>
+              </ul>
 
-            <div className="separator"></div>
+              <div className="separator"></div>
 
-            <h4>Admin Corner</h4>
-            <ul>
-              <li><a href="/admin/analytics">Analytics</a></li>
-              <li><a href="/admin/profile">Admin Profile</a></li>
-            </ul>
+              <h4>Manage Activities</h4>
+              <ul>
+                <li>
+                  <a href="/admin/donors" className={active === "donors" ? "active" : ""}>
+                    <i className="fa-solid fa-users"></i> Manage Donors
+                  </a>
+                </li>
+                <li>
+                  <a href="/admin/hospitals/all" className={active === "hospitals" ? "active" : ""}>
+                    <i className="fa-solid fa-hospital"></i> Manage Hospitals
+                  </a>
+                </li>
+                <li>
+                  <a href="/admin/generate-certificate" className={active === "certificates" ? "active" : ""}>
+                    <i className="fa-solid fa-award"></i> Generate Certificates
+                  </a>
+                </li>
+                <li>
+                  <a href="/admin/upload-csv" className={active === "upload-csv" ? "active" : ""}>
+                    <i className="fa-solid fa-file-csv"></i> Extract CSV Data
+                  </a>
+                </li>
+              </ul>
+            </div>
+
+            <div className="admin-corner-section">
+              <div className="separator" style={{ margin: "0 0 20px 0" }}></div>
+              <h4>Admin Corner</h4>
+              <ul>
+                <li>
+                  <a href="/admin/analytics" className={active === "analytics" ? "active" : ""}>
+                    <i className="fa-solid fa-chart-pie"></i> Analytics
+                  </a>
+                </li>
+                <li>
+                  <a href="/admin/profile" className={active === "profile" ? "active" : ""}>
+                    <i className="fa-solid fa-user-gear"></i> Admin Profile
+                  </a>
+                </li>
+              </ul>
+            </div>
           </nav>
         </aside>
 

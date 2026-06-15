@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../services/api";
 
-const AdminOTPVerificationPage = () => {
+export default function DonorOTPValidationPage() {
   const [otp, setOtp] = useState("");
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -17,9 +17,9 @@ const AdminOTPVerificationPage = () => {
     }
     setIsLoading(true);
     try {
-      const res = await api.adminOTPValidation({ otp });
+      const res = await api.donorOTPValidation({ otp });
       if (res && (res.success || res.token)) {
-        navigate("/admin/new-password");
+        navigate("/donor/new-password");
       } else {
         setError(res?.message || "Invalid OTP. Please try again.");
       }
@@ -31,38 +31,45 @@ const AdminOTPVerificationPage = () => {
   };
 
   return (
-    <div className="center">
-      <div className="card narrow">
-        <h2 className="title">OTP Verification</h2>
-        <p className="muted center-text">
-          Enter the OTP that has been sent to the email address you provided
-          earlier. Ensure the OTP is entered correctly to proceed with
-          verification.
+    <div className="center" style={{ minHeight: "100vh" }}>
+      <div className="card narrow" style={{ maxWidth: "420px", width: "100%" }}>
+        <h2 className="title" style={{ color: "#bf0001", textAlign: "center" }}>
+          OTP Verification
+        </h2>
+        <p className="muted" style={{ textAlign: "center", marginBottom: "20px" }}>
+          Enter the OTP that has been sent to your registered email address.
+          Ensure the OTP is entered correctly to proceed with verification.
         </p>
 
-        {error ? <div className="error">{error}</div> : null}
+        {error ? (
+          <div className="error" style={{ marginBottom: "16px" }}>{error}</div>
+        ) : null}
 
         <form className="stack" onSubmit={handleSubmit}>
-          <div className="field">
+          <label className="field">
             <span>Enter OTP</span>
             <input
               type="text"
+              id="otp"
               name="otp"
               value={otp}
               onChange={(e) => setOtp(e.target.value)}
               required
               disabled={isLoading}
               placeholder="Enter the OTP sent to your email"
+              style={{ letterSpacing: "4px", textAlign: "center", fontSize: "1.2rem" }}
             />
-          </div>
+          </label>
 
-          <button type="submit" className="primary full" disabled={isLoading}>
+          <button className="primary full" type="submit" disabled={isLoading}>
             {isLoading ? "Verifying..." : "Verify OTP"}
           </button>
         </form>
+
+        <div className="footer-links" style={{ textAlign: "center", marginTop: "12px" }}>
+          <a href="/donor/forgot-password">Resend OTP</a>
+        </div>
       </div>
     </div>
   );
-};
-
-export default AdminOTPVerificationPage;
+}

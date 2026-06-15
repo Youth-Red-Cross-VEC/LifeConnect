@@ -10,13 +10,6 @@ const sampleDetails = [
 
 export default function BloodRequestConfirmation({ details = sampleDetails }) {
   const [patient, blood, hospital, phone, address] = details;
-  const payload = {
-    patient_name: patient,
-    blood_group: blood,
-    hospital_name: hospital,
-    contact_number: phone,
-    hospital_address: address,
-  };
 
   return (
     <main className="center">

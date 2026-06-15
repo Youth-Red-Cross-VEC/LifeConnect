@@ -1,34 +1,35 @@
 import React, { useEffect, useState } from "react";
 
 export default function AvailableDonors({ donors = [] }) {
-    const [tableInitialized, setTableInitialized] = useState(false);
+  const [tableInitialized, setTableInitialized] = useState(false);
 
-    useEffect(() => {
-        // Initialize DataTable when component mounts
-        // Note: In a real React app, you might want to use a React-based table library
-        // like react-table or MUI DataGrid instead of jQuery DataTables
+  useEffect(() => {
+    // Initialize DataTable when component mounts
+    // Note: In a real React app, you might want to use a React-based table library
+    // like react-table or MUI DataGrid instead of jQuery DataTables
 
-        if (typeof window !== "undefined" && window.jQuery && !tableInitialized) {
-            const $ = window.jQuery;
+    if (typeof window !== "undefined" && window.jQuery && !tableInitialized) {
+      const $ = window.jQuery;
 
-            // Destroy existing table if it exists
-            if ($.fn.DataTable.isDataTable("#donorTable")) {
-                $("#donorTable").DataTable().destroy();
-            }
+      // Destroy existing table if it exists
+      if ($.fn.DataTable.isDataTable("#donorTable")) {
+        $("#donorTable").DataTable().destroy();
+      }
 
-            // Initialize DataTable
-            $("#donorTable").DataTable({
-                pageLength: 10,
-                responsive: true,
-            });
+      // Initialize DataTable
+      $("#donorTable").DataTable({
+        pageLength: 10,
+        responsive: true,
+      });
 
-            setTableInitialized(true);
-        }
-    }, [donors, tableInitialized]);
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setTableInitialized(true);
+    }
+  }, [donors, tableInitialized]);
 
-    return (
-        <>
-            <style>{`
+  return (
+    <>
+      <style>{`
         /* General Body Styling */
         .available-donors-page {
           font-family: Arial, sans-serif;
@@ -198,49 +199,49 @@ export default function AvailableDonors({ donors = [] }) {
         }
       `}</style>
 
-            <div className="available-donors-page">
-                {/* Header */}
-                <div className="donors-header">
-                    <h1>LifeConnect</h1>
-                    <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
-                        <a href="/generate-request">
-                            <button>Generate Blood Request</button>
-                        </a>
-                        <button onClick={() => (window.location.href = "/")}>Back to Home</button>
-                    </div>
-                </div>
+      <div className="available-donors-page">
+        {/* Header */}
+        <div className="donors-header">
+          <h1>LifeConnect</h1>
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+            <a href="/generate-request">
+              <button>Generate Blood Request</button>
+            </a>
+            <button onClick={() => (window.location.href = "/")}>Back to Home</button>
+          </div>
+        </div>
 
-                {/* Page Title */}
-                <div className="page-title">Available Blood Donors</div>
+        {/* Page Title */}
+        <div className="page-title">Available Blood Donors</div>
 
-                {/* Table */}
-                <div className="table-container">
-                    <table id="donorTable" className="display" style={{ width: "100%" }}>
-                        <thead>
-                            <tr>
-                                <th>Name</th>
-                                <th>Blood Group</th>
-                                <th>City</th>
-                                <th>Status</th>
-                                <th>Distance</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {donors.map((donor, index) => (
-                                <tr key={index}>
-                                    <td>{donor.Name}</td>
-                                    <td>{donor.blood_grp}</td>
-                                    <td>{donor.city}</td>
-                                    <td>{donor.status}</td>
-                                    <td>{donor.distance !== null && donor.distance !== undefined ? donor.distance : "N/A"}</td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
+        {/* Table */}
+        <div className="table-container">
+          <table id="donorTable" className="display" style={{ width: "100%" }}>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Blood Group</th>
+                <th>City</th>
+                <th>Status</th>
+                <th>Distance</th>
+              </tr>
+            </thead>
+            <tbody>
+              {donors.map((donor, index) => (
+                <tr key={index}>
+                  <td>{donor.Name}</td>
+                  <td>{donor.blood_grp}</td>
+                  <td>{donor.city}</td>
+                  <td>{donor.status}</td>
+                  <td>{donor.distance !== null && donor.distance !== undefined ? donor.distance : "N/A"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
 
-            {/*
+      {/*
         ======================================================
         BACKEND CALL STRUCTURE — Available Donors
         ======================================================
@@ -293,6 +294,6 @@ export default function AvailableDonors({ donors = [] }) {
         - 404 → no donors found
         - 500 → server error
       */}
-        </>
-    );
+    </>
+  );
 }

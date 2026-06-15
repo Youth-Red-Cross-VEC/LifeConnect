@@ -13,7 +13,7 @@ export default function ManageDonorsAdmin({ donors = [], onSearch, onModifyDonor
   };
 
   return (
-    <AdminBase active="manage-donors">
+    <AdminBase active="donors">
       <style>{`
         .manage-donors-container {
           padding: 20px;

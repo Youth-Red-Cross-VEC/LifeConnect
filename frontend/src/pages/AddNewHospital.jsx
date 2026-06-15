@@ -1,4 +1,7 @@
-import React, { useState } from "react";
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import AdminBase from "./AdminBase";
+import { api } from "../services/api";
 
 export default function AddNewHospital() {
     const [formData, setFormData] = useState({
@@ -13,6 +16,9 @@ export default function AddNewHospital() {
     });
 
     const [submitting, setSubmitting] = useState(false);
+    const [error, setError] = useState("");
+    const [success, setSuccess] = useState("");
+    const navigate = useNavigate();
 
     const handleChange = (e) => {
         const { name, value } = e.target;
@@ -21,29 +27,34 @@ export default function AddNewHospital() {
 
     const handleSubmit = async (e) => {
         e.preventDefault();
+        setError("");
+        setSuccess("");
         setSubmitting(true);
-
-        // eslint-disable-next-line no-console
-        console.log("Adding new hospital:", formData);
-
-        // TODO: Replace with actual API call
-        // await fetch('/api/hospitals/add', {
-        //   method: 'POST',
-        //   headers: { 'Content-Type': 'application/json' },
-        //   body: JSON.stringify(formData)
-        // });
-
-        await new Promise((res) => setTimeout(res, 500));
-        setSubmitting(false);
+        try {
+            const res = await api.addHospital(formData);
+            if (res && (res.success || res.hospital_id)) {
+                setSuccess("Hospital added successfully!");
+                setTimeout(() => navigate("/admin/hospitals/all"), 1500);
+            } else {
+                setError(res?.message || "Failed to add hospital. Please try again.");
+            }
+        } catch {
+            setError("Server error. Please try again.");
+        } finally {
+            setSubmitting(false);
+        }
     };
 
     return (
+        <AdminBase active="hospitals">
         <div className="page">
             <div className="center">
                 <div className="card" style={{ maxWidth: "600px", width: "100%" }}>
                     <h2 className="title">Hospital Details</h2>
 
                     <form onSubmit={handleSubmit}>
+                        {error && <div className="error" style={{ marginBottom: "12px" }}>{error}</div>}
+                        {success && <div style={{ background: "#d4edda", color: "#155724", padding: "10px", borderRadius: "6px", marginBottom: "12px" }}>{success}</div>}
                         <div className="stack">
                             <label className="field">
                                 <span>Hospital Name:</span>
@@ -208,5 +219,6 @@ export default function AddNewHospital() {
         - 500 → server error
       */}
         </div>
+        </AdminBase>
     );
 }

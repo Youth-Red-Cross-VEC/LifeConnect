@@ -65,7 +65,7 @@ export default function DonorDetailsUpdateConfirmation({ details = sampleDetails
           <button className="primary" onClick={() => (window.location.href = "/")}>
             Home
           </button>
-          <button className="ghost-btn" onClick={() => (window.location.href = "/donor-login")}>
+          <button className="primary" onClick={() => (window.location.href = "/donor/login")}>
             Donor Login
           </button>
         </div>
