@@ -22,9 +22,10 @@ config = context.config
 
 # Set database URL from settings
 settings = get_settings()
-config.set_main_option("sqlalchemy.url", settings.DATABASE_URL.replace(
-    "postgresql://", "postgresql+asyncpg://"
-))
+db_url = settings.DATABASE_URL
+if not db_url.startswith("postgresql+asyncpg://"):
+    db_url = db_url.replace("postgresql://", "postgresql+asyncpg://")
+config.set_main_option("sqlalchemy.url", db_url)
 
 # Interpret the config file for Python logging
 if config.config_file_name is not None:
