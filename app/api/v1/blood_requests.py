@@ -193,7 +193,8 @@ async def approve_blood_request(
     
     Admin only endpoint.
     """
-    admin_id = "ADM-placeholder"  # TODO: Get from current_admin
+    # TODO: Uncomment current_admin dependency above and replace placeholder below
+    admin_id = "ADM-placeholder"  # Will become: admin_id = current_admin.id
 
     request_repo = BloodRequestRepository(session)
     donor_repo = DonorRepository(session)
@@ -285,7 +286,8 @@ async def close_blood_request(
     Optionally sends certificates to donors.
     Admin only endpoint.
     """
-    admin_id = "ADM-placeholder"  # TODO: Get from current_admin
+    # TODO: Uncomment current_admin dependency above and replace placeholder below
+    admin_id = "ADM-placeholder"  # Will become: admin_id = current_admin.id
 
     request_repo = BloodRequestRepository(session)
     donor_repo = DonorRepository(session)

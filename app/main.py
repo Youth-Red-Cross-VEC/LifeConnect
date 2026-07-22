@@ -17,7 +17,6 @@ from app.core.logging import setup_logging
 from app.core.exceptions import LifeConnectException
 from app.core.rate_limiter import setup_rate_limiting
 from app.api.v1 import router as v1_router
-from app.api.auth import router as auth_router
 from app.tasks import setup_scheduled_jobs
 
 logger = logging.getLogger(__name__)
@@ -126,7 +125,6 @@ def create_app() -> FastAPI:
 
     # Include routers
     app.include_router(v1_router)
-    app.include_router(auth_router, prefix="/api/v1")
 
     return app
 

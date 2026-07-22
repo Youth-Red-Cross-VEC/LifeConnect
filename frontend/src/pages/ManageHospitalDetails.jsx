@@ -18,9 +18,9 @@ export default function ManageHospitalDetails() {
     const fetchHospitals = async () => {
       setIsLoading(true);
       try {
-        const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+        const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
         const token = localStorage.getItem("lc_token");
-        const res = await fetch(`${BASE_URL}/get_hospitals`, {
+        const res = await fetch(`${BASE_URL}/api/v1/hospitals/`, {
           headers: token ? { Authorization: `Bearer ${token}` } : {},
         });
         const data = await res.json();
@@ -48,18 +48,16 @@ export default function ManageHospitalDetails() {
     setIsLoading(true);
     setError("");
     try {
-      const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+      const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
       const token = localStorage.getItem("lc_token");
-      const res = await fetch(`${BASE_URL}/delete_hospital_details`, {
-        method: "POST",
+      const res = await fetch(`${BASE_URL}/api/v1/hospitals/${hospitalId}`, {
+        method: "DELETE",
         headers: {
-          "Content-Type": "application/json",
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify({ id: hospitalId }),
       });
       const data = await res.json();
-      if (data && (data.success || data.message)) {
+      if (res.ok && data && (data.success || data.message)) {
         setHospitals((prev) => prev.filter((h) => h.id !== hospitalId));
       } else {
         setError(data?.message || "Failed to delete hospital.");

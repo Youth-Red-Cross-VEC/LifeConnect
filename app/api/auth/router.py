@@ -512,7 +512,7 @@ async def request_admin_password_reset(
             logger.info(f"Admin password reset for non-existent email: {data.email}")
         else:
             otp = str(random.randint(100000, 999999))
-            otp_store[admin.email] = otp
+            store_otp(admin.email, otp)
             email_service = get_email_service()
             await email_service.send_otp_email(admin.email, otp, admin.name)
             logger.info(f"Admin password reset requested for: {admin.id}")

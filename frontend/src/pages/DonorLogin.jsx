@@ -27,12 +27,12 @@ export default function DonorLogin() {
     setError("");
     setIsLoading(true);
     try {
-      const res = await api.donorLogin(form);
-      if (res && (res.success || res.token || !res.error)) {
-        if (res.token) setToken(res.token);
+      const res = await api.donorLogin({ email: form.email, password: form.password });
+      if (res && res.access_token) {
+        setToken(res.access_token);
         navigate("/donor/dashboard");
       } else {
-        setError(res?.message || "Invalid credentials or CAPTCHA");
+        setError(res?.detail || res?.message || "Invalid credentials");
         refreshCaptcha();
       }
     } catch {

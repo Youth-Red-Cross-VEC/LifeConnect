@@ -1,5 +1,6 @@
 // Central API service for LifeConnect
-const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+// All backend routes are under /api/v1 (FastAPI on port 8000).
+const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
 // ─── Token Utilities ─────────────────────────────────────────────────────────
 
@@ -23,17 +24,9 @@ async function request(endpoint, options = {}, redirectOn401 = "/donor/login") {
 
   let body = options.body;
   if (body && typeof body === "object" && !(body instanceof FormData)) {
-    if (options.isForm) {
-      headers["Content-Type"] = "application/x-www-form-urlencoded";
-      const params = new URLSearchParams();
-      for (const [key, val] of Object.entries(body)) {
-        params.append(key, val !== null && val !== undefined ? val : "");
-      }
-      body = params.toString();
-    } else {
-      headers["Content-Type"] = "application/json";
-      body = JSON.stringify(body);
-    }
+    // FastAPI expects JSON bodies — never send URL-encoded form data
+    headers["Content-Type"] = "application/json";
+    body = JSON.stringify(body);
   }
 
   const response = await fetch(`${BASE_URL}${endpoint}`, {
@@ -57,142 +50,131 @@ async function request(endpoint, options = {}, redirectOn401 = "/donor/login") {
 export const api = {
   // Admin Auth
   adminLogin: (data) =>
-    request("/validate_admin", {
+    request("/api/v1/auth/admin/login", {
       method: "POST",
       body: data,
-      isForm: true,
     }, "/admin/login"),
 
   adminSignup: (data) =>
-    request("/register_new_admin", {
+    request("/api/v1/admins/register", {
       method: "POST",
       body: data,
-      isForm: true,
     }, "/admin/login"),
 
   adminForgotPassword: (data) =>
-    request("/manage_forget_password_admin", {
+    request("/api/v1/auth/admin/password-reset/request", {
       method: "POST",
       body: data,
-      isForm: true,
     }, "/admin/login"),
 
   adminOTPValidation: (data) =>
-    request("/otp_validation_admin", {
+    request("/api/v1/auth/admin/password-reset/confirm", {
       method: "POST",
       body: data,
-      isForm: true,
     }, "/admin/login"),
 
   adminNewPassword: (data) =>
-    request("/new_password_admin", {
+    request("/api/v1/auth/admin/password-reset/confirm", {
       method: "POST",
       body: data,
-      isForm: true,
     }, "/admin/login"),
 
   // Donor Auth
   donorLogin: (data) =>
-    request("/donor_login_validation", {
+    request("/api/v1/auth/donor/login", {
       method: "POST",
       body: data,
-      isForm: true,
     }),
 
   donorRegister: (data) =>
-    request("/register_new_donors", {
+    request("/api/v1/donors/register", {
       method: "POST",
       body: data,
-      isForm: true,
     }),
 
   donorOTPValidation: (data) =>
-    request("/verify_otp_and_data_injection", {
+    request("/api/v1/auth/donor/password-reset/confirm", {
       method: "POST",
       body: data,
-      isForm: true,
     }),
 
   donorForgotPassword: (data) =>
-    request("/manage_forget_password_donor", {
+    request("/api/v1/auth/donor/password-reset/request", {
       method: "POST",
       body: data,
-      isForm: true,
     }),
 
   donorNewPassword: (data) =>
-    request("/new_password_donor", {
+    request("/api/v1/auth/donor/password-reset/confirm", {
       method: "POST",
       body: data,
-      isForm: true,
     }),
 
   // Donors
   getDonors: (params) => {
     const query = new URLSearchParams(params).toString();
-    return request(`/get_donors${query ? `?${query}` : ""}`, {
+    return request(`/api/v1/donors/${query ? `?${query}` : ""}`, {
       method: "GET",
     });
   },
 
-  getBloodBanks: () =>
-    request("/get_blood_banks", {
-      method: "GET",
-    }),
-
-  // Requests & Queries
-  generateBloodRequest: (data) =>
-    request("/generate_bloodRequest", {
-      method: "POST",
-      body: data,
-      isForm: true,
-    }),
-
-  submitQuery: (data) =>
-    request("/get_user_query", {
-      method: "POST",
-      body: data,
-      isForm: true,
-    }),
-
-  // Profile
-  modifyDonorDetails: (data) =>
-    request("/modify_donor_details", {
-      method: "POST",
-      body: data,
-      isForm: true,
-    }),
-
-  updateAdminDetails: (data) =>
-    request("/update_admin_details", {
-      method: "POST",
-      body: data,
-      isForm: true,
-    }, "/admin/login"),
-
-  getAdminDashboardData: async () => {
-    if (!getToken()) {
-      return {
-        admin_name: "Guest Admin",
-        active_donors_count: 120,
-        total_requests: 45,
-        notifications: { Pending: 3, Expired: 1, Not_Approved: 2 },
-      };
-    }
-    return request("/admin/dashboard_data", {
-      method: "GET",
-    }, "/admin/login");
+  // TODO: No FastAPI equivalent for /get_blood_banks.
+  // The blood banks feature was in the old Flask backend but has no
+  // corresponding endpoint in the new FastAPI backend (/app/api/v1/).
+  // Either implement GET /api/v1/hospitals/ as a replacement (hospitals serve
+  // as blood banks), or add a dedicated /api/v1/blood-banks/ endpoint.
+  // For now this call will fail — do NOT replace with a guessed route.
+  getBloodBanks: () => {
+    console.warn(
+      "[api.getBloodBanks] No backend endpoint exists for blood banks in the FastAPI backend. " +
+      "This call will fail until a /api/v1/blood-banks/ endpoint is implemented."
+    );
+    return Promise.resolve({ error: "No blood banks endpoint available", items: [] });
   },
 
-  getAdminAnalytics: () =>
-    request("/admin/render_analytics_page", {
+  // Blood Requests
+  generateBloodRequest: (data) =>
+    request("/api/v1/blood-requests/", {
+      method: "POST",
+      body: data,
+    }),
+
+  // Queries
+  submitQuery: (data) =>
+    request("/api/v1/queries/", {
+      method: "POST",
+      body: data,
+    }),
+
+  // Donor profile
+  modifyDonorDetails: (donorId, data) =>
+    request(`/api/v1/donors/${donorId}`, {
+      method: "PATCH",
+      body: data,
+    }),
+
+  // Admin profile
+  updateAdminDetails: (adminId, data) =>
+    request(`/api/v1/admins/${adminId}`, {
+      method: "PUT",
+      body: data,
+    }, "/admin/login"),
+
+  // Admin dashboard / analytics
+  getAdminDashboardData: () =>
+    request("/api/v1/analytics/dashboard", {
       method: "GET",
     }, "/admin/login"),
 
+  getAdminAnalytics: () =>
+    request("/api/v1/analytics/dashboard", {
+      method: "GET",
+    }, "/admin/login"),
+
+  // Hospitals
   addHospital: (data) =>
-    request("/add_hospital", {
+    request("/api/v1/hospitals/", {
       method: "POST",
       body: data,
-      isForm: true,
     }, "/admin/login"),
 };

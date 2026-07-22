@@ -61,41 +61,42 @@ export default function RegisterDonor() {
     setIsLoading(true);
 
     try {
-      // The backend expects field names matching the Flask request.form names
       const payload = {
-        Email: form.Email,
+        name: `${form.first_name} ${form.last_name || ""}`.trim(),
+        email: form.Email,
         password: form.password,
-        confirm_password: form.confirm_password,
-        first_name: form.first_name,
-        last_name: form.last_name,
-        age: form.age,
-        dob: form.dob,
-        contact_number: form.contact_number,
-        secondary_contact: form.secondary_contact,
-        marital_status: form.marital_status,
-        aadhar_number: form.aadhar_number,
         blood_group: form.blood_group,
-        previous_blood_donation_status: form.previous_blood_donation_status,
-        last_donation: form.last_donation,
-        blood_donated_count: form.blood_donated_count,
-        address: form.address,
-        city: form.city,
-        state: form.state,
-        pincode: form.pincode,
-        country: form.country,
-        disease_name: form.disease_name,
-        description: form.description,
-        agree_terms: "on", // standard checkbox value in flask
+        personal_details: {
+          first_name: form.first_name,
+          last_name: form.last_name || null,
+          age: parseInt(form.age, 10),
+          date_of_birth: form.dob,
+          contact_number: form.contact_number,
+          secondary_contact_number: form.secondary_contact || null,
+          marital_status: form.marital_status || null,
+          aadhar_number: form.aadhar_number || null,
+        },
+        address_details: {
+          address: form.address,
+          pincode: form.pincode,
+          country: form.country || "India",
+          state: form.state || "TamilNadu",
+          city: form.city,
+        },
+        disease_details: {
+          name: form.disease_name || "None",
+          description: form.description || null,
+        },
       };
 
       const res = await api.donorRegister(payload);
-      if (res && (res.success || !res.error)) {
+      if (res && (res.id || res.email || res.success || !res.error)) {
         setSuccess("Registration successful! Redirecting to confirmation...");
         setTimeout(() => {
           navigate("/donor/registration-confirmation");
         }, 1500);
       } else {
-        setError(res?.message || "Registration failed. Please try again.");
+        setError(res?.detail?.[0]?.msg || res?.message || "Registration failed. Please try again.");
       }
     } catch {
       setError("Server error. Try again.");

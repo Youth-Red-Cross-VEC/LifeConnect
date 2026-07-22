@@ -4,7 +4,7 @@ import { api } from "../services/api";
 
 export default function AdminDashboard() {
   const [data, setData] = useState({
-    admin_name: "",
+    admin_name: "Admin",
     active_donors_count: 0,
     total_requests: 0,
     notifications: {},
@@ -16,15 +16,20 @@ export default function AdminDashboard() {
     const fetchDashboardData = async () => {
       try {
         const res = await api.getAdminDashboardData();
-        if (res && !res.error) {
+        if (res && !res.error && !res.detail) {
+          // FastAPI backend returns { requests: { total, pending, ... }, donors: { active, total }, hospitals: { total } }
           setData({
             admin_name: res.admin_name || "Admin",
-            active_donors_count: res.active_donors_count || 0,
-            total_requests: res.total_requests || 0,
-            notifications: res.notifications || {},
+            active_donors_count: res.donors?.active ?? res.donors?.total ?? res.active_donors_count ?? 0,
+            total_requests: res.requests?.total ?? res.total_requests ?? 0,
+            notifications: {
+              Pending: res.requests?.pending || 0,
+              Expired: res.requests?.expired || 0,
+              Declined: res.requests?.declined || 0,
+            },
           });
         } else {
-          setError(res?.error || "Failed to load dashboard data.");
+          setError(res?.detail || res?.error || "Failed to load dashboard data.");
         }
       } catch {
         setError("Error connecting to dashboard API.");

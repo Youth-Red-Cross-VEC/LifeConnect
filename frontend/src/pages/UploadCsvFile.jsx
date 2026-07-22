@@ -17,7 +17,7 @@ export default function UploadCsvFile() {
     setLoading(true);
     setAlert({ type: "", message: "" });
     try {
-      const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+      const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
       const token = localStorage.getItem("lc_token");
       const formData = new FormData();
       formData.append("file", file);
@@ -48,14 +48,24 @@ export default function UploadCsvFile() {
 
   const handleDonorSubmit = async (e) => {
     e.preventDefault();
-    await uploadCsv(donorFile, "/upload_donor_csv", setDonorLoading);
+    // TODO: No FastAPI endpoint currently exists for POST /upload_donor_csv.
+    // await uploadCsv(donorFile, "/upload_donor_csv", setDonorLoading);
+    setAlert({
+      type: "danger",
+      message: "CSV upload for donors is not yet implemented on the FastAPI backend.",
+    });
     setDonorFile(null);
     if (donorRef.current) donorRef.current.value = "";
   };
 
   const handleHospitalSubmit = async (e) => {
     e.preventDefault();
-    await uploadCsv(hospitalFile, "/upload_hospital_csv", setHospitalLoading);
+    // TODO: No FastAPI endpoint currently exists for POST /upload_hospital_csv.
+    // await uploadCsv(hospitalFile, "/upload_hospital_csv", setHospitalLoading);
+    setAlert({
+      type: "danger",
+      message: "CSV upload for hospitals is not yet implemented on the FastAPI backend.",
+    });
     setHospitalFile(null);
     if (hospitalRef.current) hospitalRef.current.value = "";
   };

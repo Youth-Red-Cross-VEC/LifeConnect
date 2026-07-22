@@ -10,6 +10,7 @@ const AdminLogin = () => {
   });
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  // TODO: No backend endpoint exists for /captcha.gif in FastAPI. Flagged for review.
   const [captchaUrl, setCaptchaUrl] = useState(`/captcha.gif?t=${Date.now()}`);
   const navigate = useNavigate();
 
@@ -26,13 +27,12 @@ const AdminLogin = () => {
     setError("");
     setIsLoading(true);
     try {
-      const res = await api.adminLogin(form);
-      // If backend returns redirect/success
-      if (res && (res.success || res.token || !res.error)) {
-        if (res.token) setToken(res.token);
+      const res = await api.adminLogin({ email: form.email, password: form.password });
+      if (res && res.access_token) {
+        setToken(res.access_token);
         navigate("/admin/dashboard");
       } else {
-        setError(res?.message || "Invalid credentials or CAPTCHA");
+        setError(res?.detail || res?.message || "Invalid credentials");
         refreshCaptcha();
       }
     } catch {

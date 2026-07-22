@@ -39,51 +39,26 @@ export default function AdminSignup() {
     setStep(1);
   };
 
-  // Submit Step 2 to register and trigger OTP email
+  // Submit Step 2 to register admin directly
   const handleSubmitSignup = async (e) => {
     e.preventDefault();
     setError("");
     setIsLoading(true);
     try {
-      const res = await api.adminSignup(form);
-      if (res && res.success) {
-        setSignupResponseData(res);
-        setStep(3);
-      } else {
-        setError(res?.message || "Signup failed. Please try again.");
-      }
-    } catch {
-      setError("Server error. Try again.");
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Submit Step 3 (OTP) to inject data into DB
-  const handleSubmitOTP = async (e) => {
-    e.preventDefault();
-    setError("");
-    setIsLoading(true);
-    try {
       const payload = {
-        otp: otp,
-        generated_otp: signupResponseData.one_time_password,
-        email: signupResponseData.email,
+        email: form.email,
         password: form.password,
-        username: signupResponseData.username,
-        vec_registration_number: signupResponseData.vec_registration_number,
-        date_of_birth: signupResponseData.date_of_birth,
-        mobile_number: signupResponseData.mobile_number,
-        department: signupResponseData.department,
-        admin_id: signupResponseData.admin_id,
-        authentication_id: signupResponseData.authentication_id,
+        username: form.username,
+        vec_registration_number: form.vec_registration_number,
+        date_of_birth: form.date_of_birth,
+        mobile_number: form.mobile_number,
+        department: form.department || null,
       };
-
-      const res = await api.donorOTPValidation(payload);
-      if (res && res.success) {
+      const res = await api.adminSignup(payload);
+      if (res && (res.id || res.email || res.success || !res.error)) {
         navigate("/admin/login");
       } else {
-        setError(res?.message || "Invalid OTP. Please try again.");
+        setError(res?.detail?.[0]?.msg || res?.message || "Signup failed. Please try again.");
       }
     } catch {
       setError("Server error. Try again.");
@@ -481,7 +456,7 @@ export default function AdminSignup() {
 
           {/* Step dots */}
           <div className="as-steps">
-            {[1, 2, 3].map((s) => (
+            {[1, 2].map((s) => (
               <div
                 key={s}
                 className={`as-step-dot${step === s ? " active" : ""}`}
@@ -623,33 +598,6 @@ export default function AdminSignup() {
                   {isLoading ? "Signing up…" : "Sign Up"}
                 </button>
               </div>
-            </form>
-          )}
-
-          {/* ── Step 3: OTP Verification ── */}
-          {step === 3 && (
-            <form onSubmit={handleSubmitOTP}>
-              <div className="as-success-msg">
-                ✅ An OTP has been sent to the administrator email for
-                verification. Please check and enter it below.
-              </div>
-              <div className="as-form-group">
-                <label htmlFor="otp">Enter OTP</label>
-                <input
-                  type="text"
-                  id="otp"
-                  name="otp"
-                  value={otp}
-                  onChange={(e) => setOtp(e.target.value)}
-                  required
-                  disabled={isLoading}
-                  placeholder="6-digit OTP"
-                  maxLength={6}
-                />
-              </div>
-              <button type="submit" className="as-btn" disabled={isLoading}>
-                {isLoading ? "Verifying…" : "Verify OTP"}
-              </button>
             </form>
           )}
         </div>
