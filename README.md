@@ -36,4 +36,4 @@ Visit our website and explore how Life Blood Squad can support you and your love
 
 **Contact Us**  
 📞 Phone: 9150450401  
-📧 Email: yrclifeconnect@gmail.com
+📧 Email: yrcveclifeconnect@gmail.com
