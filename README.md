@@ -36,4 +36,4 @@ The Youth Red Cross (YRC) is a humanitarian organization that encourages student
 
 **Contact Us**  
 📞 Phone: 9150450401  
-📧 Email: yrclifeconnect@gmail.com
+📧 Email: yrcveclifeconnect@gmail.com
