@@ -13,6 +13,7 @@ from pathlib import Path
 from app.services.certificate_service import get_certificate_service, CertificateService
 from app.services.email_service import get_email_service, EmailService
 from app.schemas.common import SuccessResponse
+from app.api.auth.deps import get_current_admin
 
 router = APIRouter(prefix="/certificates", tags=["Certificates"])
 
@@ -63,6 +64,7 @@ async def generate_certificate(
     background_tasks: BackgroundTasks,
     cert_service: CertificateService = Depends(get_certificate_service),
     email_service: EmailService = Depends(get_email_service),
+    current_admin = Depends(get_current_admin),
 ):
     """
     Generate a blood donation certificate for a donor.
@@ -129,7 +131,7 @@ async def download_certificate(
 )
 async def list_certificates(
     cert_service: CertificateService = Depends(get_certificate_service),
-    # current_admin = Depends(get_current_admin),  # TODO: Auth
+    current_admin = Depends(get_current_admin),
 ):
     """List all generated certificates."""
     certificates = await cert_service.list_certificates()
@@ -148,7 +150,7 @@ async def list_certificates(
 async def delete_certificate(
     filename: str,
     cert_service: CertificateService = Depends(get_certificate_service),
-    # current_admin = Depends(get_current_admin),  # TODO: Auth
+    current_admin = Depends(get_current_admin),
 ):
     """Delete a certificate file."""
     deleted = await cert_service.delete_certificate(filename)

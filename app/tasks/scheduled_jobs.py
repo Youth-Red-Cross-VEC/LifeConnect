@@ -45,18 +45,18 @@ async def increment_donor_ages(db: Database) -> None:
     Runs daily at midnight.
     """
     try:
-        from sqlalchemy import select, update
+        from sqlalchemy import select, extract
 
         async with db.session() as session:
             current_date = date.today()
 
-            # Find donors whose birthday is today
+            # Find donors whose birthday is today using SQL extract() — correct approach
             query = (
                 select(PersonalDetails)
-                .join(DonorDetail)
+                .join(DonorDetail, DonorDetail.personal_details_id == PersonalDetails.id)
                 .where(
-                    PersonalDetails.date_of_birth.month == current_date.month,
-                    PersonalDetails.date_of_birth.day == current_date.day,
+                    extract("month", PersonalDetails.date_of_birth) == current_date.month,
+                    extract("day", PersonalDetails.date_of_birth) == current_date.day,
                 )
             )
 

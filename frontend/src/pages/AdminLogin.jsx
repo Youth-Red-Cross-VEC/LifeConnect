@@ -1,47 +1,52 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { api, setToken } from "../services/api";
+import { useGoogleReCaptcha } from "react-google-recaptcha-v3";
+import { api, setToken, setUserType, setUserId, setUsername } from "../services/api";
 
 const AdminLogin = () => {
   const [form, setForm] = useState({
     email: "",
     password: "",
-    captcha: "",
   });
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  // TODO: No backend endpoint exists for /captcha.gif in FastAPI. Flagged for review.
-  const [captchaUrl, setCaptchaUrl] = useState(`/captcha.gif?t=${Date.now()}`);
+  const { executeRecaptcha } = useGoogleReCaptcha();
   const navigate = useNavigate();
-
-  const refreshCaptcha = () => {
-    setCaptchaUrl(`/captcha.gif?t=${Date.now()}`);
-  };
 
   const handleChange = (e) => {
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
   };
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = useCallback(async (e) => {
     e.preventDefault();
     setError("");
+    if (!executeRecaptcha) {
+      setError("reCAPTCHA not ready. Please wait and try again.");
+      return;
+    }
     setIsLoading(true);
     try {
-      const res = await api.adminLogin({ email: form.email, password: form.password });
+      const token = await executeRecaptcha("admin_login");
+      const res = await api.adminLogin({
+        email: form.email,
+        password: form.password,
+        recaptcha_token: token,
+      });
       if (res && res.access_token) {
         setToken(res.access_token);
+        setUserType("admin");
+        setUserId(res.user_id || "");
+        setUsername(res.username || "Admin");
         navigate("/admin/dashboard");
       } else {
         setError(res?.detail || res?.message || "Invalid credentials");
-        refreshCaptcha();
       }
     } catch {
       setError("Server error. Try again.");
-      refreshCaptcha();
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [executeRecaptcha, form, navigate]);
 
   return (
     <div className="admin-login-wrapper">
@@ -268,14 +273,7 @@ const AdminLogin = () => {
           text-align: center;
         }
 
-        .admin-login-wrapper .captcha-img-element {
-          height: 60px;
-          width: 150px;
-          border: 2px solid #b30001;
-          border-radius: 10px;
-          margin-bottom: 10px;
-          cursor: pointer;
-        }
+        /* reCAPTCHA v3 badge is injected by Google automatically */
 
         /* Responsive Design */
         @media (max-width: 768px) {
@@ -452,25 +450,6 @@ const AdminLogin = () => {
             onChange={handleChange}
             required
             disabled={isLoading}
-          />
-
-          <label htmlFor="captcha">Captcha:</label>
-          <input
-            type="text"
-            id="captcha"
-            name="captcha"
-            value={form.captcha}
-            onChange={handleChange}
-            required
-            disabled={isLoading}
-          />
-
-          <img
-            src={captchaUrl}
-            className="captcha-img-element"
-            alt="Captcha Image"
-            onClick={refreshCaptcha}
-            title="Click to refresh Captcha"
           />
 
           <button type="submit" disabled={isLoading}>

@@ -1,16 +1,64 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import AdminBase from "./AdminBase";
+import { api, getUserId, getUsername } from "../services/api";
 
-export default function QueryPageAdmin({ queries = [], onSubmitResponse }) {
+export default function QueryPageAdmin() {
+  const [queries, setQueries] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState("");
   const [responses, setResponses] = useState({});
+  const [actionMsg, setActionMsg] = useState("");
+
+  useEffect(() => {
+    const fetchQueries = async () => {
+      try {
+        const res = await api.getQueries();
+        if (res && res.items) {
+          setQueries(res.items);
+        } else if (Array.isArray(res)) {
+          setQueries(res);
+        } else {
+          setError(res?.detail || "Failed to load queries.");
+        }
+      } catch {
+        setError("Server error. Could not load queries.");
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    fetchQueries();
+  }, []);
 
   const handleChange = (queryId, value) => {
     setResponses((prev) => ({ ...prev, [queryId]: value }));
   };
 
-  const handleSubmit = (e, queryId) => {
+  const handleSubmit = async (e, queryId) => {
     e.preventDefault();
-    onSubmitResponse?.({ query_id: queryId, admin_response: responses[queryId] ?? "" });
+    setActionMsg("");
+    const responseText = responses[queryId]?.trim();
+    if (!responseText) {
+      setActionMsg("❌ Please type a response before submitting.");
+      return;
+    }
+    try {
+      const res = await api.replyToQuery(queryId, {
+        admin_response: responseText,
+        admin_id: getUserId() || "ADMIN",
+        admin_name: getUsername() || "Admin",
+      });
+      if (res && res.id) {
+        setActionMsg(`✅ Response submitted for query #${queryId}.`);
+        setQueries((prev) =>
+          prev.map((q) => (q.id === queryId ? { ...q, admin_response: responseText } : q))
+        );
+        setResponses((prev) => ({ ...prev, [queryId]: "" }));
+      } else {
+        setActionMsg(`❌ ${res?.detail || "Failed to submit response."}`);
+      }
+    } catch {
+      setActionMsg("❌ Server error submitting response.");
+    }
   };
 
   return (
@@ -96,6 +144,18 @@ export default function QueryPageAdmin({ queries = [], onSubmitResponse }) {
 
       <main className="query-admin-main">
         <h1>Admin Query Management</h1>
+        {actionMsg && (
+          <p style={{ textAlign: "center", color: actionMsg.startsWith("❌") ? "#c82333" : "#28a745", marginBottom: "12px" }}>
+            {actionMsg}
+          </p>
+        )}
+        {isLoading ? (
+          <p style={{ textAlign: "center", padding: "40px" }}>Loading queries...</p>
+        ) : error ? (
+          <p style={{ textAlign: "center", color: "#c82333", padding: "40px" }}>{error}</p>
+        ) : queries.length === 0 ? (
+          <p style={{ textAlign: "center", padding: "40px" }}>No queries found.</p>
+        ) : (
         <table className="query-table">
           <thead>
             <tr>
@@ -133,6 +193,7 @@ export default function QueryPageAdmin({ queries = [], onSubmitResponse }) {
             ))}
           </tbody>
         </table>
+        )}
       </main>
 
       {/*

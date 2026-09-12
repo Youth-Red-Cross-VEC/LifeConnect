@@ -1,27 +1,63 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import AdminBase from "./AdminBase";
+import { api, getUserId, getUsername } from "../services/api";
 
-export default function NewRequestsAdmin({
-    requests = [],
-    onSendEmailToDonors,
-    onDeclineRequest,
-}) {
+export default function NewRequestsAdmin() {
+    const [requests, setRequests] = useState([]);
+    const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState("");
     const [openId, setOpenId] = useState(null);
-    const [approvedIds, setApprovedIds] = useState(new Set());
+    const [actionMsg, setActionMsg] = useState("");
+
+    useEffect(() => {
+        const fetchPending = async () => {
+            try {
+                const res = await api.getPendingRequests();
+                if (Array.isArray(res)) {
+                    setRequests(res);
+                } else {
+                    setError(res?.detail || "Failed to load requests.");
+                }
+            } catch {
+                setError("Server error. Could not load pending requests.");
+            } finally {
+                setIsLoading(false);
+            }
+        };
+        fetchPending();
+    }, []);
 
     const toggleDetails = (id) =>
         setOpenId((prev) => (prev === id ? null : id));
 
-    const handleApprove = (id) => {
-        setApprovedIds((prev) => new Set(prev).add(id));
+    const handleApprove = async (requestId) => {
+        setActionMsg("");
+        try {
+            const res = await api.approveRequest(requestId);
+            if (res && (res.message || !res.detail)) {
+                setActionMsg(`✅ Request ${requestId} approved. Donors notified.`);
+                setRequests((prev) => prev.filter((r) => r.request_id !== requestId));
+            } else {
+                setActionMsg(`❌ ${res?.detail || "Failed to approve request."}`);
+            }
+        } catch {
+            setActionMsg("❌ Server error during approval.");
+        }
     };
 
-    const handleSendEmail = (request) => {
-        onSendEmailToDonors?.(request);
-    };
-
-    const handleDecline = (requestId) => {
-        onDeclineRequest?.(requestId);
+    const handleDecline = async (requestId) => {
+        setActionMsg("");
+        try {
+            const res = await api.declineRequest(requestId);
+            if (res && (res.message || !res.detail)) {
+                setActionMsg(`Request ${requestId} declined.`);
+                setRequests((prev) => prev.filter((r) => r.request_id !== requestId));
+            } else {
+                setActionMsg(`❌ ${res?.detail || "Failed to decline request."}`);
+            }
+        } catch {
+            setActionMsg("❌ Server error during decline.");
+        }
     };
 
     return (
@@ -116,6 +152,18 @@ export default function NewRequestsAdmin({
 
             <main className="new-requests-main">
                 <h1>New Blood Requests</h1>
+                {actionMsg && (
+                    <p style={{ textAlign: "center", color: actionMsg.startsWith("❌") ? "#c82333" : "#28a745", marginBottom: "12px" }}>
+                        {actionMsg}
+                    </p>
+                )}
+                {isLoading ? (
+                    <p style={{ textAlign: "center", padding: "40px" }}>Loading requests...</p>
+                ) : error ? (
+                    <p style={{ textAlign: "center", color: "#c82333", padding: "40px" }}>{error}</p>
+                ) : requests.length === 0 ? (
+                    <p style={{ textAlign: "center", padding: "40px" }}>No pending requests.</p>
+                ) : (
                 <table className="new-requests-table">
                     <thead>
                         <tr>
@@ -129,10 +177,10 @@ export default function NewRequestsAdmin({
                     </thead>
                     <tbody>
                         {requests.map((request) => {
-                            const isOpen = openId === request.request_id;
-                            const isApproved = approvedIds.has(request.request_id);
+                            const rid = request.request_id || request.id;
+                            const isOpen = openId === rid;
                             return (
-                                <FragmentRow key={request.request_id}>
+                                <FragmentRow key={rid}>
                                     <tr>
                                         <td>{request.patient_name}</td>
                                         <td>{request.blood_group}</td>
@@ -143,25 +191,26 @@ export default function NewRequestsAdmin({
                                             <button
                                                 className="view-btn"
                                                 type="button"
-                                                onClick={() => toggleDetails(request.request_id)}
+                                                onClick={() => toggleDetails(rid)}
                                             >
                                                 View Request
                                             </button>
                                         </td>
                                     </tr>
 
-                                    <tr className={`details-row ${isOpen ? "open" : ""}`} id={`details${request.request_id}`}>
+                                    <tr className={`details-row ${isOpen ? "open" : ""}`} id={`details${rid}`}>
                                         <td colSpan={6}>
                                             <table className="details-inner-table">
                                                 <tbody>
                                                     {[
-                                                        ["Request ID", request.request_id],
+                                                        ["Request ID", rid],
                                                         ["Patient Name", request.patient_name],
                                                         ["Patient Age", request.patient_age],
                                                         ["Blood Group", request.blood_group],
                                                         ["Units Required", request.units_required],
                                                         ["Hospital Name", request.hospital_name],
                                                         ["Hospital Address", request.hospital_address],
+
                                                         ["Hospital ID", request.hospital_id],
                                                         ["Status", request.status],
                                                         ["Due Date", request.due_date],
@@ -179,28 +228,17 @@ export default function NewRequestsAdmin({
                                             </table>
 
                                             <div className="action-buttons">
-                                                {!isApproved && (
-                                                    <button
-                                                        className="approve-btn"
-                                                        type="button"
-                                                        onClick={() => handleApprove(request.request_id)}
-                                                    >
-                                                        Approve Request
-                                                    </button>
-                                                )}
-                                                {isApproved && (
-                                                    <button
-                                                        className="send-btn"
-                                                        type="button"
-                                                        onClick={() => handleSendEmail(request)}
-                                                    >
-                                                        Send Requests
-                                                    </button>
-                                                )}
+                                                <button
+                                                    className="approve-btn"
+                                                    type="button"
+                                                    onClick={() => handleApprove(rid)}
+                                                >
+                                                    Approve &amp; Notify Donors
+                                                </button>
                                                 <button
                                                     className="decline-btn"
                                                     type="button"
-                                                    onClick={() => handleDecline(request.request_id)}
+                                                    onClick={() => handleDecline(rid)}
                                                 >
                                                     Decline Request
                                                 </button>
@@ -212,6 +250,7 @@ export default function NewRequestsAdmin({
                         })}
                     </tbody>
                 </table>
+                )}
             </main>
 
             {/*

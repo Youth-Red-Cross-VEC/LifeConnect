@@ -20,8 +20,8 @@ class TestHospitalEndpoints:
         assert data["total"] == 0
 
     @pytest.mark.asyncio
-    async def test_create_hospital(self, client: AsyncClient):
-        """Test creating a new hospital."""
+    async def test_create_hospital(self, admin_client: AsyncClient):
+        """Test creating a new hospital (admin required)."""
         hospital_data = {
             "hospital_name": "Test Hospital",
             "hospital_address": "123 Healthcare Road",
@@ -33,7 +33,7 @@ class TestHospitalEndpoints:
             "landmark": "Near Test Station"
         }
         
-        response = await client.post("/api/v1/hospitals/", json=hospital_data)
+        response = await admin_client.post("/api/v1/hospitals/", json=hospital_data)
         
         assert response.status_code == 201
         data = response.json()
@@ -42,8 +42,8 @@ class TestHospitalEndpoints:
         assert "id" in data
 
     @pytest.mark.asyncio
-    async def test_get_hospital(self, client: AsyncClient):
-        """Test getting a hospital by ID."""
+    async def test_get_hospital(self, admin_client: AsyncClient):
+        """Test getting a hospital by ID (admin required to create)."""
         # First create a hospital
         hospital_data = {
             "hospital_name": "Apollo Hospital",
@@ -54,11 +54,11 @@ class TestHospitalEndpoints:
             "country": "India"
         }
         
-        create_response = await client.post("/api/v1/hospitals/", json=hospital_data)
+        create_response = await admin_client.post("/api/v1/hospitals/", json=hospital_data)
         hospital_id = create_response.json()["id"]
         
-        # Then get it
-        response = await client.get(f"/api/v1/hospitals/{hospital_id}")
+        # Then get it (public endpoint)
+        response = await admin_client.get(f"/api/v1/hospitals/{hospital_id}")
         
         assert response.status_code == 200
         assert response.json()["hospital_name"] == "Apollo Hospital"

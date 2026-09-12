@@ -19,6 +19,7 @@ from app.schemas.query import (
     QueryListResponse,
 )
 from app.schemas.common import SuccessResponse, PaginatedResponse
+from app.api.auth.deps import get_current_admin
 
 router = APIRouter(prefix="/queries", tags=["Support Queries"])
 
@@ -99,7 +100,7 @@ async def list_queries(
         description="Filter by status: 'pending' or 'resolved'"
     ),
     session: AsyncSession = Depends(get_db),
-    # current_admin = Depends(get_current_admin),  # TODO: Auth
+    current_admin = Depends(get_current_admin),
 ):
     """
     Get paginated list of all support queries.
@@ -137,7 +138,7 @@ async def list_queries(
 )
 async def get_pending_queries(
     session: AsyncSession = Depends(get_db),
-    # current_admin = Depends(get_current_admin),  # TODO: Auth
+    current_admin = Depends(get_current_admin),
 ):
     """Get all queries awaiting admin response."""
     repo = QueryRepository(session)
@@ -177,20 +178,21 @@ async def reply_to_query(
     query_id: int,
     data: QueryReply,
     session: AsyncSession = Depends(get_db),
-    # current_admin = Depends(get_current_admin),  # TODO: Auth
+    current_admin = Depends(get_current_admin),
 ):
     """
     Add admin response to a user query.
-    
+
     Once responded, the query is marked as resolved.
+    Admin identity is taken from the JWT token, not the request body.
     """
     repo = QueryRepository(session)
     
     query = await repo.add_admin_response(
         query_id=query_id,
         admin_response=data.admin_response,
-        admin_id=data.admin_id,
-        admin_name=data.admin_name,
+        admin_id=current_admin.id,
+        admin_name=current_admin.username,
     )
     
     if not query:
@@ -212,7 +214,7 @@ async def reply_to_query(
 async def delete_query(
     query_id: int,
     session: AsyncSession = Depends(get_db),
-    # current_admin = Depends(get_current_admin),  # TODO: Auth
+    current_admin = Depends(get_current_admin),
 ):
     """Delete a support query."""
     repo = QueryRepository(session)

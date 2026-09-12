@@ -1,6 +1,9 @@
 import { useState, useRef } from "react";
 import AdminBase from "./AdminBase";
 
+// Use the same base URL as the central api.js service
+const BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
+
 export default function UploadCsvFile() {
   const [donorFile, setDonorFile] = useState(null);
   const [hospitalFile, setHospitalFile] = useState(null);
@@ -17,7 +20,6 @@ export default function UploadCsvFile() {
     setLoading(true);
     setAlert({ type: "", message: "" });
     try {
-      const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
       const token = localStorage.getItem("lc_token");
       const formData = new FormData();
       formData.append("file", file);

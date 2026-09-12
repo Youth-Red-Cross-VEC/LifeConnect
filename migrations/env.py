@@ -14,8 +14,25 @@ import sys
 # Add app directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from app.config import get_settings
-from app.models import Base
+# Import directly to avoid triggering app/__init__.py which imports app.main
+import importlib.util, pathlib
+
+def _import_direct(module_name: str, file_path: str):
+    """Import a module directly from its file path, bypassing package __init__."""
+    spec = importlib.util.spec_from_file_location(module_name, file_path)
+    mod = importlib.util.module_from_spec(spec)  # type: ignore[arg-type]
+    sys.modules[module_name] = mod
+    spec.loader.exec_module(mod)  # type: ignore[union-attr]
+    return mod
+
+_root = pathlib.Path(__file__).parent.parent
+_config_mod = _import_direct("app.config", str(_root / "app" / "config.py"))
+get_settings = _config_mod.get_settings
+
+# Import models — must come after sys.path is set so transitive imports work
+from app.models.base import Base  # noqa: E402
+# Ensure all model tables are registered on metadata
+import app.models  # noqa: E402, F401
 
 # Alembic Config object
 config = context.config

@@ -10,9 +10,9 @@ class TestDonorEndpoints:
     """Test donor management endpoints."""
 
     @pytest.mark.asyncio
-    async def test_list_donors_empty(self, client: AsyncClient):
-        """Test listing donors when database is empty."""
-        response = await client.get("/api/v1/donors/")
+    async def test_list_donors_empty(self, admin_client: AsyncClient):
+        """Test listing donors when database is empty (admin required)."""
+        response = await admin_client.get("/api/v1/donors/")
         
         assert response.status_code == 200
         data = response.json()

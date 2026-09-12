@@ -18,6 +18,7 @@ from app.schemas.common import MessageResponse, PaginatedResponse
 from app.models.hospital import HospitalDetails
 from app.utils import generate_hospital_id
 from app.core.exceptions import not_found_exception, duplicate_exception
+from app.api.auth.deps import get_current_admin
 
 router = APIRouter(prefix="/hospitals", tags=["Hospitals"])
 
@@ -26,7 +27,7 @@ router = APIRouter(prefix="/hospitals", tags=["Hospitals"])
 async def create_hospital(
     data: HospitalCreate,
     session: AsyncSession = Depends(get_db),
-    # current_admin = Depends(get_current_admin),  # TODO: Auth
+    current_admin = Depends(get_current_admin),
 ):
     """Create a new hospital (admin only)."""
     repo = HospitalRepository(session)
@@ -61,6 +62,33 @@ async def list_hospitals(
     session: AsyncSession = Depends(get_db),
 ):
     """List all hospitals with pagination."""
+    repo = HospitalRepository(session)
+    offset = (page - 1) * page_size
+
+    hospitals, total = await repo.get_all(
+        offset=offset,
+        limit=page_size,
+        city=city,
+        search=search,
+    )
+
+    return PaginatedResponse.create(
+        items=[HospitalResponse.model_validate(h) for h in hospitals],
+        total=total,
+        page=page,
+        page_size=page_size,
+    )
+
+
+@router.get("/blood-banks", response_model=PaginatedResponse)
+async def list_blood_banks(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=200),
+    city: Optional[str] = Query(default=None),
+    search: Optional[str] = Query(default=None),
+    session: AsyncSession = Depends(get_db),
+):
+    """List hospitals as blood banks (public endpoint for blood bank lookup)."""
     repo = HospitalRepository(session)
     offset = (page - 1) * page_size
 
@@ -127,7 +155,7 @@ async def update_hospital(
     hospital_id: str,
     data: HospitalUpdate,
     session: AsyncSession = Depends(get_db),
-    # current_admin = Depends(get_current_admin),
+    current_admin = Depends(get_current_admin),
 ):
     """Update hospital details (admin only)."""
     repo = HospitalRepository(session)
@@ -149,7 +177,7 @@ async def update_hospital(
 async def delete_hospital(
     hospital_id: str,
     session: AsyncSession = Depends(get_db),
-    # current_admin = Depends(get_current_admin),
+    current_admin = Depends(get_current_admin),
 ):
     """Delete a hospital (admin only)."""
     repo = HospitalRepository(session)

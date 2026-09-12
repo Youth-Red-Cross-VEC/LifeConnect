@@ -8,7 +8,7 @@ Protected endpoints require authentication (handled by partner's auth module).
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
-from datetime import datetime, date
+from datetime import date
 
 from app.core.database import get_db
 from app.repositories.donor import DonorRepository
@@ -35,9 +35,7 @@ from app.utils import (
     generate_auth_id,
 )
 from app.core.exceptions import duplicate_exception, not_found_exception
-
-# Import auth dependency placeholder (partner will implement)
-# from app.api.auth.deps import get_current_donor, get_current_admin
+from app.api.auth.deps import get_current_donor, get_current_admin, get_current_donor_or_admin
 
 router = APIRouter(prefix="/donors", tags=["Donors"])
 
@@ -59,8 +57,8 @@ async def register_donor(
     if await repo.exists_by_email(data.email):
         raise duplicate_exception("Donor", "email", data.email)
 
-    # Hash password using bcrypt (secure)
-    from app.core.security import hash_password
+    # Hash password using bcrypt via passlib (canonical implementation)
+    from app.api.auth.utils import hash_password
     hashed_password = hash_password(data.password)
 
     # Create related entities
@@ -126,7 +124,7 @@ async def list_donors(
     active_only: bool = Query(default=False),
     name_search: Optional[str] = Query(default=None),
     session: AsyncSession = Depends(get_db),
-    # current_admin = Depends(get_current_admin),  # TODO: Uncomment after auth
+    current_admin = Depends(get_current_admin),
 ):
     """
     List all donors with pagination and filters.
@@ -156,14 +154,23 @@ async def list_donors(
 async def get_donor(
     donor_id: str,
     session: AsyncSession = Depends(get_db),
-    # current_user = Depends(get_current_donor_or_admin),  # TODO: Auth
+    current_user = Depends(get_current_donor_or_admin),
 ):
     """
     Get donor details by ID.
-    
-    Donors can view their own profile.
-    Admins can view any donor.
+
+    Access rules:
+    - Admins can view any donor's full profile.
+    - Donors can only view their own profile (403 if donor_id != their own ID).
     """
+    # Donors can only view their own profile
+    if current_user.get("user_type") == "donor" and current_user.get("user_id") != donor_id:
+        from fastapi import HTTPException as _HTTPException
+        raise _HTTPException(
+            status_code=403,
+            detail="Donors can only view their own profile",
+        )
+
     repo = DonorRepository(session)
     donor = await repo.get_by_id(donor_id)
 
@@ -178,13 +185,20 @@ async def update_donor(
     donor_id: str,
     data: DonorUpdate,
     session: AsyncSession = Depends(get_db),
-    # current_donor = Depends(get_current_donor),  # TODO: Auth
+    current_donor = Depends(get_current_donor),
 ):
     """
     Update donor profile.
-    
-    Donors can only update their own profile.
+
+    Donors can only update their own profile — verifies caller is the same donor.
     """
+    from fastapi import HTTPException, status as http_status
+    if current_donor.id != donor_id:
+        raise HTTPException(
+            status_code=http_status.HTTP_403_FORBIDDEN,
+            detail="You can only update your own profile",
+        )
+
     repo = DonorRepository(session)
     donor = await repo.get_by_id(donor_id)
 
@@ -203,12 +217,12 @@ async def update_donor(
     return DonorResponse.model_validate(donor)
 
 
-@router.get("/blood-group/{blood_group}", response_model=List[DonorListResponse])
+@router.get("/blood-group/{blood_group}", response_model=list[DonorListResponse])
 async def get_donors_by_blood_group(
     blood_group: str,
     active_only: bool = Query(default=True),
     session: AsyncSession = Depends(get_db),
-    # current_admin = Depends(get_current_admin),  # TODO: Auth
+    current_admin = Depends(get_current_admin),
 ):
     """
     Get all donors with a specific blood group.
@@ -229,7 +243,7 @@ async def get_donors_by_blood_group(
 async def deactivate_donor(
     donor_id: str,
     session: AsyncSession = Depends(get_db),
-    # current_admin = Depends(get_current_admin),  # TODO: Auth
+    current_admin = Depends(get_current_admin),
 ):
     """
     Deactivate a donor (admin only).
@@ -250,7 +264,7 @@ async def deactivate_donor(
 async def activate_donor(
     donor_id: str,
     session: AsyncSession = Depends(get_db),
-    # current_admin = Depends(get_current_admin),  # TODO: Auth
+    current_admin = Depends(get_current_admin),
 ):
     """
     Activate a donor (admin only).

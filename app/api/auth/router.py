@@ -5,41 +5,20 @@ Login, logout, and password reset endpoints for donors and admins.
 """
 import random
 import time
-from app.services.email_service import get_email_service
+import logging
+from datetime import datetime
+from typing import Optional
 
-# OTP store with expiry: {email: {"otp": "123456", "expires_at": timestamp}}
-otp_store = {}
-
-def store_otp(email: str, otp: str):
-    """Store OTP with 10 minute expiry."""
-    otp_store[email] = {
-        "otp": otp,
-        "expires_at": time.time() + 600  # 10 minutes
-    }
-
-def verify_otp(email: str, otp: str) -> bool:
-    """Verify OTP and check expiry."""
-    record = otp_store.get(email)
-    if not record:
-        return False
-    if time.time() > record["expires_at"]:
-        del otp_store[email]  # Clean up expired OTP
-        return False
-    if record["otp"] != otp:
-        return False
-    del otp_store[email]  # Clean up after successful verify
-    return True
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from pydantic import BaseModel, EmailStr
-from datetime import datetime
-from typing import Optional
-import logging
 
 from app.core.database import get_db
+from app.core.rate_limiter import limiter
 from app.models.donor import DonorDetail
 from app.models.admin import AdminDetails
+from app.services.email_service import get_email_service
 from app.api.auth.utils import (
     hash_password,
     verify_password,
@@ -50,6 +29,31 @@ from app.api.auth.utils import (
 from app.api.auth.deps import get_current_donor, get_current_admin
 
 logger = logging.getLogger(__name__)
+
+# OTP store with expiry: {email: {"otp": "123456", "expires_at": timestamp}}
+otp_store: dict[str, dict[str, object]] = {}
+
+
+def store_otp(email: str, otp: str):
+    """Store OTP with 10 minute expiry."""
+    otp_store[email] = {
+        "otp": otp,
+        "expires_at": time.time() + 600  # 10 minutes
+    }
+
+
+def verify_otp(email: str, otp: str) -> bool:
+    """Verify OTP and check expiry."""
+    record = otp_store.get(email)
+    if not record:
+        return False
+    if time.time() > float(record["expires_at"]):  # type: ignore[arg-type]
+        del otp_store[email]  # Clean up expired OTP
+        return False
+    if record["otp"] != otp:
+        return False
+    del otp_store[email]  # Clean up after successful verify
+    return True
 
 # ============================================================
 # REQUEST/RESPONSE SCHEMAS
@@ -127,7 +131,9 @@ router = APIRouter(
 # ============================================================
 
 @router.post("/donor/login", response_model=TokenResponse)
+@limiter.limit("5/minute")
 async def donor_login(
+    request: Request,
     credentials: LoginRequest,
     session: AsyncSession = Depends(get_db)
 ):
@@ -170,9 +176,8 @@ async def donor_login(
                 detail="Invalid email or password",
             )
         
-        # Update last login
-        donor.last_login_date = datetime.now().date()
-        donor.last_login_time = datetime.now().time()
+        # Update last login — store full datetime
+        donor.last_login_date = datetime.now()
         await session.commit()
         
         logger.info(f"Donor {donor.id} logged in successfully")
@@ -207,7 +212,9 @@ async def donor_login(
 
 
 @router.post("/admin/login", response_model=TokenResponse)
+@limiter.limit("5/minute")
 async def admin_login(
+    request: Request,
     credentials: LoginRequest,
     session: AsyncSession = Depends(get_db)
 ):
@@ -250,9 +257,8 @@ async def admin_login(
                 detail="Invalid email or password",
             )
         
-        # Update last login
-        admin.last_login_date = datetime.now().date()
-        admin.last_login_time = datetime.now().time()
+        # Update last login — store full datetime
+        admin.last_login_date = datetime.now()
         await session.commit()
         
         logger.info(f"Admin {admin.id} logged in successfully")
@@ -273,7 +279,7 @@ async def admin_login(
             token_type="bearer",
             user_id=admin.id,
             user_type="admin",
-            username=admin.name
+            username=admin.username
         )
         
     except HTTPException:
@@ -363,13 +369,15 @@ async def refresh_token(
         
         logger.info(f"Token refreshed for {user_type} {user.id}")
         
+        username = user.name if user_type == "donor" else user.username  # type: ignore[union-attr]
+        
         return TokenResponse(
             access_token=access_token,
             refresh_token=refresh_token,
             token_type="bearer",
             user_id=user.id,
             user_type=user_type,
-            username=user.name
+            username=username
         )
         
     except HTTPException:
@@ -387,7 +395,9 @@ async def refresh_token(
 # ============================================================
 
 @router.post("/donor/password-reset/request", response_model=MessageResponse)
+@limiter.limit("3/minute")
 async def request_donor_password_reset(
+    request: Request,
     data: PasswordResetRequest,
     session: AsyncSession = Depends(get_db)
 ):
@@ -470,12 +480,7 @@ async def confirm_donor_password_reset(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Donor not found",
             )
-        # TODO: Verify OTP
-        # otp_record = await verify_otp(donor.id, data.otp)
-        # if not otp_record or otp_record.is_expired():
-        #     raise HTTPException(status_code=400, detail="Invalid or expired OTP")
-        
-        # For now, just check OTP format
+
         if not verify_otp(data.email, data.otp):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,detail="Invalid or expired OTP",)
         # Hash new password
@@ -497,7 +502,9 @@ async def confirm_donor_password_reset(
 
 
 @router.post("/admin/password-reset/request", response_model=MessageResponse)
+@limiter.limit("3/minute")
 async def request_admin_password_reset(
+    request: Request,
     data: PasswordResetRequest,
     session: AsyncSession = Depends(get_db)
 ):
@@ -514,7 +521,7 @@ async def request_admin_password_reset(
             otp = str(random.randint(100000, 999999))
             store_otp(admin.email, otp)
             email_service = get_email_service()
-            await email_service.send_otp_email(admin.email, otp, admin.name)
+            await email_service.send_otp_email(admin.email, otp, admin.username)
             logger.info(f"Admin password reset requested for: {admin.id}")
 
         return MessageResponse(

@@ -194,3 +194,23 @@ async def get_current_admin(
         )
     
     return admin
+
+
+async def get_current_donor_or_admin(
+    token: str = Depends(oauth2_scheme),
+    session: AsyncSession = Depends(get_db),
+) -> Dict[str, Any]:
+    """
+    Get current authenticated user — either a donor OR an admin.
+
+    Use on endpoints that should be accessible by:
+    - Admins (any donor's record)
+    - Donors (only their own record — caller must additionally verify donor_id matches)
+
+    Returns:
+        dict: {"user_id": str, "user_type": "donor"|"admin", "email": str}
+
+    Raises:
+        HTTPException: 401 if not authenticated
+    """
+    return await get_current_user(token, session)

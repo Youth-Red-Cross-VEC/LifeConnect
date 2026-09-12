@@ -7,6 +7,6 @@ Or for production:
     gunicorn app.main:app -w 4 -k uvicorn.workers.UvicornWorker
 """
 
-from app.main import app
-
-__all__ = ["app"]
+# Note: The FastAPI `app` instance is defined in app.main, not imported here.
+# Access it via `app.main.app` or use `uvicorn app.main:app` directly.
+# Importing it here would trigger the full startup chain on any submodule import.

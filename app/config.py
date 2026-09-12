@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     # External APIs
     GOOGLE_MAPS_API_KEY: str
     GOOGLE_MAPS_BASE_URL: str = "https://maps.googleapis.com/maps/api/distancematrix/json"
+    RECAPTCHA_SECRET_KEY: Optional[str] = None  # Add when reCAPTCHA API keys are available
 
     # Email Configuration
     MAIL_SERVER: str

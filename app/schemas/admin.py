@@ -14,6 +14,7 @@ class AdminCreate(BaseModel):
     date_of_birth: date
     mobile_number: str = Field(..., min_length=10, max_length=36)
     department: Optional[str] = Field(None, max_length=50)
+    invite_otp: str = Field(..., min_length=6, max_length=6, description="6-digit OTP sent to this email by an existing admin via POST /admins/invite")
 
     @field_validator("password")
     @classmethod
@@ -25,6 +26,11 @@ class AdminCreate(BaseModel):
         if not any(c.isdigit() for c in v):
             raise ValueError("Password must contain at least one digit")
         return v
+
+
+class AdminInviteRequest(BaseModel):
+    """Schema for requesting an admin invite OTP."""
+    email: EmailStr = Field(..., description="Email address of the person to invite as admin")
 
 
 class AdminUpdate(BaseModel):

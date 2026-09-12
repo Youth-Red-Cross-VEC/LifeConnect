@@ -1,47 +1,52 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { api, setToken } from "../services/api";
+import { useGoogleReCaptcha } from "react-google-recaptcha-v3";
+import { api, setToken, setUserType, setUserId, setUsername } from "../services/api";
 
 export default function DonorLogin() {
   const [form, setForm] = useState({
     email: "",
     password: "",
-    captcha: "",
   });
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [captchaUrl, setCaptchaUrl] = useState(`/captcha.gif?t=${Date.now()}`);
+  const { executeRecaptcha } = useGoogleReCaptcha();
   const navigate = useNavigate();
-
-  const refreshCaptcha = () => {
-    setForm((prev) => ({ ...prev, captcha: "" }));
-    setCaptchaUrl(`/captcha.gif?t=${Date.now()}`);
-  };
 
   const handleChange = (e) => {
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
   };
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = useCallback(async (e) => {
     e.preventDefault();
     setError("");
+    if (!executeRecaptcha) {
+      setError("reCAPTCHA not ready. Please wait and try again.");
+      return;
+    }
     setIsLoading(true);
     try {
-      const res = await api.donorLogin({ email: form.email, password: form.password });
+      const token = await executeRecaptcha("donor_login");
+      const res = await api.donorLogin({
+        email: form.email,
+        password: form.password,
+        recaptcha_token: token,
+      });
       if (res && res.access_token) {
         setToken(res.access_token);
+        setUserType("donor");
+        setUserId(res.user_id || "");
+        setUsername(res.username || "");
         navigate("/donor/dashboard");
       } else {
         setError(res?.detail || res?.message || "Invalid credentials");
-        refreshCaptcha();
       }
     } catch {
       setError("Server error. Try again.");
-      refreshCaptcha();
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [executeRecaptcha, form, navigate]);
 
   return (
     <div className="donor-login-wrapper">
@@ -292,68 +297,7 @@ export default function DonorLogin() {
           text-align: center;
         }
 
-        /* ── CAPTCHA SECTION ── */
-        .donor-login-wrapper .captcha-section {
-          display: flex;
-          flex-direction: column;
-          align-items: flex-start;
-          margin-bottom: 16px;
-          gap: 6px;
-        }
-
-        .donor-login-wrapper .captcha-row {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          width: 100%;
-        }
-
-        .donor-login-wrapper .captcha-img-element {
-          height: 56px;
-          width: 140px;
-          border: 2px solid #b30001;
-          border-radius: 8px;
-          cursor: pointer;
-          display: block;
-          flex-shrink: 0;
-          transition: opacity 0.2s;
-          object-fit: cover;
-        }
-
-        .donor-login-wrapper .captcha-img-element:hover {
-          opacity: 0.82;
-        }
-
-        .donor-login-wrapper .captcha-refresh-btn {
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          background: #fff;
-          border: 2px solid #b30001;
-          border-radius: 8px;
-          color: #b30001;
-          cursor: pointer;
-          padding: 0;
-          width: 36px;
-          height: 36px;
-          font-size: 1.1rem;
-          flex-shrink: 0;
-          transition: background 0.2s, color 0.2s;
-          title: "Refresh Captcha";
-        }
-
-        .donor-login-wrapper .captcha-refresh-btn:hover {
-          background: #b30001;
-          color: white;
-        }
-
-        .donor-login-wrapper .captcha-hint {
-          font-size: 0.75rem;
-          color: #888;
-          font-weight: normal;
-          text-align: left;
-          margin: 0;
-        }
+        /* reCAPTCHA v3 badge is injected by Google automatically */
 
         /* Responsive Design */
         @media (max-width: 768px) {
@@ -566,42 +510,6 @@ export default function DonorLogin() {
             required
             disabled={isLoading}
           />
-
-          {/* CAPTCHA section */}
-          <label htmlFor="donor-captcha">Captcha:</label>
-          <div className="captcha-section">
-            <div className="captcha-row">
-              <img
-                src={captchaUrl}
-                className="captcha-img-element"
-                alt="CAPTCHA Image — click to refresh"
-                onClick={refreshCaptcha}
-                title="Click to refresh CAPTCHA"
-              />
-              <button
-                type="button"
-                className="captcha-refresh-btn"
-                onClick={refreshCaptcha}
-                title="Refresh CAPTCHA"
-                aria-label="Refresh CAPTCHA"
-                disabled={isLoading}
-              >
-                &#x21bb;
-              </button>
-            </div>
-            <span className="captcha-hint">Click the image or ↺ to get a new CAPTCHA</span>
-            <input
-              type="text"
-              id="donor-captcha"
-              name="captcha"
-              value={form.captcha}
-              onChange={handleChange}
-              placeholder="Type the characters shown above"
-              required
-              disabled={isLoading}
-              autoComplete="off"
-            />
-          </div>
 
           <button type="submit" disabled={isLoading}>
             {isLoading ? "Logging in…" : "Login"}

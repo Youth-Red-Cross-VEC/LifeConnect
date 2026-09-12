@@ -2,6 +2,9 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import AdminBase from "./AdminBase";
 
+// Use the same base URL as the central api.js service
+const BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
+
 const sampleHospitals = [
   { id: "HOSP-01", hospital_name: "Apollo Hospital", city: "Chennai", state: "Tamil Nadu" },
   { id: "HOSP-02", hospital_name: "Fortis Malar", city: "Chennai", state: "Tamil Nadu" },
@@ -18,7 +21,6 @@ export default function ManageHospitalDetails() {
     const fetchHospitals = async () => {
       setIsLoading(true);
       try {
-        const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
         const token = localStorage.getItem("lc_token");
         const res = await fetch(`${BASE_URL}/api/v1/hospitals/`, {
           headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -48,7 +50,6 @@ export default function ManageHospitalDetails() {
     setIsLoading(true);
     setError("");
     try {
-      const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
       const token = localStorage.getItem("lc_token");
       const res = await fetch(`${BASE_URL}/api/v1/hospitals/${hospitalId}`, {
         method: "DELETE",

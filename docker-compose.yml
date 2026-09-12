@@ -1,4 +1,4 @@
-# LifeConnect API Docker Configuration
+# LifeConnect Docker Configuration
 
 services:
   # PostgreSQL Database
@@ -19,7 +19,7 @@ services:
       timeout: 5s
       retries: 5
 
-  # FastAPI Application
+  # FastAPI Backend
   api:
     build:
       context: .
@@ -28,17 +28,35 @@ services:
     ports:
       - "8000:8000"
     env_file:
-      - .env  # Load all environment variables from .env file
+      - .env
     environment:
       # Override DATABASE_URL to use Docker network hostname
       - DATABASE_URL=postgresql://${POSTGRES_USER:-lifeconnect}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-lifeconnect}
+      # Allow requests from the frontend container and local dev
+      - ALLOWED_ORIGINS=["http://localhost:3000","http://localhost:5173","http://localhost:80","http://localhost","http://frontend:80"]
     volumes:
-      # Mount static files so certificates persist and are accessible on host
       - ./app/static:/code/app/static
     depends_on:
       postgres:
         condition: service_healthy
-    command: python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+    command: sh -c "python -m alembic upgrade head && python -m uvicorn app.main:app --host 0.0.0.0 --port 8000"
+
+  # React Frontend (served via nginx)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # In Docker, the browser hits the nginx proxy which forwards /api/* to the api service.
+        # So VITE_API_URL should be empty string (same origin) — nginx handles the proxy.
+        VITE_API_URL: ""
+        # reCAPTCHA v3 site key — baked into the JS bundle at build time
+        VITE_RECAPTCHA_SITE_KEY: "6LcaqHstAAAAADlXBhXn_zh-JC6WVY7L_fPm98TP"
+    container_name: lifeconnect-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - api
 
 volumes:
   postgres_data:

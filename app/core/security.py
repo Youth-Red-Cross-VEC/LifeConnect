@@ -1,7 +1,10 @@
 """
-Password Hashing Utilities.
+Password Hashing Utilities — DEPRECATED.
 
-Uses bcrypt for secure password hashing.
+This module is kept for backward compatibility only.
+All new code should use `app.api.auth.utils.hash_password` and
+`app.api.auth.utils.verify_password` (passlib/bcrypt implementation)
+which is the single canonical password-hashing source.
 """
 
 import bcrypt

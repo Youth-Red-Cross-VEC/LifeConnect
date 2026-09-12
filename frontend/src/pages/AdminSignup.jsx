@@ -4,6 +4,8 @@ import { api } from "../services/api";
 
 export default function AdminSignup() {
   const [step, setStep] = useState(1);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [otp, setOtp] = useState("");
   const [form, setForm] = useState({
     email: "",
     username: "",
@@ -14,9 +16,8 @@ export default function AdminSignup() {
     mobile_number: "",
     department: "",
   });
-  const [otp, setOtp] = useState("");
-  const [signupResponseData, setSignupResponseData] = useState(null);
   const [error, setError] = useState("");
+  const [successMsg, setSuccessMsg] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
 
@@ -24,14 +25,27 @@ export default function AdminSignup() {
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
   };
 
-  const handleNext = (e) => {
+  // Step 1 — Request invite OTP (admin must already be logged in to send this)
+  const handleRequestOTP = async (e) => {
     e.preventDefault();
-    if (form.password !== form.confirm_password) {
-      setError("Passwords do not match");
-      return;
-    }
     setError("");
-    setStep(2);
+    setSuccessMsg("");
+    setIsLoading(true);
+    try {
+      const res = await api.adminInvite({ email: inviteEmail });
+      if (res && res.message) {
+        setSuccessMsg(res.message);
+        // Pre-fill the registration email
+        setForm((prev) => ({ ...prev, email: inviteEmail }));
+        setStep(2);
+      } else {
+        setError(res?.detail || "Failed to send invite OTP. Make sure you are logged in as an admin.");
+      }
+    } catch {
+      setError("Server error. Try again.");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handlePrev = () => {
@@ -39,10 +53,18 @@ export default function AdminSignup() {
     setStep(1);
   };
 
-  // Submit Step 2 to register admin directly
+  // Step 2 — Submit full registration with OTP
   const handleSubmitSignup = async (e) => {
     e.preventDefault();
     setError("");
+    if (form.password !== form.confirm_password) {
+      setError("Passwords do not match");
+      return;
+    }
+    if (!otp || otp.length !== 6) {
+      setError("Please enter the 6-digit OTP sent to your email.");
+      return;
+    }
     setIsLoading(true);
     try {
       const payload = {
@@ -53,12 +75,13 @@ export default function AdminSignup() {
         date_of_birth: form.date_of_birth,
         mobile_number: form.mobile_number,
         department: form.department || null,
+        invite_otp: otp,
       };
       const res = await api.adminSignup(payload);
       if (res && (res.id || res.email || res.success || !res.error)) {
         navigate("/admin/login");
       } else {
-        setError(res?.detail?.[0]?.msg || res?.message || "Signup failed. Please try again.");
+        setError(res?.detail?.[0]?.msg || res?.detail || res?.message || "Signup failed. Please try again.");
       }
     } catch {
       setError("Server error. Try again.");
@@ -465,10 +488,54 @@ export default function AdminSignup() {
           </div>
 
           {error && <div className="as-error">{error}</div>}
+          {successMsg && <div style={{color:'#2e7d32',background:'#e8f5e9',borderRadius:8,padding:'10px 14px',marginBottom:16,fontSize:13}}>{successMsg}</div>}
 
-          {/* ── Step 1: Account Info ── */}
+          {/* ── Step 1: Request Invite OTP ── */}
           {step === 1 && (
-            <form onSubmit={handleNext}>
+            <form onSubmit={handleRequestOTP}>
+              <p style={{fontSize:13,color:'#555',marginBottom:18,lineHeight:1.6}}>
+                Admin registration requires an invite OTP. Enter the email of the
+                person to invite, then click <strong>Send OTP</strong>. An existing
+                admin must be logged in to authorise this.
+              </p>
+              <div className="as-form-group">
+                <label htmlFor="invite_email">New Admin Email</label>
+                <input
+                  type="email"
+                  id="invite_email"
+                  value={inviteEmail}
+                  onChange={(e) => setInviteEmail(e.target.value)}
+                  placeholder="newadmin@example.com"
+                  required
+                  disabled={isLoading}
+                />
+              </div>
+              <button type="submit" className="as-btn" disabled={isLoading}>
+                {isLoading ? "Sending OTP…" : "Send Invite OTP →"}
+              </button>
+              <div className="as-login-link">
+                Already have an account? <a href="/admin/login">Log in</a>
+              </div>
+            </form>
+          )}
+
+          {/* ── Step 2: OTP + Personal Details ── */}
+          {step === 2 && (
+            <form onSubmit={handleSubmitSignup}>
+              <div className="as-form-group">
+                <label htmlFor="otp">6-Digit Invite OTP</label>
+                <input
+                  type="text"
+                  id="otp"
+                  value={otp}
+                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                  placeholder="Enter OTP sent to your email"
+                  required
+                  maxLength={6}
+                  disabled={isLoading}
+                  style={{letterSpacing:6,fontWeight:700,fontSize:18,textAlign:'center'}}
+                />
+              </div>
               <div className="as-form-group">
                 <label htmlFor="email">Email</label>
                 <input
@@ -521,18 +588,6 @@ export default function AdminSignup() {
                   disabled={isLoading}
                 />
               </div>
-              <button type="submit" className="as-btn">
-                Next →
-              </button>
-              <div className="as-login-link">
-                Already have an account? <a href="/admin/login">Log in</a>
-              </div>
-            </form>
-          )}
-
-          {/* ── Step 2: Personal Details ── */}
-          {step === 2 && (
-            <form onSubmit={handleSubmitSignup}>
               <div className="as-form-group">
                 <label htmlFor="vec_registration_number">
                   VEC Registration Number

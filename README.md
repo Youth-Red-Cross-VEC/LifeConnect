@@ -1,34 +1,34 @@
-# LifeConnect - Youth Red Cross Blood Donation Site
+# LifeConnect - Youth Red Cross Blood Donation Platform
 
-Welcome to the **LifeConnect** website! This platform has been created by the Youth Red Cross (YRC) at Velammal Engineering College to streamline blood donation services and foster a community of active blood donors. Our mission is to make it easy for people in need to find blood donors quickly, while also promoting safe and efficient blood donation practices across our community.
+Welcome to **LifeConnect**! This platform was built by the Youth Red Cross (YRC) at Velammal Engineering College to streamline blood donation services and foster a community of active blood donors. Our mission is to make it easy for people in need to find blood donors quickly, while also promoting safe and efficient blood donation practices across our community.
 
-## About Life Blood Squad
+## About LifeConnect
 
-Life Blood Squad is a digital platform designed to bring blood donors and recipients together in one place, allowing requests to be generated and matched efficiently. It is a dedicated resource for those in need of blood, simplifying the donation process with user-friendly features and reliable information. Here, we prioritize safety, transparency, and quick communication to connect blood requests with verified, willing donors.
+LifeConnect is a modern, full-stack web application designed to bring blood donors and recipients together in one place. It is a dedicated resource for those in need of blood, simplifying the donation process with user-friendly features and reliable information. We prioritize safety, transparency, and quick communication to connect blood requests with verified, willing donors.
+
+## Tech Stack
+
+LifeConnect has been completely rewritten into a modern split-stack architecture:
+- **Backend**: FastAPI (Python 3.10+), SQLAlchemy (Async), Alembic, Pydantic, Passlib (bcrypt), JOSE (JWT)
+- **Frontend**: React, Vite, React Router, Recharts
+- **Database**: PostgreSQL (Production) / SQLite (Development)
 
 ## Features
 
 - **Request Blood Donations**: Users can submit blood requests that are then reviewed and matched with eligible donors based on blood type and location.
 - **Donor Management**: Active and willing donors can register with our platform to be notified of relevant blood donation opportunities.
+- **Admin Dashboard**: Comprehensive analytics and metrics powered by Recharts, allowing admins to track donations and system health.
 - **Request Approval and Tracking**: Admins review each request and coordinate directly with hospitals and recipients, ensuring a smooth and timely process.
-- **Statistics and Analytics**: Track the impact of blood donations, with information on active donors, completed donations, and more.
-- **Contact Information**: In case of queries, support contact details are provided to help users with any questions.
+- **Secure Authentication**: JWT-based authentication with role-based access control (RBAC) separating Admin and Donor privileges. (Invited-only Admins).
+- **Hospital Management**: Maintain a registry of partner hospitals to quickly associate blood requests.
+
+## Getting Started
+
+See the setup guide at `docs/setup.md` for detailed instructions on how to run this project locally.
 
 ## About the Youth Red Cross (YRC)
 
-The Youth Red Cross (YRC) is a humanitarian organization that encourages students to engage in community service and health initiatives. Through Life Blood Squad, YRC promotes the value of voluntary blood donation as a life-saving resource and raises awareness about the significance of a connected and compassionate society.
-
-## How It Works
-
-1. **Sign Up**: New users, including donors, can easily sign up on the platform.
-2. **Submit Blood Requests**: Anyone in need of blood can submit a request that goes through a review process.
-3. **Donor Matching**: Our platform connects requests with compatible donors within our network.
-4. **Real-Time Tracking**: Each request’s status is updated, so users are informed every step of the way.
-5. **Admin Approval**: YRC admins review and approve all requests for safety and efficiency.
-
-## Get Started
-
-Visit our website and explore how Life Blood Squad can support you and your loved ones during urgent situations. Whether you want to donate blood or request help, the Life Blood Squad platform is here to assist.
+The Youth Red Cross (YRC) is a humanitarian organization that encourages students to engage in community service and health initiatives. Through LifeConnect, YRC promotes the value of voluntary blood donation as a life-saving resource and raises awareness about the significance of a connected and compassionate society.
 
 ---
 

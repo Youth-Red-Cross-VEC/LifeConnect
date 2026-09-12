@@ -8,7 +8,6 @@ Note: Authentication (login/logout) is handled by the auth module (partner's res
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
-import hashlib
 from datetime import datetime
 
 from app.core.database import get_db
@@ -19,14 +18,51 @@ from app.repositories.donor import DonorRepository
 from app.models.admin import AdminDetails
 from app.schemas.admin import (
     AdminCreate,
+    AdminInviteRequest,
     AdminUpdate,
     AdminResponse,
     AdminStatsResponse,
 )
 from app.schemas.common import SuccessResponse, PaginatedResponse
 from app.utils.id_generator import generate_prefixed_id
+from app.api.auth.deps import get_current_admin
+from app.api.auth.router import store_otp, verify_otp
 
 router = APIRouter(prefix="/admins", tags=["Admins"])
+
+
+# =======================
+# Admin Invite (OTP gate)
+# =======================
+
+@router.post(
+    "/invite",
+    summary="Send admin invite OTP",
+    status_code=status.HTTP_200_OK,
+)
+async def invite_admin(
+    data: AdminInviteRequest,
+    session: AsyncSession = Depends(get_db),
+    current_admin: AdminDetails = Depends(get_current_admin),
+):
+    """
+    Generate and email a 6-digit invite OTP to the given address.
+
+    Only existing admins can send invites. The OTP is valid for 10 minutes
+    and must be supplied in the subsequent `POST /admins/register` call.
+    """
+    import random
+    from app.services.email_service import get_email_service
+    otp = str(random.randint(100000, 999999))
+    store_otp(data.email, otp)
+
+    email_svc = get_email_service()
+    await email_svc.send_otp_email(
+        email=data.email,
+        otp=otp,
+        name="New Admin",
+    )
+    return {"message": f"Invite OTP sent to {data.email}. Valid for 10 minutes."}
 
 
 # =======================
@@ -45,10 +81,18 @@ async def register_admin(
 ):
     """
     Register a new admin account.
-    
-    Note: In production, this should require verification (OTP) 
-    and approval from an existing admin. The auth module handles this.
+
+    Requires a valid `invite_otp` issued by an existing admin via `POST /admins/invite`.
+    The OTP is sent to the registrant's email and is valid for 10 minutes.
+    This prevents self-registration without an existing admin's approval.
     """
+    # Verify invite OTP
+    if not verify_otp(data.email, data.invite_otp):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired invite OTP. Ask an existing admin to resend the invite.",
+        )
+
     repo = AdminRepository(session)
     
     # Check for duplicate email
@@ -69,8 +113,8 @@ async def register_admin(
     admin_id = generate_prefixed_id("ADM")
     auth_id = generate_prefixed_id("AUTHADM")
     
-    # Hash password using bcrypt (secure)
-    from app.core.security import hash_password
+    # Hash password using bcrypt via passlib (canonical implementation)
+    from app.api.auth.utils import hash_password
     hashed_password = hash_password(data.password)
     
     # Create admin
@@ -110,7 +154,7 @@ async def list_admins(
     page_size: int = Query(20, ge=1, le=100),
     active_only: bool = Query(False),
     session: AsyncSession = Depends(get_db),
-    # current_admin = Depends(get_current_admin),  # TODO: Auth
+    current_admin: AdminDetails = Depends(get_current_admin),
 ):
     """Get paginated list of all admins."""
     repo = AdminRepository(session)
@@ -139,7 +183,7 @@ async def list_admins(
 async def get_admin(
     admin_id: str,
     session: AsyncSession = Depends(get_db),
-    # current_admin = Depends(get_current_admin),  # TODO: Auth
+    current_admin: AdminDetails = Depends(get_current_admin),
 ):
     """Get admin details by ID."""
     repo = AdminRepository(session)
@@ -161,19 +205,15 @@ async def get_admin(
 )
 async def get_my_profile(
     session: AsyncSession = Depends(get_db),
-    # current_admin = Depends(get_current_admin),  # TODO: Auth
+    current_admin: AdminDetails = Depends(get_current_admin),
 ):
     """
     Get the currently logged-in admin's profile.
-    
-    Note: This requires auth implementation to identify current user.
-    For now, returns a placeholder error.
     """
-    # TODO: Once auth is implemented, get admin_id from current_admin
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Authentication not yet implemented. Use /admins/{admin_id} instead.",
-    )
+    admin = await AdminRepository(session).get_by_id(current_admin.id)
+    if not admin:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Admin not found")
+    return admin
 
 
 @router.put(
@@ -185,7 +225,7 @@ async def update_admin(
     admin_id: str,
     data: AdminUpdate,
     session: AsyncSession = Depends(get_db),
-    # current_admin = Depends(get_current_admin),  # TODO: Auth
+    current_admin: AdminDetails = Depends(get_current_admin),
 ):
     """Update admin details."""
     repo = AdminRepository(session)
@@ -221,7 +261,7 @@ async def update_admin(
 async def deactivate_admin(
     admin_id: str,
     session: AsyncSession = Depends(get_db),
-    # current_admin = Depends(get_current_admin),  # TODO: Auth - should be superadmin
+    current_admin: AdminDetails = Depends(get_current_admin),
 ):
     """Deactivate an admin account."""
     repo = AdminRepository(session)
@@ -248,7 +288,7 @@ async def deactivate_admin(
 async def activate_admin(
     admin_id: str,
     session: AsyncSession = Depends(get_db),
-    # current_admin = Depends(get_current_admin),  # TODO: Auth - should be superadmin
+    current_admin: AdminDetails = Depends(get_current_admin),
 ):
     """Activate an admin account."""
     repo = AdminRepository(session)
@@ -279,7 +319,7 @@ async def activate_admin(
 async def get_admin_stats(
     admin_id: str,
     session: AsyncSession = Depends(get_db),
-    # current_admin = Depends(get_current_admin),  # TODO: Auth
+    current_admin: AdminDetails = Depends(get_current_admin),
 ):
     """Get performance statistics for a specific admin."""
     admin_repo = AdminRepository(session)

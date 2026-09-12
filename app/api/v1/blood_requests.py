@@ -30,9 +30,7 @@ from app.schemas.common import MessageResponse, PaginatedResponse
 from app.models.blood_request import BloodRequestDetails, ResponseDetails
 from app.utils import generate_request_id, generate_response_id
 from app.core.exceptions import not_found_exception, bad_request_exception
-
-# Auth dependency placeholder
-# from app.api.auth.deps import get_current_admin
+from app.api.auth.deps import get_current_admin
 
 router = APIRouter(prefix="/blood-requests", tags=["Blood Requests"])
 
@@ -110,7 +108,7 @@ async def create_blood_request(
 @router.get("/pending", response_model=List[BloodRequestListResponse])
 async def get_pending_requests(
     session: AsyncSession = Depends(get_db),
-    # current_admin = Depends(get_current_admin),  # TODO: Auth
+    current_admin = Depends(get_current_admin),
 ):
     """Get all pending blood requests (admin only)."""
     repo = BloodRequestRepository(session)
@@ -121,7 +119,7 @@ async def get_pending_requests(
 @router.get("/ongoing", response_model=List[BloodRequestListResponse])
 async def get_ongoing_requests(
     session: AsyncSession = Depends(get_db),
-    # current_admin = Depends(get_current_admin),
+    current_admin = Depends(get_current_admin),
 ):
     """Get all ongoing (approved) requests (admin only)."""
     repo = BloodRequestRepository(session)
@@ -133,7 +131,7 @@ async def get_ongoing_requests(
 async def get_closed_requests(
     limit: int = Query(default=100, le=500),
     session: AsyncSession = Depends(get_db),
-    # current_admin = Depends(get_current_admin),
+    current_admin = Depends(get_current_admin),
 ):
     """Get closed requests (admin only)."""
     repo = BloodRequestRepository(session)
@@ -145,7 +143,7 @@ async def get_closed_requests(
 async def get_expired_requests(
     limit: int = Query(default=100, le=500),
     session: AsyncSession = Depends(get_db),
-    # current_admin = Depends(get_current_admin),
+    current_admin = Depends(get_current_admin),
 ):
     """Get expired requests (admin only)."""
     repo = BloodRequestRepository(session)
@@ -157,7 +155,7 @@ async def get_expired_requests(
 async def get_declined_requests(
     limit: int = Query(default=100, le=500),
     session: AsyncSession = Depends(get_db),
-    # current_admin = Depends(get_current_admin),
+    current_admin = Depends(get_current_admin),
 ):
     """Get declined requests (admin only)."""
     repo = BloodRequestRepository(session)
@@ -186,15 +184,14 @@ async def approve_blood_request(
     background_tasks: BackgroundTasks,
     send_emails: bool = Query(default=True),
     session: AsyncSession = Depends(get_db),
-    # current_admin = Depends(get_current_admin),  # TODO: Auth
+    current_admin = Depends(get_current_admin),
 ):
     """
     Approve a blood request and notify matching donors.
     
     Admin only endpoint.
     """
-    # TODO: Uncomment current_admin dependency above and replace placeholder below
-    admin_id = "ADM-placeholder"  # Will become: admin_id = current_admin.id
+    admin_id = current_admin.id
 
     request_repo = BloodRequestRepository(session)
     donor_repo = DonorRepository(session)
@@ -238,9 +235,11 @@ async def approve_blood_request(
                 request_reason=blood_request.request_reason or "",
                 patient_age=blood_request.patient_age,
             )
+    else:
+        donors = []
 
     return MessageResponse(
-        message=f"Blood request {request_id} approved. {len(donors) if send_emails else 0} donors notified."
+        message=f"Blood request {request_id} approved. {len(donors)} donors notified."
     )
 
 
@@ -249,7 +248,7 @@ async def decline_blood_request(
     request_id: str,
     reason: Optional[str] = None,
     session: AsyncSession = Depends(get_db),
-    # current_admin = Depends(get_current_admin),
+    current_admin = Depends(get_current_admin),
 ):
     """
     Decline a blood request.
@@ -278,7 +277,7 @@ async def close_blood_request(
     data: BloodRequestClose,
     background_tasks: BackgroundTasks,
     session: AsyncSession = Depends(get_db),
-    # current_admin = Depends(get_current_admin),
+    current_admin = Depends(get_current_admin),
 ):
     """
     Close a blood request after donation is complete.
@@ -286,8 +285,7 @@ async def close_blood_request(
     Optionally sends certificates to donors.
     Admin only endpoint.
     """
-    # TODO: Uncomment current_admin dependency above and replace placeholder below
-    admin_id = "ADM-placeholder"  # Will become: admin_id = current_admin.id
+    admin_id = current_admin.id
 
     request_repo = BloodRequestRepository(session)
     donor_repo = DonorRepository(session)
@@ -337,7 +335,7 @@ async def close_blood_request(
 @router.get("/stats/summary")
 async def get_request_stats(
     session: AsyncSession = Depends(get_db),
-    # current_admin = Depends(get_current_admin),
+    current_admin = Depends(get_current_admin),
 ):
     """Get blood request statistics (admin only)."""
     repo = BloodRequestRepository(session)

@@ -35,8 +35,7 @@ class QueryReply(BaseModel):
     """Schema for admin replying to a query."""
     
     admin_response: str = Field(..., min_length=1, max_length=555)
-    admin_id: str = Field(..., min_length=1, max_length=55)
-    admin_name: str = Field(..., min_length=1, max_length=55)
+    # admin_id and admin_name are taken from the JWT token, not user input
 
 
 class QueryListResponse(BaseModel):

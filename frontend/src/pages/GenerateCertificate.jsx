@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
 import AdminBase from "./AdminBase";
+import { api } from "../services/api";
 
 export default function GenerateCertificate() {
   const [form, setForm] = useState({
@@ -13,7 +13,6 @@ export default function GenerateCertificate() {
   const [error, setError] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const navigate = useNavigate();
 
   const handleChange = (e) => {
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
@@ -25,23 +24,13 @@ export default function GenerateCertificate() {
     setSuccessMsg("");
     setIsLoading(true);
     try {
-      // Certificate generation endpoint — POST to backend
-      const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
-      const token = localStorage.getItem("lc_token");
-      const response = await fetch(`${BASE_URL}/generate_and_send_certificate`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify(form),
-      });
-      const res = await response.json();
-      if (res && (res.success || res.message)) {
+      // Uses correct endpoint: POST /api/v1/certificates/generate on port 8000
+      const res = await api.generateCertificate(form);
+      if (res && (res.success || res.message || res.filename)) {
         setSuccessMsg(res.message || "Certificate sent successfully to the donor.");
         setForm({ donor_name: "", donor_email: "", donation_date: "", blood_group: "", location: "" });
       } else {
-        setError(res?.message || "Failed to send certificate. Please try again.");
+        setError(res?.detail || res?.message || "Failed to send certificate. Please try again.");
       }
     } catch {
       setError("Server error. Try again.");
@@ -49,7 +38,6 @@ export default function GenerateCertificate() {
       setIsLoading(false);
     }
   };
-
   return (
     <AdminBase active="certificates">
       <style>{`
