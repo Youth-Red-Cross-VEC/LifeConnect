@@ -11,6 +11,10 @@ export const setToken = (token) => localStorage.setItem("lc_token", token);
 
 export const removeToken = () => localStorage.removeItem("lc_token");
 
+export const getRefreshToken = () => localStorage.getItem("lc_refresh_token");
+
+export const setRefreshToken = (token) => localStorage.setItem("lc_refresh_token", token);
+
 export const isLoggedIn = () => Boolean(getToken());
 
 export const getUserType = () => localStorage.getItem("lc_user_type");
@@ -27,6 +31,7 @@ export const setUsername = (name) => localStorage.setItem("lc_username", name);
 
 export const clearSession = () => {
   localStorage.removeItem("lc_token");
+  localStorage.removeItem("lc_refresh_token");
   localStorage.removeItem("lc_user_type");
   localStorage.removeItem("lc_user_id");
   localStorage.removeItem("lc_username");
@@ -37,6 +42,52 @@ export const isAdminLoggedIn = () =>
 
 export const isDonorLoggedIn = () =>
   Boolean(getToken()) && getUserType() === "donor";
+
+// ─── Session Refresh / Logout ─────────────────────────────────────────────────
+
+let refreshInFlight = null;
+
+// Exchange the stored refresh token for a new pair. Concurrent callers share one
+// request: the server rotates tokens, so a second parallel call would look like reuse.
+function refreshSession() {
+  const refreshToken = getRefreshToken();
+  if (!refreshToken) return Promise.resolve(false);
+  if (!refreshInFlight) {
+    refreshInFlight = fetch(`${BASE_URL}/api/v1/auth/refresh`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    })
+      .then(async (res) => {
+        if (!res.ok) return false;
+        const data = await res.json();
+        setToken(data.access_token);
+        setRefreshToken(data.refresh_token);
+        return true;
+      })
+      .catch(() => false)
+      .finally(() => {
+        refreshInFlight = null;
+      });
+  }
+  return refreshInFlight;
+}
+
+// Revoke the refresh token on the server, then clear the local session.
+export async function logout() {
+  const refreshToken = getRefreshToken();
+  try {
+    if (refreshToken) {
+      await fetch(`${BASE_URL}/api/v1/auth/logout`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refresh_token: refreshToken }),
+      });
+    }
+  } finally {
+    clearSession();
+  }
+}
 
 // ─── Private Request Helper ───────────────────────────────────────────────────
 
@@ -60,6 +111,11 @@ async function request(endpoint, options = {}, redirectOn401 = "/donor/login") {
     headers,
     body,
   });
+
+  // Expired access token: refresh once and replay the request
+  if (response.status === 401 && token && !options._retried && (await refreshSession())) {
+    return request(endpoint, { ...options, _retried: true }, redirectOn401);
+  }
 
   // Handle 401 — clear session and redirect to the appropriate login page
   if (response.status === 401) {

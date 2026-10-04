@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { logout } from "../services/api";
 
 export default function AdminBase({ children, active = "" }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -210,7 +211,10 @@ export default function AdminBase({ children, active = "" }) {
           <a className="help-btn" href="/help">
             <i className="fa-solid fa-circle-question"></i> Help
           </a>
-          <a className="logout-btn" href="/admin/login" onClick={() => localStorage.removeItem("lc_token")}>
+          <a className="logout-btn" href="/admin/login" onClick={(e) => {
+            e.preventDefault();
+            logout().finally(() => { window.location.href = "/admin/login"; });
+          }}>
             <i className="fa-solid fa-right-from-bracket"></i> Logout
           </a>
         </div>

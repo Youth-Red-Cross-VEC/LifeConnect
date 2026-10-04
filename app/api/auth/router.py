@@ -19,6 +19,8 @@ from app.core.recaptcha import verify_recaptcha
 from app.models.donor import DonorDetail
 from app.models.admin import AdminDetails
 from app.services.email_service import get_email_service
+from app.services.refresh_session_service import issue_refresh_token, revoke_chain
+from app.models.refresh_session import RefreshSession
 from app.services.otp_service import (
     PURPOSE_ADMIN_RESET,
     PURPOSE_DONOR_RESET,
@@ -31,7 +33,6 @@ from app.api.auth.utils import (
     verify_password,
     needs_rehash,
     create_access_token,
-    create_refresh_token,
     decode_token
 )
 from app.api.auth.deps import get_current_donor, get_current_admin
@@ -196,7 +197,7 @@ async def donor_login(
         }
         
         access_token = create_access_token(token_data)
-        refresh_token = create_refresh_token(token_data)
+        refresh_token, _ = await issue_refresh_token(session, token_data)
         
         return TokenResponse(
             access_token=access_token,
@@ -288,7 +289,7 @@ async def admin_login(
         }
         
         access_token = create_access_token(token_data)
-        refresh_token = create_refresh_token(token_data)
+        refresh_token, _ = await issue_refresh_token(session, token_data)
         
         return TokenResponse(
             access_token=access_token,
@@ -349,6 +350,33 @@ async def refresh_token(
                 detail="Invalid token type",
             )
         
+        # The token must match a live server-side session (rotation + reuse detection)
+        old_session = await session.get(RefreshSession, payload.get("jti") or "")
+        if (
+            old_session is None
+            or old_session.user_id != payload.get("sub")
+            or old_session.role != payload.get("user_type")
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired refresh token",
+            )
+        if old_session.revoked_at is not None:
+            # A rotated-out token is being replayed: assume theft and kill the whole chain.
+            await revoke_chain(session, old_session.jti)
+            # Commit now: raising below rolls the request transaction back and would undo the revocation.
+            await session.commit()
+            logger.warning(f"Refresh token reuse detected for {old_session.role} {old_session.user_id}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired refresh token",
+            )
+        if old_session.expires_at < datetime.utcnow():
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired refresh token",
+            )
+
         # Extract user info
         user_id = payload.get("sub")
         user_type = payload.get("user_type")
@@ -392,7 +420,9 @@ async def refresh_token(
         }
         
         access_token = create_access_token(token_data)
-        refresh_token = create_refresh_token(token_data)
+        refresh_token, new_jti = await issue_refresh_token(session, token_data)
+        old_session.revoked_at = datetime.utcnow()
+        old_session.replaced_by = new_jti
         
         logger.info(f"Token refreshed for {user_type} {user.id}")
         
@@ -415,6 +445,23 @@ async def refresh_token(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred during token refresh",
         )
+
+
+@router.post("/logout", response_model=MessageResponse)
+async def logout(
+    data: RefreshRequest,
+    session: AsyncSession = Depends(get_db)
+):
+    """
+    Log out: revoke the given refresh token and any token rotated from it.
+
+    Always answers 200 so the client can clear its session even if the token
+    was already invalid.
+    """
+    payload = decode_token(data.refresh_token)
+    if payload and payload.get("type") == "refresh":
+        await revoke_chain(session, payload.get("jti"))
+    return MessageResponse(message="Logged out")
 
 
 # ============================================================

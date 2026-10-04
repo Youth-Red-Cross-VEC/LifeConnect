@@ -14,6 +14,7 @@ from app.models.blood_request import BloodRequestDetails, ResponseDetails
 from app.models.hospital import HospitalDetails
 from app.models.query import QueryTable
 from app.models.otp import OtpCode
+from app.models.refresh_session import RefreshSession
 
 __all__ = [
     # Base
@@ -38,4 +39,5 @@ __all__ = [
     "QueryTable",
     # Auth support
     "OtpCode",
+    "RefreshSession",
 ]
