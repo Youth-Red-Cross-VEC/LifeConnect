@@ -11,11 +11,22 @@ from slowapi.middleware import SlowAPIMiddleware
 from fastapi import FastAPI, Request
 import logging
 
+from app.config import get_settings
+
 logger = logging.getLogger(__name__)
 
 
-# Create limiter instance with IP-based key function
-limiter = Limiter(key_func=get_remote_address)
+def build_limiter(per_minute: int, storage_uri: str) -> Limiter:
+    """IP-keyed limiter that applies `per_minute` to every route that has no explicit limit."""
+    return Limiter(
+        key_func=get_remote_address,
+        default_limits=[f"{per_minute}/minute"],
+        storage_uri=storage_uri,
+    )
+
+
+_settings = get_settings()
+limiter = build_limiter(_settings.RATE_LIMIT_PER_MINUTE, _settings.RATE_LIMIT_STORAGE_URI)
 
 
 # ============================

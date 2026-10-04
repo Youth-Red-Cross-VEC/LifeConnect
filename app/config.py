@@ -49,6 +49,9 @@ class Settings(BaseSettings):
 
     # Rate Limiting
     RATE_LIMIT_PER_MINUTE: int = 60
+    # memory:// counts per process. With more than one web worker/replica use a shared
+    # store (e.g. redis://host:6379/0) or the effective limit is multiplied by the worker count.
+    RATE_LIMIT_STORAGE_URI: str = "memory://"
 
     # Scheduler (enable on exactly ONE dedicated process, never on web workers)
     SCHEDULER_ENABLED: bool = False
