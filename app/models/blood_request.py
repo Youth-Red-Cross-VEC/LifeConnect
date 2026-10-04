@@ -1,5 +1,5 @@
 from app.core.request_status import BloodRequestStatus
-from sqlalchemy import String, Integer, DateTime, Date, ForeignKey
+from sqlalchemy import CheckConstraint, String, Integer, DateTime, Date, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base, TimestampMixin
 from datetime import datetime, date
@@ -18,6 +18,14 @@ class ResponseDetails(Base, TimestampMixin):
     """
 
     __tablename__ = "response_details"
+    # The upper bound (units_donated <= the request's units_required) spans two tables, so a
+    # CHECK cannot express it; the close endpoint enforces it.
+    __table_args__ = (
+        CheckConstraint(
+            "units_donated IS NULL OR units_donated >= 0",
+            name="ck_response_details_units_donated_nonneg",
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     status: Mapped[Optional[str]] = mapped_column(String(45), nullable=True)
