@@ -1,31 +1,25 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import AdminBase from "./AdminBase";
+import AsyncState from "../components/AsyncState";
+import { useApiData } from "../hooks/useApiData";
 import { api } from "../services/api";
+import { unwrapList } from "../services/unwrap";
+
+const loadPending = async () =>
+    unwrapList(await api.getPendingRequests(), "Failed to load requests.");
 
 export default function NewRequestsAdmin() {
-    const [requests, setRequests] = useState([]);
-    const [isLoading, setIsLoading] = useState(true);
-    const [error, setError] = useState("");
+    const {
+        data: requests,
+        setData: setRequests,
+        isLoading,
+        error,
+    } = useApiData(loadPending, {
+        initial: [],
+        errorMessage: "Server error. Could not load pending requests.",
+    });
     const [openId, setOpenId] = useState(null);
     const [actionMsg, setActionMsg] = useState("");
-
-    useEffect(() => {
-        const fetchPending = async () => {
-            try {
-                const res = await api.getPendingRequests();
-                if (Array.isArray(res)) {
-                    setRequests(res);
-                } else {
-                    setError(res?.detail || "Failed to load requests.");
-                }
-            } catch {
-                setError("Server error. Could not load pending requests.");
-            } finally {
-                setIsLoading(false);
-            }
-        };
-        fetchPending();
-    }, []);
 
     const toggleDetails = (id) =>
         setOpenId((prev) => (prev === id ? null : id));
@@ -157,13 +151,13 @@ export default function NewRequestsAdmin() {
                         {actionMsg}
                     </p>
                 )}
-                {isLoading ? (
-                    <p style={{ textAlign: "center", padding: "40px" }}>Loading requests...</p>
-                ) : error ? (
-                    <p style={{ textAlign: "center", color: "#c82333", padding: "40px" }}>{error}</p>
-                ) : requests.length === 0 ? (
-                    <p style={{ textAlign: "center", padding: "40px" }}>No pending requests.</p>
-                ) : (
+                <AsyncState
+                    isLoading={isLoading}
+                    error={error}
+                    isEmpty={requests.length === 0}
+                    loadingText="Loading requests..."
+                    emptyText="No pending requests."
+                >
                 <table className="new-requests-table">
                     <thead>
                         <tr>
@@ -250,7 +244,7 @@ export default function NewRequestsAdmin() {
                         })}
                     </tbody>
                 </table>
-                )}
+                </AsyncState>
             </main>
 
             {/*

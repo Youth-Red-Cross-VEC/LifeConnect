@@ -1,33 +1,28 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import AdminBase from "./AdminBase";
+import AsyncState from "../components/AsyncState";
+import { useApiData } from "../hooks/useApiData";
 import { api, getUserId, getUsername } from "../services/api";
+import { unwrapList } from "../services/unwrap";
+
+const loadQueries = async () => {
+  const res = await api.getQueries();
+  // The list endpoint answers { items: [...] }; older responses were a bare array.
+  return unwrapList(res?.items ?? res, "Failed to load queries.");
+};
 
 export default function QueryPageAdmin() {
-  const [queries, setQueries] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState("");
+  const {
+    data: queries,
+    setData: setQueries,
+    isLoading,
+    error,
+  } = useApiData(loadQueries, {
+    initial: [],
+    errorMessage: "Server error. Could not load queries.",
+  });
   const [responses, setResponses] = useState({});
   const [actionMsg, setActionMsg] = useState("");
-
-  useEffect(() => {
-    const fetchQueries = async () => {
-      try {
-        const res = await api.getQueries();
-        if (res && res.items) {
-          setQueries(res.items);
-        } else if (Array.isArray(res)) {
-          setQueries(res);
-        } else {
-          setError(res?.detail || "Failed to load queries.");
-        }
-      } catch {
-        setError("Server error. Could not load queries.");
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    fetchQueries();
-  }, []);
 
   const handleChange = (queryId, value) => {
     setResponses((prev) => ({ ...prev, [queryId]: value }));
@@ -149,13 +144,13 @@ export default function QueryPageAdmin() {
             {actionMsg}
           </p>
         )}
-        {isLoading ? (
-          <p style={{ textAlign: "center", padding: "40px" }}>Loading queries...</p>
-        ) : error ? (
-          <p style={{ textAlign: "center", color: "#c82333", padding: "40px" }}>{error}</p>
-        ) : queries.length === 0 ? (
-          <p style={{ textAlign: "center", padding: "40px" }}>No queries found.</p>
-        ) : (
+        <AsyncState
+          isLoading={isLoading}
+          error={error}
+          isEmpty={queries.length === 0}
+          loadingText="Loading queries..."
+          emptyText="No queries found."
+        >
         <table className="query-table">
           <thead>
             <tr>
@@ -193,7 +188,7 @@ export default function QueryPageAdmin() {
             ))}
           </tbody>
         </table>
-        )}
+        </AsyncState>
       </main>
 
       {/*
