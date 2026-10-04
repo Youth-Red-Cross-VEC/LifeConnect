@@ -1,0 +1,924 @@
+{
+  "operations": {
+    "DELETE /api/v1/certificates/{filename}": {
+      "body": null,
+      "params": [
+        "path:filename:required"
+      ],
+      "responses": {
+        "200": "app__schemas__common__MessageResponse",
+        "422": "HTTPValidationError"
+      },
+      "secured": true
+    },
+    "DELETE /api/v1/hospitals/{hospital_id}": {
+      "body": null,
+      "params": [
+        "path:hospital_id:required"
+      ],
+      "responses": {
+        "200": "app__schemas__common__MessageResponse",
+        "422": "HTTPValidationError"
+      },
+      "secured": true
+    },
+    "DELETE /api/v1/queries/{query_id}": {
+      "body": null,
+      "params": [
+        "path:query_id:required"
+      ],
+      "responses": {
+        "200": "app__schemas__common__MessageResponse",
+        "422": "HTTPValidationError"
+      },
+      "secured": true
+    },
+    "GET /api/v1/": {
+      "body": null,
+      "params": [],
+      "responses": {
+        "200": "app__schemas__common__MessageResponse"
+      },
+      "secured": false
+    },
+    "GET /api/v1/admins/": {
+      "body": null,
+      "params": [
+        "query:active_only:optional",
+        "query:page:optional",
+        "query:page_size:optional"
+      ],
+      "responses": {
+        "200": "PaginatedResponse",
+        "422": "HTTPValidationError"
+      },
+      "secured": true
+    },
+    "GET /api/v1/admins/me/profile": {
+      "body": null,
+      "params": [],
+      "responses": {
+        "200": "AdminResponse"
+      },
+      "secured": true
+    },
+    "GET /api/v1/admins/{admin_id}": {
+      "body": null,
+      "params": [
+        "path:admin_id:required"
+      ],
+      "responses": {
+        "200": "AdminResponse",
+        "422": "HTTPValidationError"
+      },
+      "secured": true
+    },
+    "GET /api/v1/admins/{admin_id}/stats": {
+      "body": null,
+      "params": [
+        "path:admin_id:required"
+      ],
+      "responses": {
+        "200": "AdminStatsResponse",
+        "422": "HTTPValidationError"
+      },
+      "secured": true
+    },
+    "GET /api/v1/analytics/dashboard": {
+      "body": null,
+      "params": [],
+      "responses": {
+        "200": null
+      },
+      "secured": true
+    },
+    "GET /api/v1/analytics/donors/by-blood-group": {
+      "body": null,
+      "params": [],
+      "responses": {
+        "200": null
+      },
+      "secured": true
+    },
+    "GET /api/v1/analytics/donors/by-city": {
+      "body": null,
+      "params": [],
+      "responses": {
+        "200": null
+      },
+      "secured": true
+    },
+    "GET /api/v1/analytics/requests/monthly": {
+      "body": null,
+      "params": [],
+      "responses": {
+        "200": null
+      },
+      "secured": true
+    },
+    "GET /api/v1/blood-requests/closed": {
+      "body": null,
+      "params": [
+        "query:limit:optional"
+      ],
+      "responses": {
+        "200": "array<BloodRequestListResponse>",
+        "422": "HTTPValidationError"
+      },
+      "secured": true
+    },
+    "GET /api/v1/blood-requests/declined": {
+      "body": null,
+      "params": [
+        "query:limit:optional"
+      ],
+      "responses": {
+        "200": "array<BloodRequestListResponse>",
+        "422": "HTTPValidationError"
+      },
+      "secured": true
+    },
+    "GET /api/v1/blood-requests/expired": {
+      "body": null,
+      "params": [
+        "query:limit:optional"
+      ],
+      "responses": {
+        "200": "array<BloodRequestListResponse>",
+        "422": "HTTPValidationError"
+      },
+      "secured": true
+    },
+    "GET /api/v1/blood-requests/ongoing": {
+      "body": null,
+      "params": [],
+      "responses": {
+        "200": "array<BloodRequestListResponse>"
+      },
+      "secured": true
+    },
+    "GET /api/v1/blood-requests/pending": {
+      "body": null,
+      "params": [],
+      "responses": {
+        "200": "array<BloodRequestListResponse>"
+      },
+      "secured": true
+    },
+    "GET /api/v1/blood-requests/stats/summary": {
+      "body": null,
+      "params": [],
+      "responses": {
+        "200": null
+      },
+      "secured": true
+    },
+    "GET /api/v1/blood-requests/{request_id}": {
+      "body": null,
+      "params": [
+        "path:request_id:required"
+      ],
+      "responses": {
+        "200": "BloodRequestResponse",
+        "422": "HTTPValidationError"
+      },
+      "secured": true
+    },
+    "GET /api/v1/certificates/": {
+      "body": null,
+      "params": [],
+      "responses": {
+        "200": "CertificateListResponse"
+      },
+      "secured": true
+    },
+    "GET /api/v1/certificates/download/{filename}": {
+      "body": null,
+      "params": [
+        "path:filename:required"
+      ],
+      "responses": {
+        "200": null,
+        "422": "HTTPValidationError"
+      },
+      "secured": true
+    },
+    "GET /api/v1/donors/": {
+      "body": null,
+      "params": [
+        "query:active_only:optional",
+        "query:blood_group:optional",
+        "query:name_search:optional",
+        "query:page:optional",
+        "query:page_size:optional"
+      ],
+      "responses": {
+        "200": "PaginatedResponse",
+        "422": "HTTPValidationError"
+      },
+      "secured": true
+    },
+    "GET /api/v1/donors/blood-group/{blood_group}": {
+      "body": null,
+      "params": [
+        "path:blood_group:required",
+        "query:active_only:optional"
+      ],
+      "responses": {
+        "200": "array<DonorListResponse>",
+        "422": "HTTPValidationError"
+      },
+      "secured": true
+    },
+    "GET /api/v1/donors/{donor_id}": {
+      "body": null,
+      "params": [
+        "path:donor_id:required"
+      ],
+      "responses": {
+        "200": "DonorResponse",
+        "422": "HTTPValidationError"
+      },
+      "secured": true
+    },
+    "GET /api/v1/health": {
+      "body": null,
+      "params": [],
+      "responses": {
+        "200": "HealthResponse"
+      },
+      "secured": false
+    },
+    "GET /api/v1/hospitals/": {
+      "body": null,
+      "params": [
+        "query:city:optional",
+        "query:page:optional",
+        "query:page_size:optional",
+        "query:search:optional"
+      ],
+      "responses": {
+        "200": "PaginatedResponse",
+        "422": "HTTPValidationError"
+      },
+      "secured": false
+    },
+    "GET /api/v1/hospitals/autofill": {
+      "body": null,
+      "params": [
+        "query:limit:optional",
+        "query:q:required"
+      ],
+      "responses": {
+        "200": "array<HospitalAutofillResponse>",
+        "422": "HTTPValidationError"
+      },
+      "secured": false
+    },
+    "GET /api/v1/hospitals/blood-banks": {
+      "body": null,
+      "params": [
+        "query:city:optional",
+        "query:page:optional",
+        "query:page_size:optional",
+        "query:search:optional"
+      ],
+      "responses": {
+        "200": "PaginatedResponse",
+        "422": "HTTPValidationError"
+      },
+      "secured": false
+    },
+    "GET /api/v1/hospitals/cities": {
+      "body": null,
+      "params": [],
+      "responses": {
+        "200": "array<string>"
+      },
+      "secured": false
+    },
+    "GET /api/v1/hospitals/{hospital_id}": {
+      "body": null,
+      "params": [
+        "path:hospital_id:required"
+      ],
+      "responses": {
+        "200": "HospitalResponse",
+        "422": "HTTPValidationError"
+      },
+      "secured": false
+    },
+    "GET /api/v1/queries/": {
+      "body": null,
+      "params": [
+        "query:page:optional",
+        "query:page_size:optional",
+        "query:status_filter:optional"
+      ],
+      "responses": {
+        "200": "QueryListResponse",
+        "422": "HTTPValidationError"
+      },
+      "secured": true
+    },
+    "GET /api/v1/queries/my-queries": {
+      "body": null,
+      "params": [],
+      "responses": {
+        "200": "array<QueryResponse>"
+      },
+      "secured": true
+    },
+    "GET /api/v1/queries/pending": {
+      "body": null,
+      "params": [],
+      "responses": {
+        "200": "array<QueryResponse>"
+      },
+      "secured": true
+    },
+    "GET /api/v1/queries/{query_id}": {
+      "body": null,
+      "params": [
+        "path:query_id:required"
+      ],
+      "responses": {
+        "200": "QueryResponse",
+        "422": "HTTPValidationError"
+      },
+      "secured": true
+    },
+    "PATCH /api/v1/admins/{admin_id}/activate": {
+      "body": null,
+      "params": [
+        "path:admin_id:required"
+      ],
+      "responses": {
+        "200": "app__schemas__common__MessageResponse",
+        "422": "HTTPValidationError"
+      },
+      "secured": true
+    },
+    "PATCH /api/v1/admins/{admin_id}/deactivate": {
+      "body": null,
+      "params": [
+        "path:admin_id:required"
+      ],
+      "responses": {
+        "200": "app__schemas__common__MessageResponse",
+        "422": "HTTPValidationError"
+      },
+      "secured": true
+    },
+    "PATCH /api/v1/donors/{donor_id}": {
+      "body": "DonorUpdate",
+      "params": [
+        "path:donor_id:required"
+      ],
+      "responses": {
+        "200": "DonorResponse",
+        "422": "HTTPValidationError"
+      },
+      "secured": true
+    },
+    "PATCH /api/v1/hospitals/{hospital_id}": {
+      "body": "HospitalUpdate",
+      "params": [
+        "path:hospital_id:required"
+      ],
+      "responses": {
+        "200": "HospitalResponse",
+        "422": "HTTPValidationError"
+      },
+      "secured": true
+    },
+    "POST /api/v1/admins/invite": {
+      "body": "AdminInviteRequest",
+      "params": [],
+      "responses": {
+        "200": null,
+        "422": "HTTPValidationError"
+      },
+      "secured": true
+    },
+    "POST /api/v1/admins/register": {
+      "body": "AdminCreate",
+      "params": [],
+      "responses": {
+        "201": "AdminResponse",
+        "422": "HTTPValidationError"
+      },
+      "secured": false
+    },
+    "POST /api/v1/auth/admin/login": {
+      "body": "LoginRequest",
+      "params": [],
+      "responses": {
+        "200": "TokenResponse",
+        "422": "HTTPValidationError"
+      },
+      "secured": false
+    },
+    "POST /api/v1/auth/admin/password-reset/confirm": {
+      "body": "PasswordResetConfirm",
+      "params": [],
+      "responses": {
+        "200": "app__api__auth__router__MessageResponse",
+        "422": "HTTPValidationError"
+      },
+      "secured": false
+    },
+    "POST /api/v1/auth/admin/password-reset/request": {
+      "body": "PasswordResetRequest",
+      "params": [],
+      "responses": {
+        "200": "app__api__auth__router__MessageResponse",
+        "422": "HTTPValidationError"
+      },
+      "secured": false
+    },
+    "POST /api/v1/auth/donor/login": {
+      "body": "LoginRequest",
+      "params": [],
+      "responses": {
+        "200": "TokenResponse",
+        "422": "HTTPValidationError"
+      },
+      "secured": false
+    },
+    "POST /api/v1/auth/donor/password-reset/confirm": {
+      "body": "PasswordResetConfirm",
+      "params": [],
+      "responses": {
+        "200": "app__api__auth__router__MessageResponse",
+        "422": "HTTPValidationError"
+      },
+      "secured": false
+    },
+    "POST /api/v1/auth/donor/password-reset/request": {
+      "body": "PasswordResetRequest",
+      "params": [],
+      "responses": {
+        "200": "app__api__auth__router__MessageResponse",
+        "422": "HTTPValidationError"
+      },
+      "secured": false
+    },
+    "POST /api/v1/auth/logout": {
+      "body": "RefreshRequest",
+      "params": [],
+      "responses": {
+        "200": "app__api__auth__router__MessageResponse",
+        "422": "HTTPValidationError"
+      },
+      "secured": false
+    },
+    "POST /api/v1/auth/refresh": {
+      "body": "RefreshRequest",
+      "params": [],
+      "responses": {
+        "200": "TokenResponse",
+        "422": "HTTPValidationError"
+      },
+      "secured": false
+    },
+    "POST /api/v1/blood-requests/": {
+      "body": "BloodRequestCreate",
+      "params": [],
+      "responses": {
+        "201": "BloodRequestResponse",
+        "422": "HTTPValidationError"
+      },
+      "secured": false
+    },
+    "POST /api/v1/blood-requests/{request_id}/approve": {
+      "body": null,
+      "params": [
+        "path:request_id:required",
+        "query:send_emails:optional"
+      ],
+      "responses": {
+        "200": "app__schemas__common__MessageResponse",
+        "422": "HTTPValidationError"
+      },
+      "secured": true
+    },
+    "POST /api/v1/blood-requests/{request_id}/close": {
+      "body": "BloodRequestClose",
+      "params": [
+        "path:request_id:required"
+      ],
+      "responses": {
+        "200": "app__schemas__common__MessageResponse",
+        "422": "HTTPValidationError"
+      },
+      "secured": true
+    },
+    "POST /api/v1/blood-requests/{request_id}/decline": {
+      "body": null,
+      "params": [
+        "path:request_id:required",
+        "query:reason:optional"
+      ],
+      "responses": {
+        "200": "app__schemas__common__MessageResponse",
+        "422": "HTTPValidationError"
+      },
+      "secured": true
+    },
+    "POST /api/v1/certificates/generate": {
+      "body": "CertificateRequest",
+      "params": [],
+      "responses": {
+        "201": "CertificateResponse",
+        "422": "HTTPValidationError"
+      },
+      "secured": true
+    },
+    "POST /api/v1/certificates/send-email": {
+      "body": null,
+      "params": [
+        "query:donor_id:required",
+        "query:filename:required"
+      ],
+      "responses": {
+        "200": "app__schemas__common__MessageResponse",
+        "422": "HTTPValidationError"
+      },
+      "secured": true
+    },
+    "POST /api/v1/donors/register": {
+      "body": "DonorCreate",
+      "params": [],
+      "responses": {
+        "201": "DonorResponse",
+        "422": "HTTPValidationError"
+      },
+      "secured": false
+    },
+    "POST /api/v1/donors/{donor_id}/activate": {
+      "body": null,
+      "params": [
+        "path:donor_id:required"
+      ],
+      "responses": {
+        "200": "app__schemas__common__MessageResponse",
+        "422": "HTTPValidationError"
+      },
+      "secured": true
+    },
+    "POST /api/v1/donors/{donor_id}/deactivate": {
+      "body": null,
+      "params": [
+        "path:donor_id:required"
+      ],
+      "responses": {
+        "200": "app__schemas__common__MessageResponse",
+        "422": "HTTPValidationError"
+      },
+      "secured": true
+    },
+    "POST /api/v1/hospitals/": {
+      "body": "HospitalCreate",
+      "params": [],
+      "responses": {
+        "201": "HospitalResponse",
+        "422": "HTTPValidationError"
+      },
+      "secured": true
+    },
+    "POST /api/v1/queries/": {
+      "body": "QueryCreate",
+      "params": [],
+      "responses": {
+        "201": "QueryResponse",
+        "422": "HTTPValidationError"
+      },
+      "secured": false
+    },
+    "POST /api/v1/queries/{query_id}/reply": {
+      "body": "QueryReply",
+      "params": [
+        "path:query_id:required"
+      ],
+      "responses": {
+        "200": "QueryResponse",
+        "422": "HTTPValidationError"
+      },
+      "secured": true
+    },
+    "PUT /api/v1/admins/{admin_id}": {
+      "body": "AdminUpdate",
+      "params": [
+        "path:admin_id:required"
+      ],
+      "responses": {
+        "200": "AdminResponse",
+        "422": "HTTPValidationError"
+      },
+      "secured": true
+    }
+  },
+  "schemas": {
+    "AddressDetailsCreate": {
+      "address": "string",
+      "city": "string",
+      "country": "string",
+      "pincode": "string",
+      "state": "string"
+    },
+    "AddressDetailsResponse": {
+      "address": "string",
+      "city": "string",
+      "country": "string",
+      "id": "string",
+      "pincode": "string",
+      "state": "string"
+    },
+    "AdminCreate": {
+      "date_of_birth": "string",
+      "department": "null|string?",
+      "email": "string",
+      "invite_otp": "string",
+      "mobile_number": "string",
+      "password": "string",
+      "username": "string",
+      "vec_registration_number": "string"
+    },
+    "AdminInviteRequest": {
+      "email": "string"
+    },
+    "AdminResponse": {
+      "active_status": "string",
+      "approved_donation_count": "integer",
+      "closed_requests_count": "integer",
+      "created_at": "string",
+      "date_of_birth": "string",
+      "department": "null|string",
+      "email": "string",
+      "id": "string",
+      "last_login_date": "null|string",
+      "mobile_number": "string",
+      "username": "string",
+      "vec_registration_number": "string"
+    },
+    "AdminStatsResponse": {
+      "active_donors": "integer",
+      "ongoing_requests": "integer",
+      "pending_requests": "integer",
+      "total_approved": "integer",
+      "total_closed": "integer"
+    },
+    "AdminStatus": {},
+    "AdminUpdate": {
+      "active_status": "AdminStatus|null?",
+      "department": "null|string?",
+      "mobile_number": "null|string?",
+      "username": "null|string?"
+    },
+    "BloodRequestClose": {
+      "donation_date": "string",
+      "donor_ids": "array<string>?",
+      "report": "null|string?",
+      "request_id": "string",
+      "send_certificates": "boolean?",
+      "status": "string?",
+      "units_donated": "integer"
+    },
+    "BloodRequestCreate": {
+      "attendant_name": "null|string?",
+      "blood_group": "string",
+      "contact_number": "string",
+      "due_date": "string",
+      "hospital_id": "string",
+      "patient_age": "integer",
+      "patient_name": "string",
+      "request_reason": "null|string?",
+      "units_required": "integer"
+    },
+    "BloodRequestListResponse": {
+      "blood_group": "string",
+      "created_at": "string",
+      "due_date": "string",
+      "hospital_name": "string",
+      "id": "string",
+      "patient_name": "string",
+      "status": "string",
+      "units_required": "integer"
+    },
+    "BloodRequestResponse": {
+      "approved_admin_id": "null|string",
+      "attendant_name": "null|string",
+      "blood_group": "string",
+      "closed_admin_id": "null|string",
+      "contact_number": "string",
+      "created_at": "string",
+      "due_date": "string",
+      "hospital": "HospitalResponse|null?",
+      "hospital_name": "string",
+      "id": "string",
+      "patient_age": "integer",
+      "patient_name": "string",
+      "request_reason": "null|string",
+      "status": "string",
+      "units_required": "integer"
+    },
+    "CertificateListResponse": {
+      "certificates": "array<string>",
+      "total": "integer"
+    },
+    "CertificateRequest": {
+      "donation_date": "null|string?",
+      "donor_id": "string",
+      "location": "null|string?",
+      "request_id": "null|string?",
+      "send_email": "boolean?"
+    },
+    "CertificateResponse": {
+      "email_sent": "boolean?",
+      "file_path": "string",
+      "filename": "string",
+      "message": "string"
+    },
+    "DiseaseDetailsCreate": {
+      "description": "null|string?",
+      "name": "string"
+    },
+    "DonorCreate": {
+      "address_details": "AddressDetailsCreate",
+      "blood_group": "string",
+      "disease_details": "DiseaseDetailsCreate",
+      "email": "string",
+      "name": "string",
+      "password": "string",
+      "personal_details": "PersonalDetailsCreate"
+    },
+    "DonorListResponse": {
+      "active_status": "boolean",
+      "blood_group": "string",
+      "city": "null|string?",
+      "email": "string",
+      "id": "string",
+      "last_donated_date": "null|string",
+      "name": "string"
+    },
+    "DonorResponse": {
+      "active_status": "boolean",
+      "address": "AddressDetailsResponse|null?",
+      "blood_group": "string",
+      "created_at": "string",
+      "email": "string",
+      "id": "string",
+      "last_donated_date": "null|string",
+      "last_login_date": "null|string",
+      "name": "string",
+      "number_of_times_donated": "integer",
+      "personal_details": "PersonalDetailsResponse|null?"
+    },
+    "DonorUpdate": {
+      "active_status": "boolean|null?",
+      "address": "null|string?",
+      "blood_group": "null|string?",
+      "city": "null|string?",
+      "contact_number": "null|string?",
+      "name": "null|string?",
+      "pincode": "null|string?",
+      "state": "null|string?"
+    },
+    "HTTPValidationError": {
+      "detail": "array<ValidationError>?"
+    },
+    "HealthResponse": {
+      "database": "string",
+      "status": "string",
+      "timestamp": "string",
+      "version": "string"
+    },
+    "HospitalAutofillResponse": {
+      "address": "string",
+      "city": "string",
+      "hospital_name": "string",
+      "id": "string"
+    },
+    "HospitalCreate": {
+      "branch": "null|string?",
+      "city": "string",
+      "country": "string?",
+      "hospital_address": "string",
+      "hospital_name": "string",
+      "landmark": "null|string?",
+      "pincode": "string",
+      "state": "string"
+    },
+    "HospitalResponse": {
+      "branch": "null|string",
+      "city": "string",
+      "country": "string",
+      "hospital_address": "string",
+      "hospital_name": "string",
+      "id": "string",
+      "landmark": "null|string",
+      "pincode": "string",
+      "state": "string"
+    },
+    "HospitalUpdate": {
+      "branch": "null|string?",
+      "city": "null|string?",
+      "hospital_address": "null|string?",
+      "hospital_name": "null|string?",
+      "landmark": "null|string?",
+      "pincode": "null|string?",
+      "state": "null|string?"
+    },
+    "LoginRequest": {
+      "email": "string",
+      "password": "string",
+      "recaptcha_token": "null|string?"
+    },
+    "PaginatedResponse": {
+      "items": "array<None>",
+      "page": "integer",
+      "page_size": "integer",
+      "total": "integer",
+      "total_pages": "integer"
+    },
+    "PasswordResetConfirm": {
+      "email": "string",
+      "new_password": "string",
+      "otp": "string"
+    },
+    "PasswordResetRequest": {
+      "email": "string"
+    },
+    "PersonalDetailsCreate": {
+      "age": "integer",
+      "contact_number": "string",
+      "date_of_birth": "string",
+      "first_name": "string",
+      "last_name": "null|string?",
+      "marital_status": "null|string?",
+      "secondary_contact_number": "null|string?"
+    },
+    "PersonalDetailsResponse": {
+      "age": "integer",
+      "contact_number": "string",
+      "date_of_birth": "string",
+      "first_name": "string",
+      "id": "string",
+      "last_name": "null|string",
+      "marital_status": "null|string",
+      "secondary_contact_number": "null|string"
+    },
+    "QueryCreate": {
+      "user_email": "string",
+      "user_name": "string",
+      "user_query": "string"
+    },
+    "QueryListResponse": {
+      "items": "array<QueryResponse>",
+      "pending_count": "integer",
+      "resolved_count": "integer",
+      "total": "integer"
+    },
+    "QueryReply": {
+      "admin_response": "string"
+    },
+    "QueryResponse": {
+      "admin_id": "string",
+      "admin_name": "string",
+      "admin_response": "null|string",
+      "admin_response_date": "null|string",
+      "created_at": "string",
+      "id": "integer",
+      "user_email": "string",
+      "user_name": "string",
+      "user_query": "null|string",
+      "user_query_date": "null|string"
+    },
+    "RefreshRequest": {
+      "refresh_token": "string"
+    },
+    "TokenResponse": {
+      "access_token": "string",
+      "refresh_token": "string",
+      "token_type": "string?",
+      "user_id": "string",
+      "user_type": "string",
+      "username": "string"
+    },
+    "ValidationError": {
+      "ctx": "object?",
+      "input": "any?",
+      "loc": "array<integer|string>",
+      "msg": "string",
+      "type": "string"
+    },
+    "app__api__auth__router__MessageResponse": {
+      "message": "string"
+    },
+    "app__schemas__common__MessageResponse": {
+      "message": "string",
+      "success": "boolean?"
+    }
+  }
+}
