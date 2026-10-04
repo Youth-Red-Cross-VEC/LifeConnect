@@ -6,7 +6,7 @@
  *   <ProtectedRoute type="donor">   — only allows logged-in donors
  *   <ProtectedRoute>                — allows any authenticated user
  *
- * Reads session from localStorage keys set by api.js on login:
+ * Reads the session through services/session.js (set on login):
  *   lc_token      — JWT access token
  *   lc_user_type  — "admin" | "donor"
  */

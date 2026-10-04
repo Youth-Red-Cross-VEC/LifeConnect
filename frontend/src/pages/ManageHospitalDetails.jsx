@@ -1,42 +1,31 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import AdminBase from "./AdminBase";
+import AsyncState from "../components/AsyncState";
+import { useApiData } from "../hooks/useApiData";
+import { api } from "../services/api";
+import { unwrapList } from "../services/unwrap";
 
-// Use the same base URL as the central api.js service
-const BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
-
-const sampleHospitals = [
-  { id: "HOSP-01", hospital_name: "Apollo Hospital", city: "Chennai", state: "Tamil Nadu" },
-  { id: "HOSP-02", hospital_name: "Fortis Malar", city: "Chennai", state: "Tamil Nadu" },
-];
+// The list endpoint is paginated ({ items, total, ... }); 100 is its maximum page size.
+const loadHospitals = async () => {
+  const res = await api.getHospitals({ page_size: 100 });
+  return unwrapList(res?.items, res?.detail || "Failed to load hospitals.");
+};
 
 export default function ManageHospitalDetails() {
-  const [hospitals, setHospitals] = useState(sampleHospitals);
+  const {
+    data: hospitals,
+    setData: setHospitals,
+    isLoading: isLoadingList,
+    error: loadError,
+  } = useApiData(loadHospitals, {
+    initial: [],
+    errorMessage: "Server error. Could not load hospitals.",
+  });
   const [error, setError] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
   const navigate = useNavigate();
-
-  useEffect(() => {
-    const fetchHospitals = async () => {
-      setIsLoading(true);
-      try {
-        const token = localStorage.getItem("lc_token");
-        const res = await fetch(`${BASE_URL}/api/v1/hospitals/`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        });
-        const data = await res.json();
-        if (data && (Array.isArray(data.hospitals) || Array.isArray(data))) {
-          setHospitals(Array.isArray(data) ? data : data.hospitals);
-        }
-      } catch {
-        // Keep sample data on error
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    fetchHospitals();
-  }, []);
 
   const handleModify = (hospitalId) => {
     navigate(`/admin/hospitals/manage?id=${hospitalId}`);
@@ -47,26 +36,19 @@ export default function ManageHospitalDetails() {
       setDeleteConfirm(hospitalId);
       return;
     }
-    setIsLoading(true);
+    setIsDeleting(true);
     setError("");
     try {
-      const token = localStorage.getItem("lc_token");
-      const res = await fetch(`${BASE_URL}/api/v1/hospitals/${hospitalId}`, {
-        method: "DELETE",
-        headers: {
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-      });
-      const data = await res.json();
-      if (res.ok && data && (data.success || data.message)) {
+      const res = await api.deleteHospital(hospitalId);
+      if (res && res.message && !res.detail) {
         setHospitals((prev) => prev.filter((h) => h.id !== hospitalId));
       } else {
-        setError(data?.message || "Failed to delete hospital.");
+        setError(res?.detail || res?.message || "Failed to delete hospital.");
       }
     } catch {
       setError("Server error. Try again.");
     } finally {
-      setIsLoading(false);
+      setIsDeleting(false);
       setDeleteConfirm(null);
     }
   };
@@ -192,9 +174,13 @@ export default function ManageHospitalDetails() {
           + Add New Hospital
         </button>
 
-        {isLoading && hospitals.length === 0 ? (
-          <div style={{ textAlign: "center", color: "#888", padding: "30px" }}>Loading hospitals...</div>
-        ) : (
+        <AsyncState
+          isLoading={isLoadingList}
+          error={loadError}
+          isEmpty={hospitals.length === 0}
+          loadingText="Loading hospitals..."
+          emptyText="No hospitals found."
+        >
           <div className="mh-table-container">
             <table className="mh-table">
               <thead>
@@ -207,14 +193,7 @@ export default function ManageHospitalDetails() {
                 </tr>
               </thead>
               <tbody>
-                {hospitals.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} style={{ textAlign: "center", color: "#888", padding: "24px" }}>
-                      No hospitals found.
-                    </td>
-                  </tr>
-                ) : (
-                  hospitals.map((hospital) => (
+                {hospitals.map((hospital) => (
                     <tr key={hospital.id}>
                       <td>{hospital.id}</td>
                       <td>{hospital.hospital_name}</td>
@@ -224,14 +203,14 @@ export default function ManageHospitalDetails() {
                         <button
                           className="modify-btn"
                           onClick={() => handleModify(hospital.id)}
-                          disabled={isLoading}
+                          disabled={isDeleting}
                         >
                           Modify
                         </button>
                         <button
                           className="delete-btn"
                           onClick={() => handleDelete(hospital.id)}
-                          disabled={isLoading}
+                          disabled={isDeleting}
                         >
                           {deleteConfirm === hospital.id ? "Confirm?" : "Delete"}
                           {deleteConfirm === hospital.id && (
@@ -240,12 +219,11 @@ export default function ManageHospitalDetails() {
                         </button>
                       </td>
                     </tr>
-                  ))
-                )}
+                ))}
               </tbody>
             </table>
           </div>
-        )}
+        </AsyncState>
       </div>
     </AdminBase>
   );
