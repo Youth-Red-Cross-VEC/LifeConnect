@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { api, getUserId } from "../services/api";
 
 export default function DonorDashboard({ details = {} }) {
   const [form, setForm] = useState({
@@ -33,6 +34,40 @@ export default function DonorDashboard({ details = {} }) {
   const [success, setSuccess] = useState("");
   const navigate = useNavigate();
 
+  // Load the logged-in donor's real record so the form shows (and saves) real data.
+  useEffect(() => {
+    let cancelled = false;
+    api.getDonorById(getUserId()).then((d) => {
+      if (cancelled || !d?.id) return;
+      setForm((prev) => ({
+        ...prev,
+        id: d.id,
+        name: d.name ?? "",
+        email: d.email ?? "",
+        blood_group: d.blood_group ?? "",
+        last_donated_date: d.last_donated_date ?? "",
+        active_status: d.active_status ?? "",
+        number_of_times_donated: d.number_of_times_donated ?? "",
+        last_login_date: d.last_login_date ?? "",
+        first_name: d.personal_details?.first_name ?? "",
+        last_name: d.personal_details?.last_name ?? "",
+        age: d.personal_details?.age ?? "",
+        contact_number: d.personal_details?.contact_number ?? "",
+        date_of_birth: d.personal_details?.date_of_birth ?? "",
+        marital_status: d.personal_details?.marital_status ?? "",
+        secondary_contact_number: d.personal_details?.secondary_contact_number ?? "",
+        address: d.address?.address ?? "",
+        city: d.address?.city ?? "",
+        state: d.address?.state ?? "",
+        country: d.address?.country ?? "",
+        pincode: d.address?.pincode ?? "",
+      }));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const handleChange = (e) => {
     const { name, value } = e.target;
     setForm((prev) => ({ ...prev, [name]: value }));
@@ -45,9 +80,17 @@ export default function DonorDashboard({ details = {} }) {
     setSaving(true);
 
     try {
-      // TODO: wire up real API call, e.g. await api.updateDonor(form);
-      await new Promise((res) => setTimeout(res, 400));
-      setSuccess("Details updated successfully!");
+      const editable = ["name", "blood_group", "contact_number", "address", "city", "state", "pincode"];
+      const payload = Object.fromEntries(
+        editable.filter((k) => form[k] !== "" && form[k] != null).map((k) => [k, form[k]])
+      );
+      const res = await api.modifyDonorDetails(form.id || getUserId(), payload);
+      if (res?.id) {
+        setSuccess("Details updated successfully!");
+      } else {
+        const detail = Array.isArray(res?.detail) ? res.detail.map((d) => d.msg).join("; ") : res?.detail;
+        setError(detail || "Failed to save changes. Please try again.");
+      }
     } catch {
       setError("Failed to save changes. Please try again.");
     } finally {

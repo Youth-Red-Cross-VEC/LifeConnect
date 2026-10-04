@@ -212,6 +212,12 @@ async def update_donor(
         donor.blood_group = data.blood_group
     if data.active_status is not None:
         donor.active_status = data.active_status
+    if data.contact_number is not None:
+        donor.personal_details.contact_number = data.contact_number
+    for field in ("address", "city", "state", "pincode"):
+        value = getattr(data, field)
+        if value is not None:
+            setattr(donor.address, field, value)
 
     await repo.update(donor)
     return DonorResponse.model_validate(donor)

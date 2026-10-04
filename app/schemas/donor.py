@@ -127,15 +127,34 @@ class DonorCreate(BaseModel):
 
 class DonorUpdate(BaseModel):
     """Schema for updating donor details."""
-
     name: Optional[str] = Field(None, min_length=2, max_length=100)
     blood_group: Optional[str] = None
     active_status: Optional[bool] = None
-    contact_number: Optional[str] = None
-    address: Optional[str] = None
-    city: Optional[str] = None
-    state: Optional[str] = None
-    pincode: Optional[str] = None
+    contact_number: Optional[str] = Field(None, max_length=15)
+    address: Optional[str] = Field(None, min_length=5, max_length=200)
+    city: Optional[str] = Field(None, min_length=1, max_length=45)
+    state: Optional[str] = Field(None, min_length=1, max_length=45)
+    pincode: Optional[str] = Field(None, min_length=5, max_length=10)
+
+    @field_validator("blood_group")
+    @classmethod
+    def validate_blood_group(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        v = v.upper()
+        if v not in VALID_BLOOD_GROUPS:
+            raise ValueError(f"Invalid blood group. Must be one of: {VALID_BLOOD_GROUPS}")
+        return v
+
+    @field_validator("contact_number")
+    @classmethod
+    def validate_contact_number(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        v = v.replace(" ", "").replace("-", "")
+        if not re.match(r"^\+?[0-9]{10,15}$", v):
+            raise ValueError("Invalid phone number format")
+        return v
 
 
 class DonorResponse(BaseSchema):
