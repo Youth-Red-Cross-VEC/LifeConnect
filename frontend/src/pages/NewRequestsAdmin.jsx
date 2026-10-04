@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import AdminBase from "./AdminBase";
-import { api, getUserId, getUsername } from "../services/api";
+import { api } from "../services/api";
 
 export default function NewRequestsAdmin() {
     const [requests, setRequests] = useState([]);

@@ -1,8 +1,10 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import AdminBase from "./AdminBase";
 import { api } from "../services/api";
 
 export default function GenerateCertificate() {
+  const navigate = useNavigate();
   const [form, setForm] = useState({
     donor_name: "",
     donor_email: "",
