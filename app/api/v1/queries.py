@@ -19,6 +19,7 @@ from app.schemas.query import (
     QueryListResponse,
 )
 from app.schemas.common import SuccessResponse, PaginatedResponse
+from app.services.audit_service import record_admin_action
 from app.api.auth.deps import get_current_admin, get_current_user
 
 router = APIRouter(prefix="/queries", tags=["Support Queries"])
@@ -200,8 +201,8 @@ async def reply_to_query(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Query with ID {query_id} not found",
         )
-    
-    
+
+    record_admin_action(session, current_admin.id, "query.reply", "query", str(query_id))
     return query
 
 
@@ -225,6 +226,6 @@ async def delete_query(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Query with ID {query_id} not found",
         )
-    
-    
+
+    record_admin_action(session, current_admin.id, "query.delete", "query", str(query_id))
     return SuccessResponse(message=f"Query {query_id} has been deleted")

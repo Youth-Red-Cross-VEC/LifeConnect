@@ -18,6 +18,7 @@ from app.schemas.common import MessageResponse, PaginatedResponse
 from app.models.hospital import HospitalDetails
 from app.utils import generate_hospital_id
 from app.core.exceptions import not_found_exception, duplicate_exception
+from app.services.audit_service import record_admin_action
 from app.api.auth.deps import get_current_admin
 
 router = APIRouter(prefix="/hospitals", tags=["Hospitals"])
@@ -52,6 +53,7 @@ async def create_hospital(
     )
 
     await repo.create(hospital)
+    record_admin_action(session, current_admin.id, "hospital.create", "hospital", hospital.id)
     return HospitalResponse.model_validate(hospital)
 
 
@@ -180,6 +182,10 @@ async def update_hospital(
         setattr(hospital, field, value)
 
     await repo.update(hospital)
+    record_admin_action(
+        session, current_admin.id, "hospital.update", "hospital", hospital_id,
+        detail="fields=" + ",".join(sorted(update_data)),
+    )
     return HospitalResponse.model_validate(hospital)
 
 
@@ -196,4 +202,5 @@ async def delete_hospital(
     if not deleted:
         raise not_found_exception("Hospital", hospital_id)
 
+    record_admin_action(session, current_admin.id, "hospital.delete", "hospital", hospital_id)
     return MessageResponse(message=f"Hospital {hospital_id} deleted successfully")

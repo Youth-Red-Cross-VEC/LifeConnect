@@ -31,6 +31,7 @@ from app.models.blood_request import BloodRequestDetails, ResponseDetails
 from app.utils import generate_request_id, generate_response_id
 from app.core.exceptions import not_found_exception, bad_request_exception
 from app.core.request_status import BloodRequestStatus, can_transition
+from app.services.audit_service import record_admin_action
 from app.api.auth.deps import get_current_admin
 
 router = APIRouter(prefix="/blood-requests", tags=["Blood Requests"])
@@ -240,6 +241,7 @@ async def approve_blood_request(
     else:
         donors = []
 
+    record_admin_action(session, admin_id, "blood_request.approve", "blood_request", request_id)
     return MessageResponse(
         message=f"Blood request {request_id} approved. {len(donors)} donors notified."
     )
@@ -269,6 +271,7 @@ async def decline_blood_request(
         )
 
     await repo.update_status(request_id, BloodRequestStatus.DECLINED)
+    record_admin_action(session, current_admin.id, "blood_request.decline", "blood_request", request_id)
 
     return MessageResponse(message=f"Blood request {request_id} declined")
 
@@ -339,6 +342,11 @@ async def close_blood_request(
         await donor_repo.update_last_donated(
             donor_id, datetime.combine(data.donation_date, datetime.min.time())
         )
+
+    record_admin_action(
+        session, admin_id, "blood_request.close", "blood_request", request_id,
+        detail=f"units_donated={data.units_donated}; donors={len(donor_ids)}",
+    )
 
     # TODO: Send certificates in background
     # if data.send_certificates:

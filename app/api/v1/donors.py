@@ -35,6 +35,7 @@ from app.utils import (
     generate_auth_id,
 )
 from app.core.exceptions import duplicate_exception, not_found_exception
+from app.services.audit_service import record_admin_action
 from app.api.auth.deps import get_current_donor, get_current_admin, get_current_donor_or_admin
 
 router = APIRouter(prefix="/donors", tags=["Donors"])
@@ -262,6 +263,7 @@ async def deactivate_donor(
         raise not_found_exception("Donor", donor_id)
 
     await repo.set_active_status(donor_id, False)
+    record_admin_action(session, current_admin.id, "donor.deactivate", "donor", donor_id)
     return MessageResponse(message=f"Donor {donor_id} deactivated successfully")
 
 
@@ -281,4 +283,5 @@ async def activate_donor(
         raise not_found_exception("Donor", donor_id)
 
     await repo.set_active_status(donor_id, True)
+    record_admin_action(session, current_admin.id, "donor.activate", "donor", donor_id)
     return MessageResponse(message=f"Donor {donor_id} activated successfully")

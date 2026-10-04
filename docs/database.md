@@ -22,6 +22,18 @@ transitions are defined in `app/core/request_status.py`.
 | created_at | DATETIME | no |  |
 | updated_at | DATETIME | yes |  |
 
+## `admin_audit_log`
+
+| Column | Type | Nullable | Notes |
+| ------ | ---- | -------- | ----- |
+| id | INTEGER | no | primary key |
+| admin_id | VARCHAR(36) | no | indexed |
+| action | VARCHAR(50) | no | indexed |
+| entity_type | VARCHAR(30) | no |  |
+| entity_id | VARCHAR(100) | yes |  |
+| detail | VARCHAR(255) | yes |  |
+| created_at | DATETIME | no | indexed |
+
 ## `admin_details`
 
 | Column | Type | Nullable | Notes |

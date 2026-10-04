@@ -19,6 +19,7 @@ from pathlib import Path
 from app.services.certificate_service import get_certificate_service, CertificateService
 from app.services.email_service import get_email_service, EmailService
 from app.schemas.common import SuccessResponse
+from app.services.audit_service import record_admin_action
 from app.api.auth.deps import get_current_admin
 
 router = APIRouter(prefix="/certificates", tags=["Certificates"])
@@ -120,6 +121,10 @@ async def generate_certificate(
 
     filename = Path(file_path).name
     email_sent = False
+    record_admin_action(
+        session, current_admin.id, "certificate.generate", "certificate", filename,
+        detail=f"donor_id={data.donor_id}",
+    )
 
     if data.send_email:
         background_tasks.add_task(
@@ -189,6 +194,7 @@ async def list_certificates(
 async def delete_certificate(
     filename: str,
     cert_service: CertificateService = Depends(get_certificate_service),
+    session: AsyncSession = Depends(get_db),
     current_admin = Depends(get_current_admin),
 ):
     """Delete a certificate file."""
@@ -200,6 +206,7 @@ async def delete_certificate(
             detail=f"Certificate '{filename}' not found",
         )
     
+    record_admin_action(session, current_admin.id, "certificate.delete", "certificate", filename)
     return SuccessResponse(message=f"Certificate '{filename}' deleted")
 
 
@@ -244,4 +251,8 @@ async def send_certificate_email(
         certificate_path=str(file_path),
     )
 
+    record_admin_action(
+        session, current_admin.id, "certificate.email", "certificate", filename,
+        detail=f"donor_id={donor_id}",
+    )
     return SuccessResponse(message="Certificate email queued")

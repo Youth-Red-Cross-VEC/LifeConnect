@@ -27,6 +27,7 @@ from app.schemas.admin import (
 from app.schemas.common import SuccessResponse, PaginatedResponse
 from app.utils.id_generator import generate_prefixed_id
 from app.api.auth.deps import get_current_admin
+from app.services.audit_service import record_admin_action
 from app.services.otp_service import PURPOSE_ADMIN_INVITE, generate_otp, store_otp, verify_otp
 
 router = APIRouter(prefix="/admins", tags=["Admins"])
@@ -62,6 +63,7 @@ async def invite_admin(
         otp=otp,
         name="New Admin",
     )
+    record_admin_action(session, current_admin.id, "admin.invite", "admin_invite")
     return {"message": f"Invite OTP sent to {data.email}. Valid for 10 minutes."}
 
 
@@ -135,6 +137,7 @@ async def register_admin(
     )
     
     await repo.create(admin)
+    record_admin_action(session, admin_id, "admin.register", "admin", admin_id)
     
     return admin
 
@@ -247,7 +250,11 @@ async def update_admin(
         admin.active_status = data.active_status.value
     
     await repo.update(admin)
-    
+    record_admin_action(
+        session, current_admin.id, "admin.update", "admin", admin_id,
+        detail="fields=" + ",".join(sorted(data.model_dump(exclude_unset=True))),
+    )
+
     return admin
 
 
@@ -273,7 +280,8 @@ async def deactivate_admin(
     
     admin.active_status = AdminStatus.INACTIVE.value
     await repo.update(admin)
-    
+    record_admin_action(session, current_admin.id, "admin.deactivate", "admin", admin_id)
+
     return SuccessResponse(message=f"Admin {admin_id} has been deactivated")
 
 
@@ -299,7 +307,8 @@ async def activate_admin(
     
     admin.active_status = AdminStatus.ACTIVE.value
     await repo.update(admin)
-    
+    record_admin_action(session, current_admin.id, "admin.activate", "admin", admin_id)
+
     return SuccessResponse(message=f"Admin {admin_id} has been activated")
 
 
