@@ -9,22 +9,22 @@ LifeConnect is a modern, full-stack web application designed to bring blood dono
 ## Tech Stack
 
 LifeConnect has been completely rewritten into a modern split-stack architecture:
-- **Backend**: FastAPI (Python 3.10+), SQLAlchemy (Async), Alembic, Pydantic, Passlib (bcrypt), JOSE (JWT)
-- **Frontend**: React, Vite, React Router, Recharts
-- **Database**: PostgreSQL (Production) / SQLite (Development)
+- **Backend**: FastAPI (Python 3.11+), SQLAlchemy (Async), Alembic, Pydantic, Passlib (bcrypt), JOSE (JWT), APScheduler
+- **Frontend**: React, Vite, React Router
+- **Database**: PostgreSQL (development and production). SQLite is used only by the automated test suite.
 
 ## Features
 
 - **Request Blood Donations**: Users can submit blood requests that are then reviewed and matched with eligible donors based on blood type and location.
 - **Donor Management**: Active and willing donors can register with our platform to be notified of relevant blood donation opportunities.
-- **Admin Dashboard**: Comprehensive analytics and metrics powered by Recharts, allowing admins to track donations and system health.
+- **Admin Dashboard**: Analytics and metrics that let admins track requests, donors and hospitals.
 - **Request Approval and Tracking**: Admins review each request and coordinate directly with hospitals and recipients, ensuring a smooth and timely process.
 - **Secure Authentication**: JWT-based authentication with role-based access control (RBAC) separating Admin and Donor privileges. (Invited-only Admins).
 - **Hospital Management**: Maintain a registry of partner hospitals to quickly associate blood requests.
 
 ## Getting Started
 
-See the setup guide at `docs/setup.md` for detailed instructions on how to run this project locally.
+See the setup guide at `docs/setup.md` for how to run this project locally and the deployment settings you must configure (`SCHEDULER_ENABLED`, `RECAPTCHA_ENFORCED`, `RATE_LIMIT_STORAGE_URI`). The database layout is in `docs/database.md`.
 
 ## About the Youth Red Cross (YRC)
 
