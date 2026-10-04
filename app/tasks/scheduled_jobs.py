@@ -1,8 +1,8 @@
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 import logging
 import zlib
 
-from sqlalchemy import text
+from sqlalchemy import delete, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
@@ -10,6 +10,8 @@ from app.core.database import Database
 from app.repositories.blood_request import BloodRequestRepository
 from app.repositories.donor import DonorRepository
 from app.models.donor import PersonalDetails, DonorDetail
+from app.models.otp import OtpCode
+from app.models.refresh_session import RefreshSession
 
 logger = logging.getLogger(__name__)
 
@@ -101,6 +103,24 @@ async def increment_donor_ages(db: Database) -> None:
         logger.error(f"Error in increment_donor_ages: {e}")
 
 
+async def purge_expired_auth_records(db: Database) -> None:
+    """
+    Delete expired one-time codes and refresh sessions (nothing can use them any more).
+    Runs daily; see docs/DATA_RETENTION.md.
+    """
+    try:
+        async with db.session() as session:
+            if not await try_job_lock(session, "purge_expired_auth_records"):
+                logger.info("purge_expired_auth_records already running elsewhere; skipping")
+                return
+            now = datetime.utcnow()
+            otps = await session.execute(delete(OtpCode).where(OtpCode.expires_at < now))
+            sessions = await session.execute(delete(RefreshSession).where(RefreshSession.expires_at < now))
+            logger.info(f"Purged {otps.rowcount} expired OTP(s) and {sessions.rowcount} expired refresh session(s)")
+    except Exception as e:
+        logger.error(f"Error in purge_expired_auth_records: {e}")
+
+
 def setup_scheduled_jobs(scheduler, db: Database) -> None:
     """Configure all scheduled jobs."""
 
@@ -128,6 +148,15 @@ def setup_scheduled_jobs(scheduler, db: Database) -> None:
         job_id="increment_donor_ages",
         hour=0,
         minute=1,  # Offset by 1 minute to avoid conflicts
+        db=db,
+    )
+
+    # Drop expired OTPs and refresh sessions
+    scheduler.add_cron_job(
+        purge_expired_auth_records,
+        job_id="purge_expired_auth_records",
+        hour=0,
+        minute=2,
         db=db,
     )
 

@@ -53,3 +53,15 @@ def test_setup_env_names_exist_in_settings():
     assert names, "expected an env example block"
     unknown = [n for n in names if n not in Settings.model_fields]
     assert not unknown, unknown
+
+
+# Tables that hold no personal data and need no retention row.
+RETENTION_EXEMPT = {"hospital_details", "terms_and_conditions"}
+
+
+def test_retention_doc_covers_every_table_with_personal_data():
+    from app.models.base import Base
+
+    text = _read("docs/DATA_RETENTION.md")
+    for table in sorted(set(Base.metadata.tables) - RETENTION_EXEMPT):
+        assert f"`{table}`" in text, f"add {table} to docs/DATA_RETENTION.md"
