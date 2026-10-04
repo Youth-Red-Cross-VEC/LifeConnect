@@ -1,6 +1,7 @@
 """Shared test data builders."""
 
 from datetime import date, datetime
+from functools import lru_cache
 
 from app.api.auth.utils import hash_password
 from app.models.blood_request import BloodRequestDetails, ResponseDetails
@@ -12,6 +13,12 @@ from app.models.donor import (
     TermsAndConditions,
 )
 from app.models.hospital import HospitalDetails
+
+
+@lru_cache(maxsize=None)
+def _hashed(password: str) -> str:
+    """bcrypt is deliberately slow; hash each test password once per run."""
+    return hash_password(password)
 
 
 async def insert_donor(
@@ -33,7 +40,7 @@ async def insert_donor(
     await session.flush()
     donor = DonorDetail(
         id=f"DON-{n}", name=f"Donor{n} Test", email=email or f"donor{n}@example.com",
-        password=hash_password(password), blood_group=blood_group, active_status=active,
+        password=_hashed(password), blood_group=blood_group, active_status=active,
         authentication_id=f"AUTH-{n}", number_of_times_donated=0,
         personal_details_id=f"PD-{n}", address_id=f"AD-{n}", disease_id=f"DS-{n}",
         terms_and_conditions_id=f"TC-{n}",
