@@ -1,5 +1,9 @@
 from datetime import date, timedelta
 import logging
+import zlib
+
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import Database
 from app.repositories.blood_request import BloodRequestRepository
@@ -9,6 +13,21 @@ from app.models.donor import PersonalDetails, DonorDetail
 logger = logging.getLogger(__name__)
 
 
+async def try_job_lock(session: AsyncSession, job_name: str) -> bool:
+    """
+    Take a transaction-level Postgres advisory lock for this job.
+
+    Returns False if another instance already holds it, so an accidental second
+    scheduler cannot double-run a job. The lock is released when the session's
+    transaction ends. No-op (True) on non-Postgres databases.
+    """
+    if session.get_bind().dialect.name != "postgresql":
+        return True
+    key = zlib.crc32(f"lifeconnect:{job_name}".encode())
+    result = await session.execute(text("SELECT pg_try_advisory_xact_lock(:key)"), {"key": key})
+    return bool(result.scalar())
+
+
 async def expire_blood_requests(db: Database) -> None:
     """
     Mark overdue pending requests as expired.
@@ -16,6 +35,9 @@ async def expire_blood_requests(db: Database) -> None:
     """
     try:
         async with db.session() as session:
+            if not await try_job_lock(session, "expire_blood_requests"):
+                logger.info("expire_blood_requests already running elsewhere; skipping")
+                return
             repo = BloodRequestRepository(session)
             current_date = date.today()
             count = await repo.expire_overdue_requests(current_date)
@@ -31,6 +53,9 @@ async def activate_donor_status(db: Database) -> None:
     """
     try:
         async with db.session() as session:
+            if not await try_job_lock(session, "activate_donor_status"):
+                logger.info("activate_donor_status already running elsewhere; skipping")
+                return
             repo = DonorRepository(session)
             cutoff_date = date.today() - timedelta(days=60)
             count = await repo.reactivate_eligible_donors(cutoff_date)
@@ -48,6 +73,9 @@ async def increment_donor_ages(db: Database) -> None:
         from sqlalchemy import select, extract
 
         async with db.session() as session:
+            if not await try_job_lock(session, "increment_donor_ages"):
+                logger.info("increment_donor_ages already running elsewhere; skipping")
+                return
             current_date = date.today()
 
             # Find donors whose birthday is today using SQL extract() — correct approach

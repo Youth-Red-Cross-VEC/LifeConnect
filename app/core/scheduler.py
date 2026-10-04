@@ -108,3 +108,17 @@ def init_scheduler(timezone: str = "Asia/Kolkata") -> Scheduler:
     global scheduler
     scheduler = Scheduler(timezone=timezone)
     return scheduler
+
+
+def start_scheduler_if_enabled(settings, database) -> Scheduler | None:
+    """Start the job scheduler only when SCHEDULER_ENABLED is true for this process."""
+    if not settings.SCHEDULER_ENABLED:
+        logger.info("Scheduler disabled for this process (SCHEDULER_ENABLED=false)")
+        return None
+
+    from app.tasks import setup_scheduled_jobs
+
+    instance = init_scheduler(timezone=settings.SCHEDULER_TIMEZONE)
+    setup_scheduled_jobs(instance, database)
+    instance.start()
+    return instance

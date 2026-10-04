@@ -48,7 +48,8 @@ class Settings(BaseSettings):
     # Rate Limiting
     RATE_LIMIT_PER_MINUTE: int = 60
 
-    # Scheduler
+    # Scheduler (enable on exactly ONE dedicated process, never on web workers)
+    SCHEDULER_ENABLED: bool = False
     SCHEDULER_TIMEZONE: str = "Asia/Kolkata"
 
     @model_validator(mode="after")
