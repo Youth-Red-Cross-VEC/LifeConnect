@@ -163,9 +163,6 @@ export default function AdminHelp() {
                         <li>Generate Certificates for donors acknowledging their contributions.</li>
                         <div className="image-placeholder">Image Placeholder for Generating Certificates</div>
 
-                        <li>Extract CSV Data to retrieve and manage donor or hospital data efficiently.</li>
-                        <div className="image-placeholder">Image Placeholder for CSV Data Management</div>
-
                         <li>View Admin Analytics for insights into system performance.</li>
                         <div className="image-placeholder">Image Placeholder for Admin Analytics</div>
 

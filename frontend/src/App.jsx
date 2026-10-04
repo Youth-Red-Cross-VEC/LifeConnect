@@ -41,7 +41,6 @@ import DeclinedRequestsAdmin from "./pages/DeclinedRequestsAdmin";
 import GenerateCertificate from "./pages/GenerateCertificate";
 import ManageHospitalDetails from "./pages/ManageHospitalDetails";
 import OngoingRequestsUpdationConfirmation from "./pages/OngoingRequestsUpdationConfirmation";
-import UploadCsvFile from "./pages/UploadCsvFile";
 import AdminDashboard from "./pages/AdminDashboard";
 import AboutUs from "./pages/AboutUs";
 import NotFound from "./pages/NotFound";
@@ -99,7 +98,6 @@ function App() {
           <Route path="/admin/generate-certificate" element={<ProtectedRoute type="admin"><GenerateCertificate /></ProtectedRoute>} />
           <Route path="/admin/hospitals/all" element={<ProtectedRoute type="admin"><ManageHospitalDetails /></ProtectedRoute>} />
           <Route path="/admin/requests/ongoing/confirmation" element={<ProtectedRoute type="admin"><OngoingRequestsUpdationConfirmation /></ProtectedRoute>} />
-          <Route path="/admin/upload-csv" element={<ProtectedRoute type="admin"><UploadCsvFile /></ProtectedRoute>} />
 
           {/* Confirmation Routes */}
           <Route path="/blood-request/confirmation" element={<BloodRequestConfirmation />} />

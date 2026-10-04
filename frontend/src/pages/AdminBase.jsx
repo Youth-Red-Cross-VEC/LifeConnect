@@ -274,11 +274,6 @@ export default function AdminBase({ children, active = "" }) {
                     <i className="fa-solid fa-award"></i> Generate Certificates
                   </a>
                 </li>
-                <li>
-                  <a href="/admin/upload-csv" className={active === "upload-csv" ? "active" : ""}>
-                    <i className="fa-solid fa-file-csv"></i> Extract CSV Data
-                  </a>
-                </li>
               </ul>
             </div>
 

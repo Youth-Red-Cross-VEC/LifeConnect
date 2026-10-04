@@ -278,13 +278,6 @@ export default function AdminDashboard() {
                   <p>Generate certificates for donors.</p>
                 </div>
               </a>
-              <a href="/admin/upload-csv" className="tile-link">
-                <div className="tile">
-                  <i className="fa-solid fa-file-csv tile-icon"></i>
-                  <h3>Extract CSV Data</h3>
-                  <p>Upload donor/hospital CSV data.</p>
-                </div>
-              </a>
             </div>
           </>
         )}
