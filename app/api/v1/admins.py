@@ -26,7 +26,7 @@ from app.schemas.admin import (
 from app.schemas.common import SuccessResponse, PaginatedResponse
 from app.utils.id_generator import generate_prefixed_id
 from app.api.auth.deps import get_current_admin
-from app.api.auth.router import store_otp, verify_otp
+from app.services.otp_service import PURPOSE_ADMIN_INVITE, generate_otp, store_otp, verify_otp
 
 router = APIRouter(prefix="/admins", tags=["Admins"])
 
@@ -51,10 +51,9 @@ async def invite_admin(
     Only existing admins can send invites. The OTP is valid for 10 minutes
     and must be supplied in the subsequent `POST /admins/register` call.
     """
-    import random
     from app.services.email_service import get_email_service
-    otp = str(random.randint(100000, 999999))
-    store_otp(data.email, otp)
+    otp = generate_otp()
+    await store_otp(session, data.email, otp, PURPOSE_ADMIN_INVITE)
 
     email_svc = get_email_service()
     await email_svc.send_otp_email(
@@ -87,7 +86,7 @@ async def register_admin(
     This prevents self-registration without an existing admin's approval.
     """
     # Verify invite OTP
-    if not verify_otp(data.email, data.invite_otp):
+    if not await verify_otp(session, data.email, data.invite_otp, PURPOSE_ADMIN_INVITE):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid or expired invite OTP. Ask an existing admin to resend the invite.",

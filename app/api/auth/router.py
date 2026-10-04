@@ -3,8 +3,6 @@ Authentication Router - Complete Implementation
 
 Login, logout, and password reset endpoints for donors and admins.
 """
-import secrets
-import time
 import logging
 from datetime import datetime
 from typing import Optional
@@ -21,6 +19,13 @@ from app.core.recaptcha import verify_recaptcha
 from app.models.donor import DonorDetail
 from app.models.admin import AdminDetails
 from app.services.email_service import get_email_service
+from app.services.otp_service import (
+    PURPOSE_ADMIN_RESET,
+    PURPOSE_DONOR_RESET,
+    generate_otp,
+    store_otp,
+    verify_otp,
+)
 from app.api.auth.utils import (
     hash_password,
     verify_password,
@@ -32,45 +37,6 @@ from app.api.auth.utils import (
 from app.api.auth.deps import get_current_donor, get_current_admin
 
 logger = logging.getLogger(__name__)
-
-# OTP store: {(purpose, email): {"otp", "expires_at", "attempts"}}
-# NOTE: process-local; use Redis/DB when running more than one worker.
-otp_store: dict[tuple[str, str], dict[str, object]] = {}
-OTP_TTL_SECONDS = 600
-OTP_MAX_ATTEMPTS = 5
-
-
-def generate_otp() -> str:
-    """Generate a 6-digit OTP using a cryptographically secure RNG."""
-    return f"{secrets.randbelow(900000) + 100000}"
-
-
-def store_otp(email: str, otp: str, purpose: str = "password_reset"):
-    """Store OTP bound to a purpose with a 10 minute expiry."""
-    otp_store[(purpose, email.lower())] = {
-        "otp": otp,
-        "expires_at": time.time() + OTP_TTL_SECONDS,
-        "attempts": 0,
-    }
-
-
-def verify_otp(email: str, otp: str, purpose: str = "password_reset") -> bool:
-    """Verify OTP: purpose-bound, expiring, attempt-limited, single use."""
-    key = (purpose, email.lower())
-    record = otp_store.get(key)
-    if not record:
-        return False
-    if time.time() > float(record["expires_at"]):  # type: ignore[arg-type]
-        del otp_store[key]
-        return False
-    record["attempts"] = int(record["attempts"]) + 1  # type: ignore[arg-type]
-    if int(record["attempts"]) > OTP_MAX_ATTEMPTS:  # type: ignore[arg-type]
-        del otp_store[key]
-        return False
-    if not secrets.compare_digest(str(record["otp"]), otp):
-        return False
-    del otp_store[key]
-    return True
 
 # ============================================================
 # REQUEST/RESPONSE SCHEMAS
@@ -493,7 +459,7 @@ async def request_donor_password_reset(
         # await send_password_reset_email(donor.email, otp)
         # Store OTP in database with expiry
         otp = generate_otp()
-        store_otp(donor.email, otp, "donor_password_reset")
+        await store_otp(session, donor.email, otp, PURPOSE_DONOR_RESET)
         email_service = get_email_service()
         await email_service.send_otp_email(donor.email, otp, donor.name)
         
@@ -542,7 +508,7 @@ async def confirm_donor_password_reset(
                 detail="Donor not found",
             )
 
-        if not verify_otp(data.email, data.otp, "donor_password_reset"):
+        if not await verify_otp(session, data.email, data.otp, PURPOSE_DONOR_RESET):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,detail="Invalid or expired OTP",)
         # Hash new password
         donor.password = hash_password(data.new_password)
@@ -580,7 +546,7 @@ async def request_admin_password_reset(
             logger.info("Admin password reset requested for unknown email")
         else:
             otp = generate_otp()
-            store_otp(admin.email, otp, "admin_password_reset")
+            await store_otp(session, admin.email, otp, PURPOSE_ADMIN_RESET)
             email_service = get_email_service()
             await email_service.send_otp_email(admin.email, otp, admin.username)
             logger.info(f"Admin password reset requested for: {admin.id}")
@@ -615,7 +581,7 @@ async def confirm_admin_password_reset(
             )
         
         # Verify OTP (simplified)
-        if not verify_otp(data.email, data.otp, "admin_password_reset"):
+        if not await verify_otp(session, data.email, data.otp, PURPOSE_ADMIN_RESET):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,detail="Invalid or expired OTP",)
         # Hash new password
         admin.password = hash_password(data.new_password)

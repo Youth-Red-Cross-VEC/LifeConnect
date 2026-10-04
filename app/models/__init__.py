@@ -13,6 +13,7 @@ from app.models.admin import AdminDetails, AuthenticationDetailsAdmin
 from app.models.blood_request import BloodRequestDetails, ResponseDetails
 from app.models.hospital import HospitalDetails
 from app.models.query import QueryTable
+from app.models.otp import OtpCode
 
 __all__ = [
     # Base
@@ -35,4 +36,6 @@ __all__ = [
     "HospitalDetails",
     # Query/Support
     "QueryTable",
+    # Auth support
+    "OtpCode",
 ]

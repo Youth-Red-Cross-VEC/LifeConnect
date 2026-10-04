@@ -3,7 +3,19 @@
 import pytest
 from httpx import AsyncClient
 
-from app.api.auth.router import generate_otp, store_otp, verify_otp
+from datetime import datetime, timedelta
+
+from sqlalchemy import select
+
+from app.models.otp import OtpCode
+from app.services.otp_service import (
+    PURPOSE_ADMIN_INVITE,
+    PURPOSE_ADMIN_RESET,
+    PURPOSE_DONOR_RESET,
+    generate_otp,
+    store_otp,
+    verify_otp,
+)
 from app.services.certificate_service import CertificateService
 
 
@@ -29,17 +41,42 @@ class TestOtp:
         for _ in range(50):
             assert len(generate_otp()) == 6
 
-    def test_otp_is_single_use_and_purpose_bound(self):
-        store_otp("a@example.com", "123456", "donor_password_reset")
-        assert not verify_otp("a@example.com", "123456", "admin_password_reset")
-        assert verify_otp("a@example.com", "123456", "donor_password_reset")
-        assert not verify_otp("a@example.com", "123456", "donor_password_reset")
+    @pytest.mark.asyncio
+    async def test_otp_is_single_use_and_purpose_bound(self, test_session):
+        await store_otp(test_session, "a@example.com", "123456", PURPOSE_DONOR_RESET)
+        assert not await verify_otp(test_session, "a@example.com", "123456", PURPOSE_ADMIN_RESET)
+        assert not await verify_otp(test_session, "a@example.com", "123456", PURPOSE_ADMIN_INVITE)
+        assert await verify_otp(test_session, "a@example.com", "123456", PURPOSE_DONOR_RESET)
+        assert not await verify_otp(test_session, "a@example.com", "123456", PURPOSE_DONOR_RESET)
 
-    def test_otp_attempt_limit(self):
-        store_otp("b@example.com", "123456", "donor_password_reset")
+    @pytest.mark.asyncio
+    async def test_otp_attempt_limit(self, test_session):
+        await store_otp(test_session, "b@example.com", "123456", PURPOSE_DONOR_RESET)
         for _ in range(5):
-            assert not verify_otp("b@example.com", "000000", "donor_password_reset")
-        assert not verify_otp("b@example.com", "123456", "donor_password_reset")
+            assert not await verify_otp(test_session, "b@example.com", "000000", PURPOSE_DONOR_RESET)
+        assert not await verify_otp(test_session, "b@example.com", "123456", PURPOSE_DONOR_RESET)
+
+    @pytest.mark.asyncio
+    async def test_otp_is_stored_hashed_and_expires(self, test_session):
+        await store_otp(test_session, "c@example.com", "654321", PURPOSE_ADMIN_INVITE)
+        row = (await test_session.execute(select(OtpCode))).scalar_one()
+        assert "654321" not in row.otp_hash
+        row.expires_at = datetime.utcnow() - timedelta(seconds=1)
+        await test_session.commit()
+        assert not await verify_otp(test_session, "c@example.com", "654321", PURPOSE_ADMIN_INVITE)
+
+    @pytest.mark.asyncio
+    async def test_new_code_replaces_old_one(self, test_session):
+        await store_otp(test_session, "d@example.com", "111111", PURPOSE_ADMIN_INVITE)
+        await store_otp(test_session, "d@example.com", "222222", PURPOSE_ADMIN_INVITE)
+        assert not await verify_otp(test_session, "d@example.com", "111111", PURPOSE_ADMIN_INVITE)
+
+    def test_no_weak_rng_or_process_local_store(self):
+        import inspect
+        import app.api.v1.admins as admins
+        import app.api.auth.router as auth_router
+        assert "random.randint" not in inspect.getsource(admins)
+        assert not hasattr(auth_router, "otp_store")
 
 
 class TestCertificatePaths:
