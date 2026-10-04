@@ -5,6 +5,8 @@ Handles JWT token creation/validation, password hashing/verification,
 and all cryptographic operations for authentication.
 """
 
+import hashlib
+import hmac
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 from jose import JWTError, jwt
@@ -49,25 +51,43 @@ def hash_password(password: str) -> str:
     return pwd_context.hash(password)
 
 
+def _verify_legacy_scrypt(plain_password: str, hashed_password: str) -> bool:
+    """Verify a legacy werkzeug-style hash: scrypt:N:r:p$salt$hexdigest."""
+    try:
+        method, salt, expected = hashed_password.split("$")
+        _, n, r, p = method.split(":")
+        n, r, p = int(n), int(r), int(p)
+        digest = hashlib.scrypt(
+            plain_password.encode(),
+            salt=salt.encode(),
+            n=n,
+            r=r,
+            p=p,
+            maxmem=132 * n * r * p,
+        ).hex()
+        return hmac.compare_digest(digest, expected)
+    except (ValueError, TypeError):
+        return False
+
+
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """
     Verify a plain password against its hash.
-    
-    Args:
-        plain_password: Plain text password to verify
-        hashed_password: Hashed password from database
-        
-    Returns:
-        bool: True if password matches, False otherwise
-        
-    Example:
-        >>> if verify_password(input_pwd, db_pwd):
-        ...     # Password is correct
+
+    Supports bcrypt and legacy scrypt hashes (migrated from the old Flask app).
+    Callers should check needs_rehash() after a successful verification.
     """
+    if hashed_password.startswith("scrypt:"):
+        return _verify_legacy_scrypt(plain_password, hashed_password)
     try:
         return pwd_context.verify(plain_password, hashed_password)
     except Exception:
         return False
+
+
+def needs_rehash(hashed_password: str) -> bool:
+    """True if the stored hash is a legacy scrypt hash and should become bcrypt."""
+    return hashed_password.startswith("scrypt:")
 
 
 # ============================================================

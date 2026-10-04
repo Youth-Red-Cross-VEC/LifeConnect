@@ -22,6 +22,7 @@ from app.services.email_service import get_email_service
 from app.api.auth.utils import (
     hash_password,
     verify_password,
+    needs_rehash,
     create_access_token,
     create_refresh_token,
     decode_token
@@ -197,6 +198,9 @@ async def donor_login(
                 detail="Invalid email or password",
             )
 
+        if needs_rehash(donor.password):
+            donor.password = hash_password(credentials.password)
+
         # Update last login — store full datetime
         donor.last_login_date = datetime.now()
         await session.commit()
@@ -285,6 +289,9 @@ async def admin_login(
                 detail="Invalid email or password",
             )
         
+        if needs_rehash(admin.password):
+            admin.password = hash_password(credentials.password)
+
         # Update last login — store full datetime
         admin.last_login_date = datetime.now()
         await session.commit()
