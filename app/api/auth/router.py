@@ -38,6 +38,7 @@ from app.api.auth.utils import (
 from app.api.auth.deps import get_current_donor, get_current_admin
 
 logger = logging.getLogger(__name__)
+_settings = get_settings()
 
 # ============================================================
 # REQUEST/RESPONSE SCHEMAS
@@ -127,7 +128,7 @@ router = APIRouter(
 # ============================================================
 
 @router.post("/donor/login", response_model=TokenResponse)
-@limiter.limit("5/minute")
+@limiter.limit(_settings.AUTH_RATE_LIMIT)
 async def donor_login(
     request: Request,
     credentials: LoginRequest,
@@ -218,7 +219,7 @@ async def donor_login(
 
 
 @router.post("/admin/login", response_model=TokenResponse)
-@limiter.limit("5/minute")
+@limiter.limit(_settings.AUTH_RATE_LIMIT)
 async def admin_login(
     request: Request,
     credentials: LoginRequest,
@@ -467,7 +468,7 @@ async def logout(
 # ============================================================
 
 @router.post("/donor/password-reset/request", response_model=MessageResponse)
-@limiter.limit("3/minute")
+@limiter.limit(_settings.PASSWORD_RESET_RATE_LIMIT)
 async def request_donor_password_reset(
     request: Request,
     data: PasswordResetRequest,
@@ -573,7 +574,7 @@ async def confirm_donor_password_reset(
 
 
 @router.post("/admin/password-reset/request", response_model=MessageResponse)
-@limiter.limit("3/minute")
+@limiter.limit(_settings.PASSWORD_RESET_RATE_LIMIT)
 async def request_admin_password_reset(
     request: Request,
     data: PasswordResetRequest,

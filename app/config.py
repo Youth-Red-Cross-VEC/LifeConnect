@@ -53,6 +53,14 @@ class Settings(BaseSettings):
     # store (e.g. redis://host:6379/0) or the effective limit is multiplied by the worker count.
     RATE_LIMIT_STORAGE_URI: str = "memory://"
 
+    # Per-IP limits on credential endpoints (brute force / email flooding)
+    AUTH_RATE_LIMIT: str = "5/minute"
+    PASSWORD_RESET_RATE_LIMIT: str = "3/minute"
+
+    # One-time codes (admin invite, password reset)
+    OTP_TTL_SECONDS: int = 600
+    OTP_MAX_ATTEMPTS: int = 5
+
     # Donation eligibility: days a donor stays inactive after donating
     DONOR_ELIGIBILITY_DAYS: int = 60
 

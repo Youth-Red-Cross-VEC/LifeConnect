@@ -7,10 +7,9 @@ from datetime import datetime, timedelta
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
 from app.models.otp import OtpCode
 
-OTP_TTL_SECONDS = 600
-OTP_MAX_ATTEMPTS = 5
 
 # Each flow gets its own purpose so a code issued for one can never satisfy another.
 PURPOSE_ADMIN_INVITE = "admin_invite"  # issued by POST /admins/invite, consumed by POST /admins/register
@@ -35,7 +34,7 @@ async def store_otp(session: AsyncSession, email: str, otp: str, purpose: str) -
         purpose=purpose,
         email=email,
         otp_hash=_hash(otp, purpose, email),
-        expires_at=datetime.utcnow() + timedelta(seconds=OTP_TTL_SECONDS),
+        expires_at=datetime.utcnow() + timedelta(seconds=get_settings().OTP_TTL_SECONDS),
         attempts=0,
     ))
     await session.commit()  # the code is emailed right after; it must be durable first
@@ -49,7 +48,7 @@ async def verify_otp(session: AsyncSession, email: str, otp: str, purpose: str) 
     )).scalar_one_or_none()
     if record is None:
         return False
-    if datetime.utcnow() > record.expires_at or record.attempts >= OTP_MAX_ATTEMPTS:
+    if datetime.utcnow() > record.expires_at or record.attempts >= get_settings().OTP_MAX_ATTEMPTS:
         await session.delete(record)
         await session.commit()
         return False
