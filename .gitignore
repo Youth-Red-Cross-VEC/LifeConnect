@@ -112,3 +112,7 @@ graphify-out/
 # Legacy dump containing real personal data - never commit
 source_db.sql
 *.sql.bak
+
+# Database dumps may contain personal data - never commit
+*.dump
+*.sql.gz
