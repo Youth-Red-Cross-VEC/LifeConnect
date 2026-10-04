@@ -1,3 +1,4 @@
+from app.utils.search import LIKE_ESCAPE, escape_like
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, or_, func, update, delete
 from sqlalchemy.orm import selectinload
@@ -93,7 +94,7 @@ class DonorRepository:
         if active_only:
             conditions.append(DonorDetail.active_status == True)
         if name_search:
-            conditions.append(DonorDetail.name.ilike(f"%{name_search}%"))
+            conditions.append(DonorDetail.name.ilike(f"%{escape_like(name_search)}%", escape=LIKE_ESCAPE))
 
         if conditions:
             query = query.where(and_(*conditions))

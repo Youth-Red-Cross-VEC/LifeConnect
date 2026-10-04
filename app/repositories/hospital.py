@@ -1,3 +1,4 @@
+from app.utils.search import LIKE_ESCAPE, escape_like
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_
 from app.models.hospital import HospitalDetails
@@ -40,12 +41,12 @@ class HospitalRepository:
         if city:
             conditions.append(func.lower(HospitalDetails.city) == func.lower(city))
         if search:
-            search_pattern = f"%{search}%"
+            search_pattern = f"%{escape_like(search)}%"
             conditions.append(
                 or_(
-                    HospitalDetails.hospital_name.ilike(search_pattern),
-                    HospitalDetails.city.ilike(search_pattern),
-                    HospitalDetails.hospital_address.ilike(search_pattern),
+                    HospitalDetails.hospital_name.ilike(search_pattern, escape=LIKE_ESCAPE),
+                    HospitalDetails.city.ilike(search_pattern, escape=LIKE_ESCAPE),
+                    HospitalDetails.hospital_address.ilike(search_pattern, escape=LIKE_ESCAPE),
                 )
             )
 
@@ -78,7 +79,9 @@ class HospitalRepository:
         """Get hospital suggestions for autofill."""
         query = (
             select(HospitalDetails)
-            .where(HospitalDetails.hospital_name.ilike(f"%{search}%"))
+            .where(
+                HospitalDetails.hospital_name.ilike(f"%{escape_like(search)}%", escape=LIKE_ESCAPE)
+            )
             .order_by(HospitalDetails.hospital_name.asc())
             .limit(limit)
         )
