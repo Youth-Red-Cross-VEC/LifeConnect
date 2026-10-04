@@ -31,7 +31,7 @@ RUN uv pip install --target=/deps \
     fastapi uvicorn[standard] \
     pydantic pydantic-settings email-validator \
     sqlalchemy[asyncio] asyncpg alembic \
-    python-jose[cryptography] passlib[bcrypt] python-multipart \
+    python-jose[cryptography] passlib[bcrypt] "bcrypt<4.0.0" python-multipart \
     apscheduler httpx aiosmtplib \
     structlog slowapi python-dotenv pillow
 

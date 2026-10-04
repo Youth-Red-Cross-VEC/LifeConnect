@@ -22,9 +22,9 @@ class TestDonorEndpoints:
         assert data["items"] == []
 
     @pytest.mark.asyncio
-    async def test_get_donor_not_found(self, client: AsyncClient):
+    async def test_get_donor_not_found(self, admin_client: AsyncClient):
         """Test getting a non-existent donor returns 404."""
-        response = await client.get("/api/v1/donors/DON-nonexistent")
+        response = await admin_client.get("/api/v1/donors/DON-nonexistent")
         
         assert response.status_code == 404
         assert "not found" in response.json()["detail"].lower()
