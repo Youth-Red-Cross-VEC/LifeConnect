@@ -1,3 +1,4 @@
+from pydantic import model_validator
 from pydantic_settings import BaseSettings
 from functools import lru_cache
 from typing import Optional
@@ -19,7 +20,7 @@ class Settings(BaseSettings):
     # Security - JWT Configuration (Partner will implement auth using these)
     SECRET_KEY: str
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440  # 24 hours
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30
 
     # External APIs
@@ -49,6 +50,15 @@ class Settings(BaseSettings):
 
     # Scheduler
     SCHEDULER_TIMEZONE: str = "Asia/Kolkata"
+
+    @model_validator(mode="after")
+    def _validate_production_settings(self) -> "Settings":
+        if self.APP_ENV.lower() == "production":
+            if not self.RECAPTCHA_SECRET_KEY:
+                raise ValueError("RECAPTCHA_SECRET_KEY must be set when APP_ENV=production")
+            if len(self.SECRET_KEY) < 32:
+                raise ValueError("SECRET_KEY must be at least 32 characters in production")
+        return self
 
     class Config:
         env_file = ".env"

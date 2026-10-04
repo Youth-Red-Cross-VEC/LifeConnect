@@ -19,7 +19,7 @@ from app.schemas.query import (
     QueryListResponse,
 )
 from app.schemas.common import SuccessResponse, PaginatedResponse
-from app.api.auth.deps import get_current_admin
+from app.api.auth.deps import get_current_admin, get_current_user
 
 router = APIRouter(prefix="/queries", tags=["Support Queries"])
 
@@ -69,16 +69,16 @@ async def submit_query(
     summary="Get queries by user email",
 )
 async def get_my_queries(
-    email: str = Query(..., description="User's email address"),
     session: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
 ):
     """
-    Get all queries submitted by a specific email address.
-    
-    Users can check their query status using their email.
+    Get all queries submitted by the authenticated user.
+
+    The email is taken from the verified account, never from the client.
     """
     repo = QueryRepository(session)
-    queries = await repo.get_by_user_email(email)
+    queries = await repo.get_by_user_email(current_user["email"])
     
     return queries
 
@@ -150,13 +150,14 @@ async def get_pending_queries(
 @router.get(
     "/{query_id}",
     response_model=QueryResponse,
-    summary="Get query by ID",
+    summary="Get query by ID (Admin)",
 )
 async def get_query(
     query_id: int,
     session: AsyncSession = Depends(get_db),
+    current_admin = Depends(get_current_admin),
 ):
-    """Get a specific query by ID."""
+    """Get a specific query by ID (admin only)."""
     repo = QueryRepository(session)
     query = await repo.get_by_id(query_id)
     

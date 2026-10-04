@@ -167,8 +167,9 @@ async def get_declined_requests(
 async def get_blood_request(
     request_id: str,
     session: AsyncSession = Depends(get_db),
+    current_admin = Depends(get_current_admin),
 ):
-    """Get blood request details by ID."""
+    """Get blood request details by ID (admin only)."""
     repo = BloodRequestRepository(session)
     request = await repo.get_by_id(request_id)
 
@@ -299,6 +300,24 @@ async def close_blood_request(
             f"Cannot close request with status '{blood_request.status}'"
         )
 
+    # Validate donation data before changing anything
+    donor_ids = list(dict.fromkeys(data.donor_ids))  # de-duplicate, keep order
+    if data.units_donated > blood_request.units_required:
+        raise bad_request_exception(
+            "units_donated cannot exceed units_required "
+            f"({blood_request.units_required})"
+        )
+    if len(donor_ids) > data.units_donated:
+        raise bad_request_exception("More donors listed than units donated")
+    for donor_id in donor_ids:
+        donor = await donor_repo.get_by_id(donor_id)
+        if not donor:
+            raise bad_request_exception(f"Donor '{donor_id}' does not exist")
+        if donor.blood_group != blood_request.blood_group:
+            raise bad_request_exception(
+                f"Donor '{donor_id}' blood group does not match the request"
+            )
+
     # Update request and response
     await request_repo.update_status(
         request_id, "Closed", admin_id=admin_id, is_close=True
@@ -310,12 +329,12 @@ async def close_blood_request(
         report=data.report,
         units_donated=data.units_donated,
         donation_date=data.donation_date,
-        donor_ids=",".join(data.donor_ids) if data.donor_ids else None,
+        donor_ids=",".join(donor_ids) if donor_ids else None,
         certificate_status="Pending" if data.send_certificates else None,
     )
 
     # Update donor records
-    for donor_id in data.donor_ids:
+    for donor_id in donor_ids:
         await donor_repo.update_last_donated(
             donor_id, datetime.combine(data.donation_date, datetime.min.time())
         )
@@ -328,7 +347,7 @@ async def close_blood_request(
     #             background_tasks.add_task(generate_and_send_certificate, donor, blood_request)
 
     return MessageResponse(
-        message=f"Blood request {request_id} closed. {len(data.donor_ids)} donors recorded."
+        message=f"Blood request {request_id} closed. {len(donor_ids)} donors recorded."
     )
 
 

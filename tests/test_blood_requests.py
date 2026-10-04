@@ -46,11 +46,18 @@ class TestBloodRequestEndpoints:
         assert "total" in data
 
     @pytest.mark.asyncio
-    async def test_get_blood_request_not_found(self, client: AsyncClient):
-        """Test getting non-existent blood request returns 404 (public endpoint)."""
-        response = await client.get("/api/v1/blood-requests/REQ-nonexistent")
-        
+    async def test_get_blood_request_not_found(self, admin_client: AsyncClient):
+        """Admin gets 404 for a non-existent blood request."""
+        response = await admin_client.get("/api/v1/blood-requests/REQ-nonexistent")
+
         assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_get_blood_request_requires_auth(self, client: AsyncClient):
+        """Blood request details are no longer public."""
+        response = await client.get("/api/v1/blood-requests/REQ-nonexistent")
+
+        assert response.status_code == 401
 
 
 class TestAnalyticsEndpoints:

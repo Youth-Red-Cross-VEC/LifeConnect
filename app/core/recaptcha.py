@@ -21,8 +21,11 @@ async def verify_recaptcha(token: str, action: str | None = None) -> bool:
     settings = get_settings()
     secret_key = settings.RECAPTCHA_SECRET_KEY
     if not secret_key:
-        logger.warning("RECAPTCHA_SECRET_KEY is not set — skipping verification")
-        return True  # Fail-open when key is not configured (dev mode)
+        if settings.APP_ENV.lower() == "development":
+            logger.warning("RECAPTCHA_SECRET_KEY is not set — skipping verification (development only)")
+            return True
+        logger.error("RECAPTCHA_SECRET_KEY is not set — rejecting request (fail closed)")
+        return False
 
     url = "https://www.google.com/recaptcha/api/siteverify"
 

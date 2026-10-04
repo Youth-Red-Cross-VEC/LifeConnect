@@ -8,6 +8,7 @@ import os
 import asyncio
 from datetime import datetime
 from pathlib import Path
+import re
 from typing import Optional
 import structlog
 
@@ -19,6 +20,16 @@ except ImportError:
     PILLOW_AVAILABLE = False
 
 logger = structlog.get_logger(__name__)
+
+
+# Only filenames produced by this service are valid
+_CERT_FILENAME_RE = re.compile(r"^[A-Za-z0-9_\-]{1,120}_\d{8}_\d{6}_certificate\.(png|txt)$")
+
+
+def _safe_name(donor_name: str) -> str:
+    """Reduce a donor name to filesystem-safe characters."""
+    cleaned = re.sub(r"[^A-Za-z0-9_\-]", "_", donor_name.strip())
+    return cleaned[:60] or "donor"
 
 
 class CertificateService:
@@ -124,7 +135,7 @@ class CertificateService:
             draw.text(position, str(text), font=font, fill="black")
         
         # Generate unique filename
-        safe_name = donor_name.replace(" ", "_").replace("/", "_")
+        safe_name = _safe_name(donor_name)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         file_name = f"{safe_name}_{timestamp}_certificate.png"
         file_path = self.output_dir / file_name
@@ -181,7 +192,7 @@ class CertificateService:
             y_position += 40
         
         # Generate filename
-        safe_name = donor_name.replace(" ", "_").replace("/", "_")
+        safe_name = _safe_name(donor_name)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         file_name = f"{safe_name}_{timestamp}_certificate.png"
         file_path = self.output_dir / file_name
@@ -198,7 +209,7 @@ class CertificateService:
     
     async def _generate_placeholder(self, donor_name: str) -> str:
         """Generate a placeholder text file when Pillow is not available."""
-        safe_name = donor_name.replace(" ", "_").replace("/", "_")
+        safe_name = _safe_name(donor_name)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         file_name = f"{safe_name}_{timestamp}_certificate.txt"
         file_path = self.output_dir / file_name
@@ -217,10 +228,20 @@ class CertificateService:
         
         return str(file_path)
     
+    def _resolve_safe(self, filename: str) -> Optional[Path]:
+        """Validate filename pattern and enforce containment in output_dir."""
+        if not _CERT_FILENAME_RE.match(filename or ""):
+            return None
+        base = self.output_dir.resolve()
+        candidate = (base / filename).resolve()
+        if candidate.parent != base:
+            return None
+        return candidate
+
     async def get_certificate(self, filename: str) -> Optional[Path]:
         """Get path to an existing certificate."""
-        file_path = self.output_dir / filename
-        if file_path.exists():
+        file_path = self._resolve_safe(filename)
+        if file_path and file_path.is_file():
             return file_path
         return None
     
@@ -232,8 +253,8 @@ class CertificateService:
     
     async def delete_certificate(self, filename: str) -> bool:
         """Delete a certificate file."""
-        file_path = self.output_dir / filename
-        if file_path.exists():
+        file_path = self._resolve_safe(filename)
+        if file_path and file_path.is_file():
             file_path.unlink()
             return True
         return False

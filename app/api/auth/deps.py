@@ -93,10 +93,28 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
     
+    # Re-check account state on every request so deactivated/deleted accounts
+    # lose access immediately instead of when the token expires.
+    if user_type == "donor":
+        account = await session.get(DonorDetail, user_id)
+        is_active = bool(account and account.active_status)
+    elif user_type == "admin":
+        account = await session.get(AdminDetails, user_id)
+        is_active = bool(account and str(account.active_status).lower() == "active")
+    else:
+        is_active = False
+
+    if not is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Account is inactive or no longer exists",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
     return {
         "user_id": user_id,
         "user_type": user_type,
-        "email": email,
+        "email": account.email,
     }
 
 
@@ -213,4 +231,4 @@ async def get_current_donor_or_admin(
     Raises:
         HTTPException: 401 if not authenticated
     """
-    return await get_current_user(token, session)
+    return await get_current_user(token, session)

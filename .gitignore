@@ -104,3 +104,11 @@ migrations/versions/*.pyc
 # Static files (will be served by frontend)
 static/
 uploads/
+
+# graphify
+graphify-out/
+.graphify_*
+
+# Legacy dump containing real personal data - never commit
+source_db.sql
+*.sql.bak

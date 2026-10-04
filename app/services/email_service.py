@@ -6,6 +6,7 @@ from email import encoders
 from typing import Optional, List
 from pathlib import Path
 import logging
+from html import escape as _esc
 
 from app.config import Settings
 
@@ -110,6 +111,16 @@ class EmailService:
         """Send blood request notification to a donor."""
         subject = "Urgent Blood Donation Request"
 
+        # Escape all user-controlled values before HTML interpolation
+        donor_name, blood_group, patient_name, hospital_name = (
+            _esc(str(v)) for v in (donor_name, blood_group, patient_name, hospital_name)
+        )
+        hospital_address, contact_number, due_date = (
+            _esc(str(v)) for v in (hospital_address, contact_number, due_date)
+        )
+        attendant_name, request_reason = _esc(str(attendant_name)), _esc(str(request_reason))
+        units_required, patient_age = _esc(str(units_required)), _esc(str(patient_age))
+
         html_body = f"""
         <html>
             <body style="margin: 0; padding: 0; font-family: Arial, sans-serif; background-color: #f4f4f4;">
@@ -165,6 +176,7 @@ class EmailService:
     async def send_otp_email(self, email: str, otp: str, name: str) -> bool:
         """Send OTP verification email."""
         subject = "LifeConnect - Email Verification OTP"
+        name, otp = _esc(str(name)), _esc(str(otp))
 
         html_body = f"""
         <html>
@@ -190,6 +202,7 @@ class EmailService:
     ) -> bool:
         """Send donation certificate to donor."""
         subject = "LifeConnect - Blood Donation Certificate"
+        name = _esc(str(name))
 
         html_body = f"""
         <html>
@@ -220,6 +233,7 @@ class EmailService:
     ) -> None:
         """Notify all admins about a new blood request."""
         subject = "New Blood Request Submitted"
+        request_details = {k: _esc(str(v)) for k, v in request_details.items()}
 
         html_body = f"""
         <html>

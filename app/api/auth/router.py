@@ -3,7 +3,7 @@ Authentication Router - Complete Implementation
 
 Login, logout, and password reset endpoints for donors and admins.
 """
-import random
+import secrets
 import time
 import logging
 from datetime import datetime
@@ -30,29 +30,43 @@ from app.api.auth.deps import get_current_donor, get_current_admin
 
 logger = logging.getLogger(__name__)
 
-# OTP store with expiry: {email: {"otp": "123456", "expires_at": timestamp}}
-otp_store: dict[str, dict[str, object]] = {}
+# OTP store: {(purpose, email): {"otp", "expires_at", "attempts"}}
+# NOTE: process-local; use Redis/DB when running more than one worker.
+otp_store: dict[tuple[str, str], dict[str, object]] = {}
+OTP_TTL_SECONDS = 600
+OTP_MAX_ATTEMPTS = 5
 
 
-def store_otp(email: str, otp: str):
-    """Store OTP with 10 minute expiry."""
-    otp_store[email] = {
+def generate_otp() -> str:
+    """Generate a 6-digit OTP using a cryptographically secure RNG."""
+    return f"{secrets.randbelow(900000) + 100000}"
+
+
+def store_otp(email: str, otp: str, purpose: str = "password_reset"):
+    """Store OTP bound to a purpose with a 10 minute expiry."""
+    otp_store[(purpose, email.lower())] = {
         "otp": otp,
-        "expires_at": time.time() + 600  # 10 minutes
+        "expires_at": time.time() + OTP_TTL_SECONDS,
+        "attempts": 0,
     }
 
 
-def verify_otp(email: str, otp: str) -> bool:
-    """Verify OTP and check expiry."""
-    record = otp_store.get(email)
+def verify_otp(email: str, otp: str, purpose: str = "password_reset") -> bool:
+    """Verify OTP: purpose-bound, expiring, attempt-limited, single use."""
+    key = (purpose, email.lower())
+    record = otp_store.get(key)
     if not record:
         return False
     if time.time() > float(record["expires_at"]):  # type: ignore[arg-type]
-        del otp_store[email]  # Clean up expired OTP
+        del otp_store[key]
         return False
-    if record["otp"] != otp:
+    record["attempts"] = int(record["attempts"]) + 1  # type: ignore[arg-type]
+    if int(record["attempts"]) > OTP_MAX_ATTEMPTS:  # type: ignore[arg-type]
+        del otp_store[key]
         return False
-    del otp_store[email]  # Clean up after successful verify
+    if not secrets.compare_digest(str(record["otp"]), otp):
+        return False
+    del otp_store[key]
     return True
 
 # ============================================================
@@ -162,7 +176,7 @@ async def donor_login(
         
         # Check if donor exists
         if not donor:
-            logger.warning(f"Login attempt with non-existent email: {credentials.email}")
+            logger.warning("Login attempt with unknown email")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid email or password",
@@ -176,6 +190,13 @@ async def donor_login(
                 detail="Invalid email or password",
             )
         
+        if not donor.active_status:
+            logger.warning(f"Login blocked for inactive donor: {donor.id}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid email or password",
+            )
+
         # Update last login — store full datetime
         donor.last_login_date = datetime.now()
         await session.commit()
@@ -243,7 +264,7 @@ async def admin_login(
         
         # Check if admin exists
         if not admin:
-            logger.warning(f"Admin login attempt with non-existent email: {credentials.email}")
+            logger.warning("Admin login attempt with unknown email")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid email or password",
@@ -252,6 +273,13 @@ async def admin_login(
         # Verify password
         if not verify_password(credentials.password, admin.password):
             logger.warning(f"Failed admin login attempt: {admin.id}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid email or password",
+            )
+
+        if str(admin.active_status).lower() != "active":
+            logger.warning(f"Login blocked for inactive admin: {admin.id}")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid email or password",
@@ -357,6 +385,16 @@ async def refresh_token(
                 detail="Invalid user type",
             )
         
+        is_active = (
+            bool(user.active_status) if user_type == "donor"
+            else str(user.active_status).lower() == "active"
+        )
+        if not is_active:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Account is inactive",
+            )
+
         # Create new tokens
         token_data = {
             "sub": user.id,
@@ -421,7 +459,7 @@ async def request_donor_password_reset(
         donor = result.scalar_one_or_none()
         
         if not donor:
-            logger.info(f"Password reset for non-existent email: {data.email}")
+            logger.info("Password reset requested for unknown email")
             # Don't reveal if email exists (security best practice)
             return MessageResponse(
                 message="If this email exists, you will receive a reset link"
@@ -431,8 +469,8 @@ async def request_donor_password_reset(
         # otp = generate_otp()
         # await send_password_reset_email(donor.email, otp)
         # Store OTP in database with expiry
-        otp = str(random.randint(100000, 999999))
-        store_otp(donor.email, otp)
+        otp = generate_otp()
+        store_otp(donor.email, otp, "donor_password_reset")
         email_service = get_email_service()
         await email_service.send_otp_email(donor.email, otp, donor.name)
         
@@ -481,7 +519,7 @@ async def confirm_donor_password_reset(
                 detail="Donor not found",
             )
 
-        if not verify_otp(data.email, data.otp):
+        if not verify_otp(data.email, data.otp, "donor_password_reset"):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,detail="Invalid or expired OTP",)
         # Hash new password
         donor.password = hash_password(data.new_password)
@@ -516,10 +554,10 @@ async def request_admin_password_reset(
         admin = result.scalar_one_or_none()
         
         if not admin:
-            logger.info(f"Admin password reset for non-existent email: {data.email}")
+            logger.info("Admin password reset requested for unknown email")
         else:
-            otp = str(random.randint(100000, 999999))
-            store_otp(admin.email, otp)
+            otp = generate_otp()
+            store_otp(admin.email, otp, "admin_password_reset")
             email_service = get_email_service()
             await email_service.send_otp_email(admin.email, otp, admin.username)
             logger.info(f"Admin password reset requested for: {admin.id}")
@@ -554,7 +592,7 @@ async def confirm_admin_password_reset(
             )
         
         # Verify OTP (simplified)
-        if not verify_otp(data.email, data.otp):
+        if not verify_otp(data.email, data.otp, "admin_password_reset"):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,detail="Invalid or expired OTP",)
         # Hash new password
         admin.password = hash_password(data.new_password)

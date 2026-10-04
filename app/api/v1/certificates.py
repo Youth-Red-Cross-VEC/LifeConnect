@@ -7,6 +7,10 @@ Endpoints for generating and managing blood donation certificates.
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, EmailStr, Field
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.database import get_db
+from app.repositories.donor import DonorRepository
 from typing import Optional
 from pathlib import Path
 
@@ -107,8 +111,9 @@ async def generate_certificate(
 async def download_certificate(
     filename: str,
     cert_service: CertificateService = Depends(get_certificate_service),
+    current_admin = Depends(get_current_admin),
 ):
-    """Download a generated certificate by filename."""
+    """Download a generated certificate by filename (admin only)."""
     file_path = await cert_service.get_certificate(filename)
     
     if not file_path:
@@ -171,13 +176,25 @@ async def delete_certificate(
 )
 async def send_certificate_email(
     filename: str,
-    donor_name: str,
-    donor_email: EmailStr,
+    donor_id: str,
     background_tasks: BackgroundTasks,
     cert_service: CertificateService = Depends(get_certificate_service),
     email_service: EmailService = Depends(get_email_service),
+    session: AsyncSession = Depends(get_db),
+    current_admin = Depends(get_current_admin),
 ):
-    """Send an existing certificate via email."""
+    """
+    Send an existing certificate to a registered donor (admin only).
+
+    Recipient name and email are read from the donor record, never from the client.
+    """
+    donor = await DonorRepository(session).get_by_id(donor_id)
+    if not donor:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Donor not found",
+        )
+
     file_path = await cert_service.get_certificate(filename)
     
     if not file_path:
@@ -188,9 +205,9 @@ async def send_certificate_email(
     
     background_tasks.add_task(
         email_service.send_certificate,
-        donor_name=donor_name,
-        donor_email=donor_email,
+        donor_name=donor.name,
+        donor_email=donor.email,
         certificate_path=str(file_path),
     )
-    
-    return SuccessResponse(message=f"Certificate email queued for {donor_email}")
+
+    return SuccessResponse(message="Certificate email queued")
