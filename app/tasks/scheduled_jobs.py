@@ -5,6 +5,7 @@ import zlib
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
 from app.core.database import Database
 from app.repositories.blood_request import BloodRequestRepository
 from app.repositories.donor import DonorRepository
@@ -48,7 +49,7 @@ async def expire_blood_requests(db: Database) -> None:
 
 async def activate_donor_status(db: Database) -> None:
     """
-    Reactivate donors who haven't donated in 60+ days.
+    Reactivate donors who haven't donated in DONOR_ELIGIBILITY_DAYS days.
     Runs daily at midnight.
     """
     try:
@@ -57,7 +58,7 @@ async def activate_donor_status(db: Database) -> None:
                 logger.info("activate_donor_status already running elsewhere; skipping")
                 return
             repo = DonorRepository(session)
-            cutoff_date = date.today() - timedelta(days=60)
+            cutoff_date = date.today() - timedelta(days=get_settings().DONOR_ELIGIBILITY_DAYS)
             count = await repo.reactivate_eligible_donors(cutoff_date)
             logger.info(f"Reactivated {count} donor(s)")
     except Exception as e:

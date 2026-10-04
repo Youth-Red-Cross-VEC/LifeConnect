@@ -53,6 +53,9 @@ class Settings(BaseSettings):
     # store (e.g. redis://host:6379/0) or the effective limit is multiplied by the worker count.
     RATE_LIMIT_STORAGE_URI: str = "memory://"
 
+    # Donation eligibility: days a donor stays inactive after donating
+    DONOR_ELIGIBILITY_DAYS: int = 60
+
     # Scheduler (enable on exactly ONE dedicated process, never on web workers)
     SCHEDULER_ENABLED: bool = False
     SCHEDULER_TIMEZONE: str = "Asia/Kolkata"
