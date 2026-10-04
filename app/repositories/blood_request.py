@@ -1,6 +1,7 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, func, update
 from sqlalchemy.orm import selectinload
+from app.core.request_status import BloodRequestStatus, sources_for
 from app.models.blood_request import BloodRequestDetails, ResponseDetails
 from app.models.hospital import HospitalDetails
 from typing import Optional, List
@@ -31,13 +32,13 @@ class BloodRequestRepository:
         return result.scalar_one_or_none()
 
     async def get_by_status(
-        self, status: str, offset: int = 0, limit: int = 50
+        self, status: BloodRequestStatus, offset: int = 0, limit: int = 50
     ) -> List[BloodRequestDetails]:
         """Get all requests with given status."""
         query = (
             select(BloodRequestDetails)
             .options(selectinload(BloodRequestDetails.hospital))
-            .where(BloodRequestDetails.status == status)
+            .where(BloodRequestDetails.status == BloodRequestStatus(status).value)
             .order_by(BloodRequestDetails.due_date.asc())
             .offset(offset)
             .limit(limit)
@@ -47,27 +48,27 @@ class BloodRequestRepository:
 
     async def get_pending_requests(self) -> List[BloodRequestDetails]:
         """Get all pending requests."""
-        return await self.get_by_status("Pending")
+        return await self.get_by_status(BloodRequestStatus.PENDING)
 
     async def get_ongoing_requests(self) -> List[BloodRequestDetails]:
         """Get all ongoing (approved) requests."""
-        return await self.get_by_status("Approved")
+        return await self.get_by_status(BloodRequestStatus.APPROVED)
 
     async def get_closed_requests(self, limit: int = 100) -> List[BloodRequestDetails]:
         """Get closed requests."""
-        return await self.get_by_status("Closed", limit=limit)
+        return await self.get_by_status(BloodRequestStatus.CLOSED, limit=limit)
 
     async def get_expired_requests(self, limit: int = 100) -> List[BloodRequestDetails]:
         """Get expired requests."""
-        return await self.get_by_status("Expired", limit=limit)
+        return await self.get_by_status(BloodRequestStatus.EXPIRED, limit=limit)
 
     async def get_declined_requests(self, limit: int = 100) -> List[BloodRequestDetails]:
         """Get declined requests."""
-        return await self.get_by_status("Declined", limit=limit)
+        return await self.get_by_status(BloodRequestStatus.DECLINED, limit=limit)
 
-    async def count_by_status(self, status: str) -> int:
+    async def count_by_status(self, status: BloodRequestStatus) -> int:
         """Count requests by status."""
-        query = select(func.count()).where(BloodRequestDetails.status == status)
+        query = select(func.count()).where(BloodRequestDetails.status == BloodRequestStatus(status).value)
         result = await self.session.execute(query)
         return result.scalar()
 
@@ -122,13 +123,13 @@ class BloodRequestRepository:
     async def update_status(
         self,
         request_id: str,
-        status: str,
+        status: BloodRequestStatus,
         admin_id: Optional[str] = None,
         is_approval: bool = False,
         is_close: bool = False,
     ) -> None:
         """Update request status."""
-        values = {"status": status}
+        values = {"status": BloodRequestStatus(status).value}
 
         if is_approval and admin_id:
             values["approved_admin_id"] = admin_id
@@ -148,11 +149,13 @@ class BloodRequestRepository:
             update(BloodRequestDetails)
             .where(
                 and_(
-                    BloodRequestDetails.status.in_(["Pending", "Not_Approved"]),
+                    BloodRequestDetails.status.in_(
+                        [s.value for s in sources_for(BloodRequestStatus.EXPIRED)]
+                    ),
                     BloodRequestDetails.due_date < current_date,
                 )
             )
-            .values(status="Expired")
+            .values(status=BloodRequestStatus.EXPIRED.value)
         )
         result = await self.session.execute(stmt)
         return result.rowcount

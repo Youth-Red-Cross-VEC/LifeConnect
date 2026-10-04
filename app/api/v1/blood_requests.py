@@ -30,6 +30,7 @@ from app.schemas.common import MessageResponse, PaginatedResponse
 from app.models.blood_request import BloodRequestDetails, ResponseDetails
 from app.utils import generate_request_id, generate_response_id
 from app.core.exceptions import not_found_exception, bad_request_exception
+from app.core.request_status import BloodRequestStatus, can_transition
 from app.api.auth.deps import get_current_admin
 
 router = APIRouter(prefix="/blood-requests", tags=["Blood Requests"])
@@ -74,7 +75,7 @@ async def create_blood_request(
         patient_age=data.patient_age,
         due_date=data.due_date,
         request_reason=data.request_reason,
-        status="Pending",
+        status=BloodRequestStatus.PENDING.value,
         units_required=data.units_required,
         attendant_name=data.attendant_name,
         response_id=response.id,
@@ -202,14 +203,14 @@ async def approve_blood_request(
     if not blood_request:
         raise not_found_exception("Blood Request", request_id)
 
-    if blood_request.status != "Pending":
+    if not can_transition(blood_request.status, BloodRequestStatus.APPROVED):
         raise bad_request_exception(
             f"Cannot approve request with status '{blood_request.status}'"
         )
 
     # Update status
     await request_repo.update_status(
-        request_id, "Approved", admin_id=admin_id, is_approval=True
+        request_id, BloodRequestStatus.APPROVED, admin_id=admin_id, is_approval=True
     )
 
     # Notify matching donors
@@ -262,12 +263,12 @@ async def decline_blood_request(
     if not blood_request:
         raise not_found_exception("Blood Request", request_id)
 
-    if blood_request.status != "Pending":
+    if not can_transition(blood_request.status, BloodRequestStatus.DECLINED):
         raise bad_request_exception(
             f"Cannot decline request with status '{blood_request.status}'"
         )
 
-    await repo.update_status(request_id, "Declined")
+    await repo.update_status(request_id, BloodRequestStatus.DECLINED)
 
     return MessageResponse(message=f"Blood request {request_id} declined")
 
@@ -295,7 +296,7 @@ async def close_blood_request(
     if not blood_request:
         raise not_found_exception("Blood Request", request_id)
 
-    if blood_request.status not in ["Approved", "Expired"]:
+    if not can_transition(blood_request.status, BloodRequestStatus.CLOSED):
         raise bad_request_exception(
             f"Cannot close request with status '{blood_request.status}'"
         )
@@ -320,7 +321,7 @@ async def close_blood_request(
 
     # Update request and response
     await request_repo.update_status(
-        request_id, "Closed", admin_id=admin_id, is_close=True
+        request_id, BloodRequestStatus.CLOSED, admin_id=admin_id, is_close=True
     )
 
     await request_repo.update_response(

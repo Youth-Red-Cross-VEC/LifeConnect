@@ -1,3 +1,4 @@
+from app.core.request_status import AdminStatus
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, func, update
 from app.models.admin import AdminDetails, AuthenticationDetailsAdmin
@@ -41,7 +42,7 @@ class AdminRepository:
 
     async def get_all_active(self) -> List[AdminDetails]:
         """Get all active admins."""
-        query = select(AdminDetails).where(AdminDetails.active_status == "Active")
+        query = select(AdminDetails).where(AdminDetails.active_status == AdminStatus.ACTIVE.value)
         result = await self.session.execute(query)
         return list(result.scalars().all())
 
@@ -55,12 +56,12 @@ class AdminRepository:
         query = select(AdminDetails)
 
         if active_only:
-            query = query.where(AdminDetails.active_status == "Active")
+            query = query.where(AdminDetails.active_status == AdminStatus.ACTIVE.value)
 
         # Count
         count_query = select(func.count()).select_from(AdminDetails)
         if active_only:
-            count_query = count_query.where(AdminDetails.active_status == "Active")
+            count_query = count_query.where(AdminDetails.active_status == AdminStatus.ACTIVE.value)
         count_result = await self.session.execute(count_query)
         total = count_result.scalar()
 

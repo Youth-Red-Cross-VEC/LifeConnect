@@ -11,6 +11,7 @@ from typing import Optional
 from datetime import datetime
 
 from app.core.database import get_db
+from app.core.request_status import AdminStatus, BloodRequestStatus
 from app.core.exceptions import DuplicateEntityError, EntityNotFoundError
 from app.repositories.admin import AdminRepository
 from app.repositories.blood_request import BloodRequestRepository
@@ -127,7 +128,7 @@ async def register_admin(
         date_of_birth=data.date_of_birth,
         mobile_number=data.mobile_number,
         department=data.department,
-        active_status="Active",
+        active_status=AdminStatus.ACTIVE.value,
         last_login_date=None,
         approved_donation_count=0,
         closed_requests_count=0,
@@ -244,7 +245,7 @@ async def update_admin(
     if data.department is not None:
         admin.department = data.department
     if data.active_status is not None:
-        admin.active_status = data.active_status
+        admin.active_status = data.active_status.value
     
     await repo.update(admin)
     await session.commit()
@@ -272,7 +273,7 @@ async def deactivate_admin(
             detail=f"Admin with ID {admin_id} not found",
         )
     
-    admin.active_status = "Inactive"
+    admin.active_status = AdminStatus.INACTIVE.value
     await repo.update(admin)
     await session.commit()
     
@@ -299,7 +300,7 @@ async def activate_admin(
             detail=f"Admin with ID {admin_id} not found",
         )
     
-    admin.active_status = "Active"
+    admin.active_status = AdminStatus.ACTIVE.value
     await repo.update(admin)
     await session.commit()
     
@@ -341,7 +342,7 @@ async def get_admin_stats(
     return AdminStatsResponse(
         total_approved=admin.approved_donation_count,
         total_closed=admin.closed_requests_count,
-        pending_requests=status_stats.get("Pending", 0),
-        ongoing_requests=status_stats.get("Approved", 0),
+        pending_requests=status_stats.get(BloodRequestStatus.PENDING, 0),
+        ongoing_requests=status_stats.get(BloodRequestStatus.APPROVED, 0),
         active_donors=active_donor_count,
     )

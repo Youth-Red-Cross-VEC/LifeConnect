@@ -2,19 +2,7 @@ from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List
 from datetime import datetime, date
 from app.schemas.common import BaseSchema
-from enum import Enum
-
-
-class BloodRequestStatus(str, Enum):
-    """Valid blood request statuses."""
-
-    PENDING = "Pending"
-    APPROVED = "Approved"
-    NOT_APPROVED = "Not_Approved"
-    DECLINED = "Declined"
-    ONGOING = "Ongoing"
-    CLOSED = "Closed"
-    EXPIRED = "Expired"
+from app.core.request_status import BloodRequestStatus  # noqa: F401  (re-exported)
 
 
 VALID_BLOOD_GROUPS = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"]

@@ -1,4 +1,5 @@
 from pydantic import BaseModel, EmailStr, Field, field_validator
+from app.core.request_status import AdminStatus
 from typing import Optional
 from datetime import datetime, date
 from app.schemas.common import BaseSchema
@@ -39,7 +40,7 @@ class AdminUpdate(BaseModel):
     username: Optional[str] = Field(None, min_length=2, max_length=45)
     mobile_number: Optional[str] = Field(None, max_length=36)
     department: Optional[str] = Field(None, max_length=50)
-    active_status: Optional[str] = None
+    active_status: Optional[AdminStatus] = None
 
 
 class AdminResponse(BaseSchema):

@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
+from app.core.request_status import BloodRequestStatus
 from app.core.database import get_db
 from app.api.auth.deps import get_current_admin
 from app.repositories.blood_request import BloodRequestRepository
@@ -53,11 +54,11 @@ async def get_dashboard_stats(
 
     return {
         "requests": {
-            "pending": status_stats.get("Pending", 0),
-            "ongoing": status_stats.get("Approved", 0),
-            "closed": status_stats.get("Closed", 0),
-            "expired": status_stats.get("Expired", 0),
-            "declined": status_stats.get("Declined", 0),
+            "pending": status_stats.get(BloodRequestStatus.PENDING, 0),
+            "ongoing": status_stats.get(BloodRequestStatus.APPROVED, 0),
+            "closed": status_stats.get(BloodRequestStatus.CLOSED, 0),
+            "expired": status_stats.get(BloodRequestStatus.EXPIRED, 0),
+            "declined": status_stats.get(BloodRequestStatus.DECLINED, 0),
             "total": sum(status_stats.values()),
         },
         "donors": {

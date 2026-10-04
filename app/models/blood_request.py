@@ -1,3 +1,4 @@
+from app.core.request_status import BloodRequestStatus
 from sqlalchemy import String, Integer, DateTime, Date, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base, TimestampMixin
@@ -39,7 +40,7 @@ class BloodRequestDetails(Base, TimestampMixin):
     Blood donation request entity.
     
     Tracks the full lifecycle:
-    Pending → Approved/Declined → Ongoing → Closed/Expired
+    see app/core/request_status.py:TRANSITIONS
     
     Indexes on status and blood_group for efficient queries.
     """
@@ -55,7 +56,7 @@ class BloodRequestDetails(Base, TimestampMixin):
     due_date: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
     request_reason: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
     status: Mapped[str] = mapped_column(
-        String(45), nullable=False, index=True, default="Pending"
+        String(45), nullable=False, index=True, default=BloodRequestStatus.PENDING.value
     )
     units_required: Mapped[int] = mapped_column(Integer, nullable=False)
     attendant_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
