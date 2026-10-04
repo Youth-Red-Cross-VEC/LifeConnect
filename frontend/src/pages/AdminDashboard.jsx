@@ -1,44 +1,36 @@
-import { useState, useEffect } from "react";
 import AdminBase from "./AdminBase";
+import AsyncState from "../components/AsyncState";
+import { useApiData } from "../hooks/useApiData";
 import { api } from "../services/api";
+import { unwrapData } from "../services/unwrap";
+
+// FastAPI returns { requests: { total, pending, ... }, donors: { active, total }, hospitals: { total } }
+const loadDashboard = async () => {
+  const res = unwrapData(await api.getAdminDashboardData(), "Failed to load dashboard data.");
+  return {
+    admin_name: res.admin_name || "Admin",
+    active_donors_count: res.donors?.active ?? res.donors?.total ?? res.active_donors_count ?? 0,
+    total_requests: res.requests?.total ?? res.total_requests ?? 0,
+    notifications: {
+      Pending: res.requests?.pending || 0,
+      Expired: res.requests?.expired || 0,
+      Declined: res.requests?.declined || 0,
+    },
+  };
+};
+
+const EMPTY_DASHBOARD = {
+  admin_name: "Admin",
+  active_donors_count: 0,
+  total_requests: 0,
+  notifications: {},
+};
 
 export default function AdminDashboard() {
-  const [data, setData] = useState({
-    admin_name: "Admin",
-    active_donors_count: 0,
-    total_requests: 0,
-    notifications: {},
+  const { data, isLoading, error } = useApiData(loadDashboard, {
+    initial: EMPTY_DASHBOARD,
+    errorMessage: "Error connecting to dashboard API.",
   });
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    const fetchDashboardData = async () => {
-      try {
-        const res = await api.getAdminDashboardData();
-        if (res && !res.error && !res.detail) {
-          // FastAPI backend returns { requests: { total, pending, ... }, donors: { active, total }, hospitals: { total } }
-          setData({
-            admin_name: res.admin_name || "Admin",
-            active_donors_count: res.donors?.active ?? res.donors?.total ?? res.active_donors_count ?? 0,
-            total_requests: res.requests?.total ?? res.total_requests ?? 0,
-            notifications: {
-              Pending: res.requests?.pending || 0,
-              Expired: res.requests?.expired || 0,
-              Declined: res.requests?.declined || 0,
-            },
-          });
-        } else {
-          setError(res?.detail || res?.error || "Failed to load dashboard data.");
-        }
-      } catch {
-        setError("Error connecting to dashboard API.");
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    fetchDashboardData();
-  }, []);
 
   return (
     <AdminBase active="dashboard">
@@ -183,17 +175,7 @@ export default function AdminDashboard() {
           <p>LifeConnect Admin Dashboard</p>
         </div>
 
-        {error && (
-          <div style={{ background: "#fee2e2", color: "#991b1b", padding: "12px 16px", borderRadius: "8px", marginBottom: "24px", fontSize: "14px" }}>
-            {error}
-          </div>
-        )}
-
-        {isLoading ? (
-          <div style={{ padding: "40px", textAlign: "center", fontWeight: "bold", color: "#bf0001" }}>
-            Loading dashboard metrics...
-          </div>
-        ) : (
+        <AsyncState isLoading={isLoading} error={error} loadingText="Loading dashboard metrics...">
           <>
             {/* STATS */}
             <div className="card-container">
@@ -280,7 +262,7 @@ export default function AdminDashboard() {
               </a>
             </div>
           </>
-        )}
+        </AsyncState>
       </main>
     </AdminBase>
   );

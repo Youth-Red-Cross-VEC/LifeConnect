@@ -1,33 +1,25 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
+import AsyncState from "../components/AsyncState";
+import { useApiData } from "../hooks/useApiData";
 import { api } from "../services/api";
+import { unwrapList } from "../services/unwrap";
+
+// The endpoint is paginated ({ items, total, ... }); 200 is its maximum page size.
+const loadBloodBanks = async () => {
+  const res = await api.getBloodBanks({ page_size: 200 });
+  return unwrapList(res?.items, res?.detail || "Failed to load blood bank data.");
+};
 
 export default function BloodBanks() {
-  const [hospitals, setHospitals] = useState([]);
+  const { data: hospitals, isLoading, error } = useApiData(loadBloodBanks, {
+    initial: [],
+    errorMessage: "Error connecting to server.",
+  });
   const [searchQuery, setSearchQuery] = useState("");
   const [sortField, setSortField] = useState("NAME");
   const [sortOrder, setSortOrder] = useState("asc");
   const [currentPage, setCurrentPage] = useState(1);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState("");
   const itemsPerPage = 10;
-
-  useEffect(() => {
-    const fetchHospitals = async () => {
-      try {
-        const data = await api.getBloodBanks();
-        if (data && !data.error) {
-          setHospitals(data);
-        } else {
-          setError("Failed to load blood bank data.");
-        }
-      } catch {
-        setError("Error connecting to server.");
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    fetchHospitals();
-  }, []);
 
   const handleSort = (field) => {
     if (sortField === field) {
@@ -290,11 +282,7 @@ export default function BloodBanks() {
       {/* Page Title */}
       <div className="page-title">BloodBanks</div>
 
-      {error && <div className="alert-error">{error}</div>}
-
-      {isLoading ? (
-        <div className="loading-spinner">Loading Blood Bank Details...</div>
-      ) : (
+      <AsyncState isLoading={isLoading} error={error} loadingText="Loading Blood Bank Details...">
         <div className="table-container">
           <div className="controls-row">
             <div>
@@ -379,7 +367,7 @@ export default function BloodBanks() {
             </div>
           )}
         </div>
-      )}
+      </AsyncState>
     </div>
   );
 }

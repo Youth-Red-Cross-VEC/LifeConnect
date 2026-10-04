@@ -1,37 +1,25 @@
-import { useState, useEffect } from "react";
 import AdminBase from "./AdminBase";
+import AsyncState from "../components/AsyncState";
+import { useApiData } from "../hooks/useApiData";
 import { api } from "../services/api";
+import { unwrapData } from "../services/unwrap";
+
+const loadAnalytics = async () => {
+  const res = unwrapData(await api.getAdminAnalytics(), "Failed to load analytics data.");
+  return {
+    hospital_count: res.hospital_count || 0,
+    recent_donor_count: res.recent_donor_count || 0,
+    recent_request_count: res.recent_request_count || 0,
+  };
+};
+
+const EMPTY_ANALYTICS = { hospital_count: 0, recent_donor_count: 0, recent_request_count: 0 };
 
 export default function AnalyticsAdmin() {
-  const [data, setData] = useState({
-    hospital_count: 0,
-    recent_donor_count: 0,
-    recent_request_count: 0,
+  const { data, isLoading, error } = useApiData(loadAnalytics, {
+    initial: EMPTY_ANALYTICS,
+    errorMessage: "Error connecting to analytics API.",
   });
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    const fetchAnalytics = async () => {
-      try {
-        const res = await api.getAdminAnalytics();
-        if (res && !res.error) {
-          setData({
-            hospital_count: res.hospital_count || 0,
-            recent_donor_count: res.recent_donor_count || 0,
-            recent_request_count: res.recent_request_count || 0,
-          });
-        } else {
-          setError(res?.error || "Failed to load analytics data.");
-        }
-      } catch {
-        setError("Error connecting to analytics API.");
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    fetchAnalytics();
-  }, []);
 
   return (
     <AdminBase active="analytics">
@@ -134,13 +122,7 @@ export default function AnalyticsAdmin() {
       <div className="analytics-container">
         <h1>Admin Analytics</h1>
 
-        {error && <div className="error" style={{ marginBottom: "20px" }}>{error}</div>}
-
-        {isLoading ? (
-          <div style={{ padding: "20px", textAlign: "center", fontWeight: "bold", color: "#bf0001" }}>
-            Loading analytics data...
-          </div>
-        ) : (
+        <AsyncState isLoading={isLoading} error={error} loadingText="Loading analytics data...">
           <>
             <div className="summary-stats">
               <div className="stat">
@@ -183,7 +165,7 @@ export default function AnalyticsAdmin() {
               </div>
             </div>
           </>
-        )}
+        </AsyncState>
       </div>
     </AdminBase>
   );
