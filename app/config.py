@@ -27,6 +27,8 @@ class Settings(BaseSettings):
     GOOGLE_MAPS_API_KEY: str
     GOOGLE_MAPS_BASE_URL: str = "https://maps.googleapis.com/maps/api/distancematrix/json"
     RECAPTCHA_SECRET_KEY: Optional[str] = None  # Add when reCAPTCHA API keys are available
+    # When true, login endpoints reject requests without a valid reCAPTCHA token. Set true in production.
+    RECAPTCHA_ENFORCED: bool = False
 
     # Email Configuration
     MAIL_SERVER: str

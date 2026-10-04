@@ -140,3 +140,12 @@ async def admin_client(test_session, admin_token) -> AsyncGenerator[AsyncClient,
     app.dependency_overrides.clear()
 
 
+
+
+@pytest.fixture(autouse=True)
+def _reset_rate_limits():
+    """Rate limits are per-IP and in-memory; every test client shares one IP."""
+    from app.core.rate_limiter import limiter
+
+    limiter.reset()
+    yield

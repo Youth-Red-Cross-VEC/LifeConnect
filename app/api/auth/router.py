@@ -15,7 +15,9 @@ from sqlalchemy import select
 from pydantic import BaseModel, EmailStr
 
 from app.core.database import get_db
+from app.config import get_settings
 from app.core.rate_limiter import limiter
+from app.core.recaptcha import verify_recaptcha
 from app.models.donor import DonorDetail
 from app.models.admin import AdminDetails
 from app.services.email_service import get_email_service
@@ -78,6 +80,7 @@ class LoginRequest(BaseModel):
     """Login request schema."""
     email: EmailStr
     password: str
+    recaptcha_token: Optional[str] = None
     
     class Config:
         json_schema_extra = {
@@ -132,6 +135,17 @@ class MessageResponse(BaseModel):
     message: str
 
 
+async def enforce_recaptcha(token: Optional[str], action: str) -> None:
+    """Reject the request (400, fail closed) when RECAPTCHA_ENFORCED and the token is missing/invalid."""
+    if not get_settings().RECAPTCHA_ENFORCED:
+        return
+    if not token or not await verify_recaptcha(token, action):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="reCAPTCHA verification failed",
+        )
+
+
 # ============================================================
 # ROUTER SETUP
 # ============================================================
@@ -168,6 +182,7 @@ async def donor_login(
     Raises:
         HTTPException: 401 if credentials are invalid
     """
+    await enforce_recaptcha(credentials.recaptcha_token, "donor_login")
     try:
         # Get donor by email
         result = await session.execute(
@@ -259,6 +274,7 @@ async def admin_login(
     Raises:
         HTTPException: 401 if credentials are invalid
     """
+    await enforce_recaptcha(credentials.recaptcha_token, "admin_login")
     try:
         # Get admin by email
         result = await session.execute(
