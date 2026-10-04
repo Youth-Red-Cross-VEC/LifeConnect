@@ -66,7 +66,13 @@ async def client(test_session) -> AsyncGenerator[AsyncClient, None]:
     """Create test HTTP client with overridden database dependency."""
     
     async def override_get_db():
-        yield test_session
+        # Mirror Database.session(): the dependency, not the route, commits.
+        try:
+            yield test_session
+            await test_session.commit()
+        except Exception:
+            await test_session.rollback()
+            raise
     
     app.dependency_overrides[get_db] = override_get_db
     
@@ -124,7 +130,13 @@ async def admin_client(test_session, admin_token) -> AsyncGenerator[AsyncClient,
     await test_session.commit()
 
     async def override_get_db():
-        yield test_session
+        # Mirror Database.session(): the dependency, not the route, commits.
+        try:
+            yield test_session
+            await test_session.commit()
+        except Exception:
+            await test_session.rollback()
+            raise
 
     app.dependency_overrides[get_db] = override_get_db
 
