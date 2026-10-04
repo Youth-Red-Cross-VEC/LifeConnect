@@ -18,7 +18,6 @@ class PersonalDetailsCreate(BaseModel):
     contact_number: str = Field(..., min_length=10, max_length=15)
     secondary_contact_number: Optional[str] = Field(None, max_length=15)
     marital_status: Optional[str] = Field(None, max_length=10)
-    aadhar_number: Optional[str] = Field(None, max_length=20)
 
     @field_validator("contact_number", "secondary_contact_number")
     @classmethod

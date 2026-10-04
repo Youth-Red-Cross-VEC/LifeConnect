@@ -14,7 +14,6 @@ export default function RegisterDonor() {
     contact_number: "",
     secondary_contact: "",
     marital_status: "",
-    aadhar_number: "",
     blood_group: "",
     previous_blood_donation_status: "",
     last_donation: "",
@@ -74,7 +73,6 @@ export default function RegisterDonor() {
           contact_number: form.contact_number,
           secondary_contact_number: form.secondary_contact || null,
           marital_status: form.marital_status || null,
-          aadhar_number: form.aadhar_number || null,
         },
         address_details: {
           address: form.address,
@@ -548,18 +546,6 @@ export default function RegisterDonor() {
             <option value="single">Single</option>
             <option value="married">Married</option>
           </select>
-
-          <label htmlFor="aadhar_number">Aadhar Number (Optional):</label>
-          <input
-            type="text"
-            id="aadhar_number"
-            name="aadhar_number"
-            value={form.aadhar_number}
-            onChange={handleChange}
-            pattern="[0-9]{12}"
-            title="Enter a 12-digit Aadhar number"
-            disabled={isLoading}
-          />
 
           <label>Blood Group (required):</label>
           <div className="radio-group">

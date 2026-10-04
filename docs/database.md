@@ -86,7 +86,6 @@ This document describes the database schema for the Youth Red Cross Blood Donati
 | contact_number           | VARCHAR(15) | Primary contact number.         |
 | secondary_contact_number | VARCHAR(15) | Secondary contact (optional).   |
 | marital_status           | VARCHAR(10) | Marital status (optional).      |
-| aadhar_number            | VARCHAR(20) | Aadhaar ID (optional).          |
 
 ---
 

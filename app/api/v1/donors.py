@@ -71,7 +71,6 @@ async def register_donor(
         contact_number=data.personal_details.contact_number,
         secondary_contact_number=data.personal_details.secondary_contact_number,
         marital_status=data.personal_details.marital_status,
-        aadhar_number=data.personal_details.aadhar_number,
     )
 
     address_details = AddressDetails(

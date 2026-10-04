@@ -23,7 +23,6 @@ class PersonalDetails(Base, TimestampMixin):
         String(15), nullable=True
     )
     marital_status: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
-    aadhar_number: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
 
     # Relationship
     donor: Mapped["DonorDetail"] = relationship(back_populates="personal_details")

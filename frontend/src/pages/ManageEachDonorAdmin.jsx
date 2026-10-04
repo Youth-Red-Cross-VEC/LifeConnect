@@ -133,9 +133,6 @@ export default function ManageEachDonorAdmin({ details = {}, onUpdate }) {
           <label htmlFor="secondary_contact_number">Secondary Contact Number:</label>
           <input type="text" name="secondary_contact_number" id="secondary_contact_number" defaultValue={details.secondary_contact_number} />
 
-          <label htmlFor="aadhar_number">Aadhar Number:</label>
-          <input type="text" name="aadhar_number" id="aadhar_number" defaultValue={details.aadhar_number} />
-
           {/* Address Details */}
           <h3>Address Details</h3>
           <label htmlFor="address">Address:</label>
@@ -193,7 +190,7 @@ export default function ManageEachDonorAdmin({ details = {}, onUpdate }) {
             last_login_date, first_name, last_name,
             age, contact_number, date_of_birth,
             marital_status, secondary_contact_number,
-            aadhar_number, address, city, state,
+            address, city, state,
             country, pincode, disease_name, disease_description
           }
         }

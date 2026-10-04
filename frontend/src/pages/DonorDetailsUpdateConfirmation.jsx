@@ -9,7 +9,6 @@ const labels = [
   "Contact Number",
   "Secondary Contact Number",
   "Marital Status",
-  "Aadhar Number",
   "Address",
   "City",
   "State",

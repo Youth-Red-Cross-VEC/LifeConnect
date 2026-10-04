@@ -19,7 +19,6 @@ export default function DonorDashboard({ details = {} }) {
     date_of_birth: details.date_of_birth ?? "",
     marital_status: details.marital_status ?? "",
     secondary_contact_number: details.secondary_contact_number ?? "",
-    aadhar_number: details.aadhar_number ?? "",
     address: details.address ?? "",
     city: details.city ?? "",
     state: details.state ?? "",
@@ -480,16 +479,6 @@ export default function DonorDashboard({ details = {} }) {
             id="secondary_contact_number"
             name="secondary_contact_number"
             value={form.secondary_contact_number}
-            onChange={handleChange}
-            disabled={saving}
-          />
-
-          <label htmlFor="aadhar_number">Aadhar Number:</label>
-          <input
-            type="text"
-            id="aadhar_number"
-            name="aadhar_number"
-            value={form.aadhar_number}
             onChange={handleChange}
             disabled={saving}
           />
