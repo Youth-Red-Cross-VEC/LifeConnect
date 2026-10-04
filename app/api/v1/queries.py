@@ -58,7 +58,6 @@ async def submit_query(
     )
     
     await repo.create(query)
-    await session.commit()
     
     return query
 
@@ -202,7 +201,6 @@ async def reply_to_query(
             detail=f"Query with ID {query_id} not found",
         )
     
-    await session.commit()
     
     return query
 
@@ -228,6 +226,5 @@ async def delete_query(
             detail=f"Query with ID {query_id} not found",
         )
     
-    await session.commit()
     
     return SuccessResponse(message=f"Query {query_id} has been deleted")

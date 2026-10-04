@@ -135,7 +135,6 @@ async def register_admin(
     )
     
     await repo.create(admin)
-    await session.commit()
     
     return admin
 
@@ -248,7 +247,6 @@ async def update_admin(
         admin.active_status = data.active_status.value
     
     await repo.update(admin)
-    await session.commit()
     
     return admin
 
@@ -275,7 +273,6 @@ async def deactivate_admin(
     
     admin.active_status = AdminStatus.INACTIVE.value
     await repo.update(admin)
-    await session.commit()
     
     return SuccessResponse(message=f"Admin {admin_id} has been deactivated")
 
@@ -302,7 +299,6 @@ async def activate_admin(
     
     admin.active_status = AdminStatus.ACTIVE.value
     await repo.update(admin)
-    await session.commit()
     
     return SuccessResponse(message=f"Admin {admin_id} has been activated")
 

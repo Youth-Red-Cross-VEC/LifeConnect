@@ -185,7 +185,6 @@ async def donor_login(
 
         # Update last login — store full datetime
         donor.last_login_date = datetime.now()
-        await session.commit()
         
         logger.info(f"Donor {donor.id} logged in successfully")
         
@@ -277,7 +276,6 @@ async def admin_login(
 
         # Update last login — store full datetime
         admin.last_login_date = datetime.now()
-        await session.commit()
         
         logger.info(f"Admin {admin.id} logged in successfully")
         
@@ -559,7 +557,6 @@ async def confirm_donor_password_reset(
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,detail="Invalid or expired OTP",)
         # Hash new password
         donor.password = hash_password(data.new_password)
-        await session.commit()
         
         logger.info(f"Password reset for donor: {donor.id}")
         
@@ -632,7 +629,6 @@ async def confirm_admin_password_reset(
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,detail="Invalid or expired OTP",)
         # Hash new password
         admin.password = hash_password(data.new_password)
-        await session.commit()
         
         logger.info(f"Password reset for admin: {admin.id}")
         
