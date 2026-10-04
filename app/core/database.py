@@ -43,6 +43,7 @@ class Database:
             pool_timeout=pool_timeout,
             pool_recycle=pool_recycle,
             pool_pre_ping=True,  # Verify connection health before use
+            hide_parameters=True,  # keep bound values (emails, phones) out of error messages and logs
             echo=echo,
         )
 
@@ -74,7 +75,7 @@ class Database:
                 await session.commit()
             except Exception as e:
                 await session.rollback()
-                logger.error(f"Database session error: {e}")
+                logger.error(f"Database session error: {type(e).__name__}")
                 raise
 
     async def get_session(self) -> AsyncGenerator[AsyncSession, None]:

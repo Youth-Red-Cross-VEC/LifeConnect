@@ -10,6 +10,8 @@ from html import escape as _esc
 
 from app.config import Settings
 
+from app.core.logging import mask_email
+
 logger = logging.getLogger(__name__)
 
 
@@ -74,11 +76,11 @@ class EmailService:
                 start_tls=self.settings.MAIL_USE_TLS,
             )
 
-            logger.info(f"Email sent successfully to {to}")
+            logger.info(f"Email sent successfully to {mask_email(to)}")
             return True
 
         except Exception as e:
-            logger.error(f"Failed to send email to {to}: {e}")
+            logger.error(f"Failed to send email to {mask_email(to)}: {type(e).__name__}")
             return False
 
     async def _attach_file(self, message: MIMEMultipart, file_path: Path) -> None:

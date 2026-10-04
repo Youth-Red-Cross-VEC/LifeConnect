@@ -210,7 +210,7 @@ async def donor_login(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error during donor login: {str(e)}")
+        logger.error(f"Error during donor login: {type(e).__name__}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred during login",
@@ -301,7 +301,7 @@ async def admin_login(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error during admin login: {str(e)}")
+        logger.error(f"Error during admin login: {type(e).__name__}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred during login",
@@ -438,7 +438,7 @@ async def refresh_token(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error refreshing token: {str(e)}")
+        logger.error(f"Error refreshing token: {type(e).__name__}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred during token refresh",
@@ -515,7 +515,7 @@ async def request_donor_password_reset(
         )
         
     except Exception as e:
-        logger.error(f"Error requesting password reset: {str(e)}")
+        logger.error(f"Error requesting password reset: {type(e).__name__}")
         # Return generic message for security
         return MessageResponse(
             message="If this email exists, you will receive a reset link"
@@ -565,7 +565,7 @@ async def confirm_donor_password_reset(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error confirming password reset: {str(e)}")
+        logger.error(f"Error confirming password reset: {type(e).__name__}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred during password reset",
@@ -600,7 +600,7 @@ async def request_admin_password_reset(
         )
         
     except Exception as e:
-        logger.error(f"Error requesting admin password reset: {str(e)}")
+        logger.error(f"Error requesting admin password reset: {type(e).__name__}")
         return MessageResponse(
             message="If this email exists, you will receive a reset link"
         )
@@ -637,7 +637,7 @@ async def confirm_admin_password_reset(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error confirming admin password reset: {str(e)}")
+        logger.error(f"Error confirming admin password reset: {type(e).__name__}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred during password reset",

@@ -5,6 +5,14 @@ import structlog
 from app.config import get_settings
 
 
+def mask_email(address: str) -> str:
+    """Return a log-safe form of an email address: 'j***@example.com'."""
+    local, sep, domain = address.partition("@")
+    if not sep:
+        return "***"
+    return f"{local[:1]}***@{domain}"
+
+
 def setup_logging() -> None:
     """
     Configure structured logging for the application.
