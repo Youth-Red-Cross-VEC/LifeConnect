@@ -7,10 +7,11 @@ The project uses **FastAPI** for the backend and **React/Vite** for the frontend
 
 Ensure that the following are installed on your system:
 
-- **Python 3.10+**
+- **Python 3.11+** (the Docker image and `pyproject.toml` both target 3.11)
 - **uv**: Fast Python package installer and resolver.
 - **Node.js (v18+) and npm**: For running the frontend.
-- **PostgreSQL**: (Optional) For running the database locally, or use SQLite (default for development).
+- **PostgreSQL 14+**: required. The quickest way is `docker compose up postgres`. SQLite is not a supported
+  database for the app (it is only used by the automated tests).
 
 ## Setup Steps
 
@@ -34,37 +35,60 @@ The backend uses `uv` for dependency management.
    .venv\Scripts\activate
    # Activate the virtual environment (Mac/Linux)
    source .venv/bin/activate
-   
-   uv pip install -r pyproject.toml
+
+   uv pip install -r requirements.txt
    ```
 
-2. Create a `.env` file in the root directory based on `.env.example` (or use the defaults for local SQLite):
+2. Copy `.env.example` to `.env` and fill in the values. The settings are read by `app/config.py`:
    ```plaintext
-   # Example backend .env
-   ENVIRONMENT=development
-   DATABASE_URL=sqlite+aiosqlite:///./test.db
-   SECRET_KEY=your_super_secret_key_here
+   APP_ENV=development
+   DATABASE_URL=postgresql+asyncpg://postgres:password@localhost:5432/lifeconnect
+   SECRET_KEY=<python -c "import secrets; print(secrets.token_hex(32))">
    ALGORITHM=HS256
    ACCESS_TOKEN_EXPIRE_MINUTES=30
-   REFRESH_TOKEN_EXPIRE_DAYS=7
-   
-   # Email settings
-   SMTP_HOST=smtp.gmail.com
-   SMTP_PORT=587
-   SMTP_USER=your_email@gmail.com
-   SMTP_PASSWORD=your_app_password
+   REFRESH_TOKEN_EXPIRE_DAYS=30
+
+   # Email settings (note the MAIL_ prefix)
+   MAIL_SERVER=smtp.gmail.com
+   MAIL_PORT=587
+   MAIL_USERNAME=your_email@gmail.com
+   MAIL_PASSWORD=your_app_password
+   MAIL_FROM=your_email@gmail.com
+   MAIL_USE_TLS=True
+
+   GOOGLE_MAPS_API_KEY=your-google-maps-api-key
    ```
 
 3. Run Database Migrations:
    ```bash
    alembic upgrade head
    ```
+   Migration `0005` drops the retired `personal_details.aadhar_number` column. It refuses to run while
+   any row still holds a value; back up the database and re-run with
+   `LIFECONNECT_ALLOW_AADHAAR_DROP=1 alembic upgrade head` to confirm.
 
-4. Start the FastAPI server:
+4. (Optional) Load synthetic development data from `docs/initial_data.sql`. Every account in it uses the
+   dev-only password `DevOnly#2026`. Never load it into a production database.
+
+5. Start the FastAPI server:
    ```bash
    uvicorn app.main:app --reload
    ```
    The backend will be available at `http://localhost:8000`.
+
+6. (Optional) Run the background jobs (request expiry, donor reactivation, age increments) in a separate
+   process: set `SCHEDULER_ENABLED=true` and run `python -m app.scheduler_worker`.
+
+### Deployment settings
+
+| Setting | Dev / test | Production |
+| ------- | ---------- | ---------- |
+| `APP_ENV` | `development` | `production` (requires `RECAPTCHA_SECRET_KEY` and a 32+ character `SECRET_KEY`) |
+| `SCHEDULER_ENABLED` | `false` | `false` on every web worker; `true` on exactly **one** dedicated scheduler process (`docker compose` runs it as the `scheduler` service) |
+| `RECAPTCHA_ENFORCED` | `false` | `true`: login requires a valid `recaptcha_token` and fails closed with 400 |
+| `RATE_LIMIT_PER_MINUTE` | `60` | Default per-IP limit for routes without their own limit |
+| `RATE_LIMIT_STORAGE_URI` | `memory://` | `memory://` counts per process; with more than one worker or replica use a shared store such as `redis://host:6379/0` (needs the `redis` Python package) |
+| `DONOR_ELIGIBILITY_DAYS` | `60` | Days a donor stays inactive after donating |
 
 ### 3. Frontend Setup
 
