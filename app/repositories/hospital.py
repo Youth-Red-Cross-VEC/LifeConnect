@@ -19,12 +19,25 @@ class HospitalRepository:
         result = await self.session.execute(query)
         return result.scalar_one_or_none()
 
-    async def get_by_name(self, name: str) -> Optional[HospitalDetails]:
-        """Get hospital by name (case-insensitive)."""
+    async def find_duplicate(
+        self,
+        name: str,
+        branch: Optional[str],
+        pincode: str,
+        exclude_id: Optional[str] = None,
+    ) -> Optional[HospitalDetails]:
+        """
+        Find another hospital with the same identity: name + branch + pincode
+        (case-insensitive; a missing branch equals an empty one).
+        """
         query = select(HospitalDetails).where(
-            func.lower(HospitalDetails.hospital_name) == func.lower(name)
+            func.lower(HospitalDetails.hospital_name) == name.strip().lower(),
+            func.lower(func.coalesce(HospitalDetails.branch, "")) == (branch or "").strip().lower(),
+            HospitalDetails.pincode == pincode.strip(),
         )
-        result = await self.session.execute(query)
+        if exclude_id:
+            query = query.where(HospitalDetails.id != exclude_id)
+        result = await self.session.execute(query.limit(1))
         return result.scalar_one_or_none()
 
     async def get_all(

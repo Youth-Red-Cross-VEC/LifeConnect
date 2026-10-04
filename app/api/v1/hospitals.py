@@ -33,9 +33,11 @@ async def create_hospital(
     repo = HospitalRepository(session)
 
     # Check for duplicate
-    existing = await repo.get_by_name(data.hospital_name)
+    existing = await repo.find_duplicate(data.hospital_name, data.branch, data.pincode)
     if existing:
-        raise duplicate_exception("Hospital", "name", data.hospital_name)
+        raise duplicate_exception(
+            "Hospital", "name, branch and pincode", f"{data.hospital_name}, {data.branch or '-'}, {data.pincode}"
+        )
 
     hospital = HospitalDetails(
         id=generate_hospital_id(),
@@ -166,6 +168,14 @@ async def update_hospital(
 
     # Update fields if provided
     update_data = data.model_dump(exclude_unset=True)
+    if {"hospital_name", "branch", "pincode"} & update_data.keys():
+        new_name = update_data.get("hospital_name", hospital.hospital_name)
+        new_branch = update_data["branch"] if "branch" in update_data else hospital.branch
+        new_pincode = update_data.get("pincode", hospital.pincode)
+        if await repo.find_duplicate(new_name, new_branch, new_pincode, exclude_id=hospital_id):
+            raise duplicate_exception(
+                "Hospital", "name, branch and pincode", f"{new_name}, {new_branch or '-'}, {new_pincode}"
+            )
     for field, value in update_data.items():
         setattr(hospital, field, value)
 
