@@ -46,25 +46,25 @@ class BloodRequestRepository:
         result = await self.session.execute(query)
         return list(result.scalars().all())
 
-    async def get_pending_requests(self) -> List[BloodRequestDetails]:
-        """Get all pending requests."""
-        return await self.get_by_status(BloodRequestStatus.PENDING)
+    async def get_pending_requests(self, limit: int = 100, offset: int = 0) -> List[BloodRequestDetails]:
+        """Get pending requests."""
+        return await self.get_by_status(BloodRequestStatus.PENDING, offset=offset, limit=limit)
 
-    async def get_ongoing_requests(self) -> List[BloodRequestDetails]:
-        """Get all ongoing (approved) requests."""
-        return await self.get_by_status(BloodRequestStatus.APPROVED)
+    async def get_ongoing_requests(self, limit: int = 100, offset: int = 0) -> List[BloodRequestDetails]:
+        """Get ongoing (approved) requests."""
+        return await self.get_by_status(BloodRequestStatus.APPROVED, offset=offset, limit=limit)
 
-    async def get_closed_requests(self, limit: int = 100) -> List[BloodRequestDetails]:
+    async def get_closed_requests(self, limit: int = 100, offset: int = 0) -> List[BloodRequestDetails]:
         """Get closed requests."""
-        return await self.get_by_status(BloodRequestStatus.CLOSED, limit=limit)
+        return await self.get_by_status(BloodRequestStatus.CLOSED, offset=offset, limit=limit)
 
-    async def get_expired_requests(self, limit: int = 100) -> List[BloodRequestDetails]:
+    async def get_expired_requests(self, limit: int = 100, offset: int = 0) -> List[BloodRequestDetails]:
         """Get expired requests."""
-        return await self.get_by_status(BloodRequestStatus.EXPIRED, limit=limit)
+        return await self.get_by_status(BloodRequestStatus.EXPIRED, offset=offset, limit=limit)
 
-    async def get_declined_requests(self, limit: int = 100) -> List[BloodRequestDetails]:
+    async def get_declined_requests(self, limit: int = 100, offset: int = 0) -> List[BloodRequestDetails]:
         """Get declined requests."""
-        return await self.get_by_status(BloodRequestStatus.DECLINED, limit=limit)
+        return await self.get_by_status(BloodRequestStatus.DECLINED, offset=offset, limit=limit)
 
     async def count_by_status(self, status: BloodRequestStatus) -> int:
         """Count requests by status."""

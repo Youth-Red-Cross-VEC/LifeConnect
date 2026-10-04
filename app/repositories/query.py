@@ -99,12 +99,16 @@ class QueryRepository:
         await self.session.flush()
         return query
 
-    async def get_by_user_email(self, email: str) -> List[QueryTable]:
-        """Get all queries from a specific user."""
+    async def get_by_user_email(
+        self, email: str, limit: int = 100, offset: int = 0
+    ) -> List[QueryTable]:
+        """Get queries from a specific user, newest first."""
         query = (
             select(QueryTable)
             .where(QueryTable.user_email == email)
             .order_by(QueryTable.id.desc())
+            .offset(offset)
+            .limit(limit)
         )
         result = await self.session.execute(query)
         return list(result.scalars().all())

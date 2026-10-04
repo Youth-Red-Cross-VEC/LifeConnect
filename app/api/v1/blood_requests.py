@@ -109,59 +109,66 @@ async def create_blood_request(
 
 @router.get("/pending", response_model=List[BloodRequestListResponse])
 async def get_pending_requests(
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
     session: AsyncSession = Depends(get_db),
     current_admin = Depends(get_current_admin),
 ):
     """Get all pending blood requests (admin only)."""
     repo = BloodRequestRepository(session)
-    requests = await repo.get_pending_requests()
+    requests = await repo.get_pending_requests(limit=limit, offset=offset)
     return [BloodRequestListResponse.model_validate(r) for r in requests]
 
 
 @router.get("/ongoing", response_model=List[BloodRequestListResponse])
 async def get_ongoing_requests(
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
     session: AsyncSession = Depends(get_db),
     current_admin = Depends(get_current_admin),
 ):
     """Get all ongoing (approved) requests (admin only)."""
     repo = BloodRequestRepository(session)
-    requests = await repo.get_ongoing_requests()
+    requests = await repo.get_ongoing_requests(limit=limit, offset=offset)
     return [BloodRequestListResponse.model_validate(r) for r in requests]
 
 
 @router.get("/closed", response_model=List[BloodRequestListResponse])
 async def get_closed_requests(
-    limit: int = Query(default=100, le=500),
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
     session: AsyncSession = Depends(get_db),
     current_admin = Depends(get_current_admin),
 ):
     """Get closed requests (admin only)."""
     repo = BloodRequestRepository(session)
-    requests = await repo.get_closed_requests(limit=limit)
+    requests = await repo.get_closed_requests(limit=limit, offset=offset)
     return [BloodRequestListResponse.model_validate(r) for r in requests]
 
 
 @router.get("/expired", response_model=List[BloodRequestListResponse])
 async def get_expired_requests(
-    limit: int = Query(default=100, le=500),
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
     session: AsyncSession = Depends(get_db),
     current_admin = Depends(get_current_admin),
 ):
     """Get expired requests (admin only)."""
     repo = BloodRequestRepository(session)
-    requests = await repo.get_expired_requests(limit=limit)
+    requests = await repo.get_expired_requests(limit=limit, offset=offset)
     return [BloodRequestListResponse.model_validate(r) for r in requests]
 
 
 @router.get("/declined", response_model=List[BloodRequestListResponse])
 async def get_declined_requests(
-    limit: int = Query(default=100, le=500),
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
     session: AsyncSession = Depends(get_db),
     current_admin = Depends(get_current_admin),
 ):
     """Get declined requests (admin only)."""
     repo = BloodRequestRepository(session)
-    requests = await repo.get_declined_requests(limit=limit)
+    requests = await repo.get_declined_requests(limit=limit, offset=offset)
     return [BloodRequestListResponse.model_validate(r) for r in requests]
 
 

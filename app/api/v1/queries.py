@@ -69,6 +69,8 @@ async def submit_query(
     summary="Get queries by user email",
 )
 async def get_my_queries(
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
     session: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
@@ -78,7 +80,7 @@ async def get_my_queries(
     The email is taken from the verified account, never from the client.
     """
     repo = QueryRepository(session)
-    queries = await repo.get_by_user_email(current_user["email"])
+    queries = await repo.get_by_user_email(current_user["email"], limit=limit, offset=offset)
     
     return queries
 
@@ -95,9 +97,11 @@ async def get_my_queries(
 async def list_queries(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
+    status_value: Optional[str] = Query(
+        None, alias="status", description="Filter by status: 'pending' or 'resolved'"
+    ),
     status_filter: Optional[str] = Query(
-        None, 
-        description="Filter by status: 'pending' or 'resolved'"
+        None, description="Deprecated alias of `status`", deprecated=True
     ),
     session: AsyncSession = Depends(get_db),
     current_admin = Depends(get_current_admin),
@@ -110,8 +114,9 @@ async def list_queries(
     repo = QueryRepository(session)
     offset = (page - 1) * page_size
     
-    pending_only = status_filter == "pending"
-    resolved_only = status_filter == "resolved"
+    wanted = status_value or status_filter
+    pending_only = wanted == "pending"
+    resolved_only = wanted == "resolved"
     
     queries, total = await repo.get_all(
         offset=offset,
@@ -137,12 +142,14 @@ async def list_queries(
     summary="Get pending queries (Admin)",
 )
 async def get_pending_queries(
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
     session: AsyncSession = Depends(get_db),
     current_admin = Depends(get_current_admin),
 ):
     """Get all queries awaiting admin response."""
     repo = QueryRepository(session)
-    queries, _ = await repo.get_all(pending_only=True, limit=100)
+    queries, _ = await repo.get_all(pending_only=True, limit=limit, offset=offset)
     
     return queries
 

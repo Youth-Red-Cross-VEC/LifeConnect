@@ -122,7 +122,8 @@ async def list_donors(
     page_size: int = Query(default=20, ge=1, le=100),
     blood_group: Optional[str] = Query(default=None),
     active_only: bool = Query(default=False),
-    name_search: Optional[str] = Query(default=None),
+    search: Optional[str] = Query(default=None, description="Match on donor name"),
+    name_search: Optional[str] = Query(default=None, description="Deprecated alias of `search`", deprecated=True),
     session: AsyncSession = Depends(get_db),
     current_admin = Depends(get_current_admin),
 ):
@@ -139,7 +140,7 @@ async def list_donors(
         limit=page_size,
         blood_group=blood_group,
         active_only=active_only,
-        name_search=name_search,
+        name_search=search or name_search,
     )
 
     return PaginatedResponse.create(

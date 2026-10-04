@@ -119,7 +119,8 @@
     "GET /api/v1/blood-requests/closed": {
       "body": null,
       "params": [
-        "query:limit:optional"
+        "query:limit:optional",
+        "query:offset:optional"
       ],
       "responses": {
         "200": "array<BloodRequestListResponse>",
@@ -130,7 +131,8 @@
     "GET /api/v1/blood-requests/declined": {
       "body": null,
       "params": [
-        "query:limit:optional"
+        "query:limit:optional",
+        "query:offset:optional"
       ],
       "responses": {
         "200": "array<BloodRequestListResponse>",
@@ -141,7 +143,8 @@
     "GET /api/v1/blood-requests/expired": {
       "body": null,
       "params": [
-        "query:limit:optional"
+        "query:limit:optional",
+        "query:offset:optional"
       ],
       "responses": {
         "200": "array<BloodRequestListResponse>",
@@ -151,17 +154,25 @@
     },
     "GET /api/v1/blood-requests/ongoing": {
       "body": null,
-      "params": [],
+      "params": [
+        "query:limit:optional",
+        "query:offset:optional"
+      ],
       "responses": {
-        "200": "array<BloodRequestListResponse>"
+        "200": "array<BloodRequestListResponse>",
+        "422": "HTTPValidationError"
       },
       "secured": true
     },
     "GET /api/v1/blood-requests/pending": {
       "body": null,
-      "params": [],
+      "params": [
+        "query:limit:optional",
+        "query:offset:optional"
+      ],
       "responses": {
-        "200": "array<BloodRequestListResponse>"
+        "200": "array<BloodRequestListResponse>",
+        "422": "HTTPValidationError"
       },
       "secured": true
     },
@@ -210,7 +221,8 @@
         "query:blood_group:optional",
         "query:name_search:optional",
         "query:page:optional",
-        "query:page_size:optional"
+        "query:page_size:optional",
+        "query:search:optional"
       ],
       "responses": {
         "200": "PaginatedResponse",
@@ -313,6 +325,7 @@
       "params": [
         "query:page:optional",
         "query:page_size:optional",
+        "query:status:optional",
         "query:status_filter:optional"
       ],
       "responses": {
@@ -323,17 +336,25 @@
     },
     "GET /api/v1/queries/my-queries": {
       "body": null,
-      "params": [],
+      "params": [
+        "query:limit:optional",
+        "query:offset:optional"
+      ],
       "responses": {
-        "200": "array<QueryResponse>"
+        "200": "array<QueryResponse>",
+        "422": "HTTPValidationError"
       },
       "secured": true
     },
     "GET /api/v1/queries/pending": {
       "body": null,
-      "params": [],
+      "params": [
+        "query:limit:optional",
+        "query:offset:optional"
+      ],
       "responses": {
-        "200": "array<QueryResponse>"
+        "200": "array<QueryResponse>",
+        "422": "HTTPValidationError"
       },
       "secured": true
     },
