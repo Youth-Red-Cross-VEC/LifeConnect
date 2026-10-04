@@ -6,10 +6,8 @@ import { api } from "../services/api";
 export default function GenerateCertificate() {
   const navigate = useNavigate();
   const [form, setForm] = useState({
-    donor_name: "",
-    donor_email: "",
+    donor_id: "",
     donation_date: "",
-    blood_group: "",
     location: "",
   });
   const [error, setError] = useState("");
@@ -27,10 +25,12 @@ export default function GenerateCertificate() {
     setIsLoading(true);
     try {
       // Uses correct endpoint: POST /api/v1/certificates/generate on port 8000
-      const res = await api.generateCertificate(form);
+      // The server reads the donor's name, email and blood group from their record.
+      const payload = { ...form, location: form.location || null };
+      const res = await api.generateCertificate(payload);
       if (res && (res.success || res.message || res.filename)) {
         setSuccessMsg(res.message || "Certificate sent successfully to the donor.");
-        setForm({ donor_name: "", donor_email: "", donation_date: "", blood_group: "", location: "" });
+        setForm({ donor_id: "", donation_date: "", location: "" });
       } else {
         setError(res?.detail || res?.message || "Failed to send certificate. Please try again.");
       }
@@ -152,27 +152,13 @@ export default function GenerateCertificate() {
 
         <form onSubmit={handleSubmit}>
           <div className="cert-form-group">
-            <label htmlFor="donor_name">Donor Name</label>
+            <label htmlFor="donor_id">Donor ID</label>
             <input
               type="text"
-              name="donor_name"
-              id="donor_name"
-              placeholder="Enter donor's name"
-              value={form.donor_name}
-              onChange={handleChange}
-              required
-              disabled={isLoading}
-            />
-          </div>
-
-          <div className="cert-form-group">
-            <label htmlFor="donor_email">Donor Email</label>
-            <input
-              type="email"
-              name="donor_email"
-              id="donor_email"
-              placeholder="Enter donor's email"
-              value={form.donor_email}
+              name="donor_id"
+              id="donor_id"
+              placeholder="Enter the donor's ID (e.g. DON-xxxxxxxx)"
+              value={form.donor_id}
               onChange={handleChange}
               required
               disabled={isLoading}
@@ -186,20 +172,6 @@ export default function GenerateCertificate() {
               name="donation_date"
               id="donation_date"
               value={form.donation_date}
-              onChange={handleChange}
-              required
-              disabled={isLoading}
-            />
-          </div>
-
-          <div className="cert-form-group">
-            <label htmlFor="blood_group">Blood Group</label>
-            <input
-              type="text"
-              name="blood_group"
-              id="blood_group"
-              placeholder="Enter blood group (e.g. A+)"
-              value={form.blood_group}
               onChange={handleChange}
               required
               disabled={isLoading}

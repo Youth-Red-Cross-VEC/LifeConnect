@@ -6,10 +6,12 @@ Endpoints for generating and managing blood donation certificates.
 
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from fastapi.responses import FileResponse
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.models.blood_request import ResponseDetails
+from app.repositories.blood_request import BloodRequestRepository
 from app.repositories.donor import DonorRepository
 from typing import Optional
 from pathlib import Path
@@ -27,13 +29,22 @@ router = APIRouter(prefix="/certificates", tags=["Certificates"])
 # =======================
 
 class CertificateRequest(BaseModel):
-    """Request schema for generating a certificate."""
-    
-    donor_name: str = Field(..., min_length=1, max_length=100)
-    donor_email: EmailStr
-    donation_date: str = Field(..., description="Format: YYYY-MM-DD or human-readable")
-    blood_group: str = Field(..., pattern=r"^(A|B|AB|O)[+-]$")
-    location: str = Field(..., min_length=1, max_length=200)
+    """Request schema for generating a certificate.
+
+    Donor identity (name, email, blood group) is read from the database;
+    the client only says WHICH donor, never who they are.
+    """
+
+    donor_id: str = Field(..., min_length=1, max_length=36)
+    request_id: Optional[str] = Field(
+        default=None, max_length=36,
+        description="Blood request the donation belongs to; supplies the location/date defaults",
+    )
+    donation_date: Optional[str] = Field(
+        default=None, max_length=50,
+        description="Format: YYYY-MM-DD or human-readable. Defaults to the request's donation date",
+    )
+    location: Optional[str] = Field(default=None, max_length=200)
     send_email: bool = Field(default=True, description="Send certificate via email")
 
 
@@ -68,36 +79,59 @@ async def generate_certificate(
     background_tasks: BackgroundTasks,
     cert_service: CertificateService = Depends(get_certificate_service),
     email_service: EmailService = Depends(get_email_service),
+    session: AsyncSession = Depends(get_db),
     current_admin = Depends(get_current_admin),
 ):
     """
-    Generate a blood donation certificate for a donor.
-    
-    Optionally sends the certificate via email if send_email is True.
+    Generate a blood donation certificate for a registered donor (admin only).
+
+    Name, email and blood group come from the donor record, never from the client.
+    Optionally sends the certificate to the donor's registered email.
     """
-    # Generate certificate
+    donor = await DonorRepository(session).get_by_id(data.donor_id)
+    if not donor:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Donor not found")
+
+    donation_date = data.donation_date
+    location = data.location
+    if data.request_id:
+        blood_request = await BloodRequestRepository(session).get_by_id(data.request_id)
+        if not blood_request:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Blood request not found"
+            )
+        location = location or blood_request.hospital_name
+        response_details = await session.get(ResponseDetails, blood_request.response_id)
+        if not donation_date and response_details and response_details.donation_date:
+            donation_date = response_details.donation_date.isoformat()
+
+    if not donation_date:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="donation_date is required unless request_id has a recorded donation date",
+        )
+
     file_path = await cert_service.generate_certificate(
-        donor_name=data.donor_name,
-        donation_date=data.donation_date,
-        blood_group=data.blood_group,
-        location=data.location,
+        donor_name=donor.name,
+        donation_date=donation_date,
+        blood_group=donor.blood_group,
+        location=location or "Not specified",
     )
-    
+
     filename = Path(file_path).name
     email_sent = False
-    
-    # Send via email if requested
+
     if data.send_email:
         background_tasks.add_task(
             email_service.send_certificate,
-            donor_name=data.donor_name,
-            donor_email=data.donor_email,
+            donor_name=donor.name,
+            donor_email=donor.email,
             certificate_path=file_path,
         )
         email_sent = True
-    
+
     return CertificateResponse(
-        message=f"Certificate generated for {data.donor_name}",
+        message=f"Certificate generated for {donor.name}",
         file_path=file_path,
         filename=filename,
         email_sent=email_sent,
