@@ -1,131 +1,33 @@
 // Central API service for LifeConnect
 // In Docker: VITE_API_URL is "" so requests go to same origin (nginx proxies /api/* → api:8000)
 // In local dev: VITE_API_URL is "http://localhost:8000" for direct access
+import { createHttpClient } from "./http";
+import { session } from "./session";
+
 const BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
 
-// ─── Token & User Utilities ───────────────────────────────────────────────────
+// ─── Session helpers (re-exported so existing imports keep working) ───────────
 
-export const getToken = () => localStorage.getItem("lc_token");
+export const getToken = session.getToken;
+export const setToken = session.setToken;
+export const getRefreshToken = session.getRefreshToken;
+export const setRefreshToken = session.setRefreshToken;
+export const isLoggedIn = session.isLoggedIn;
+export const getUserType = session.getUserType;
+export const setUserType = session.setUserType;
+export const getUserId = session.getUserId;
+export const setUserId = session.setUserId;
+export const getUsername = session.getUsername;
+export const setUsername = session.setUsername;
+export const clearSession = session.clear;
+export const isAdminLoggedIn = session.isAdminLoggedIn;
+export const isDonorLoggedIn = session.isDonorLoggedIn;
 
-export const setToken = (token) => localStorage.setItem("lc_token", token);
+// ─── HTTP client ──────────────────────────────────────────────────────────────
 
-export const removeToken = () => localStorage.removeItem("lc_token");
-
-export const getRefreshToken = () => localStorage.getItem("lc_refresh_token");
-
-export const setRefreshToken = (token) => localStorage.setItem("lc_refresh_token", token);
-
-export const isLoggedIn = () => Boolean(getToken());
-
-export const getUserType = () => localStorage.getItem("lc_user_type");
-
-export const setUserType = (type) => localStorage.setItem("lc_user_type", type);
-
-export const getUserId = () => localStorage.getItem("lc_user_id");
-
-export const setUserId = (id) => localStorage.setItem("lc_user_id", id);
-
-export const getUsername = () => localStorage.getItem("lc_username");
-
-export const setUsername = (name) => localStorage.setItem("lc_username", name);
-
-export const clearSession = () => {
-  localStorage.removeItem("lc_token");
-  localStorage.removeItem("lc_refresh_token");
-  localStorage.removeItem("lc_user_type");
-  localStorage.removeItem("lc_user_id");
-  localStorage.removeItem("lc_username");
-};
-
-export const isAdminLoggedIn = () =>
-  Boolean(getToken()) && getUserType() === "admin";
-
-export const isDonorLoggedIn = () =>
-  Boolean(getToken()) && getUserType() === "donor";
-
-// ─── Session Refresh / Logout ─────────────────────────────────────────────────
-
-let refreshInFlight = null;
-
-// Exchange the stored refresh token for a new pair. Concurrent callers share one
-// request: the server rotates tokens, so a second parallel call would look like reuse.
-function refreshSession() {
-  const refreshToken = getRefreshToken();
-  if (!refreshToken) return Promise.resolve(false);
-  if (!refreshInFlight) {
-    refreshInFlight = fetch(`${BASE_URL}/api/v1/auth/refresh`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ refresh_token: refreshToken }),
-    })
-      .then(async (res) => {
-        if (!res.ok) return false;
-        const data = await res.json();
-        setToken(data.access_token);
-        setRefreshToken(data.refresh_token);
-        return true;
-      })
-      .catch(() => false)
-      .finally(() => {
-        refreshInFlight = null;
-      });
-  }
-  return refreshInFlight;
-}
-
-// Revoke the refresh token on the server, then clear the local session.
-export async function logout() {
-  const refreshToken = getRefreshToken();
-  try {
-    if (refreshToken) {
-      await fetch(`${BASE_URL}/api/v1/auth/logout`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ refresh_token: refreshToken }),
-      });
-    }
-  } finally {
-    clearSession();
-  }
-}
-
-// ─── Private Request Helper ───────────────────────────────────────────────────
-
-async function request(endpoint, options = {}, redirectOn401 = "/donor/login") {
-  const token = getToken();
-
-  const headers = {
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    ...(options.headers || {}),
-  };
-
-  let body = options.body;
-  if (body && typeof body === "object" && !(body instanceof FormData)) {
-    // FastAPI expects JSON bodies — never send URL-encoded form data
-    headers["Content-Type"] = "application/json";
-    body = JSON.stringify(body);
-  }
-
-  const response = await fetch(`${BASE_URL}${endpoint}`, {
-    ...options,
-    headers,
-    body,
-  });
-
-  // Expired access token: refresh once and replay the request
-  if (response.status === 401 && token && !options._retried && (await refreshSession())) {
-    return request(endpoint, { ...options, _retried: true }, redirectOn401);
-  }
-
-  // Handle 401 — clear session and redirect to the appropriate login page
-  if (response.status === 401) {
-    clearSession();
-    window.location.href = redirectOn401;
-    return;
-  }
-
-  return response.json();
-}
+const http = createHttpClient({ baseUrl: BASE_URL, session });
+const request = http.request;
+export const logout = http.logout;
 
 // ─── API Object ───────────────────────────────────────────────────────────────
 
