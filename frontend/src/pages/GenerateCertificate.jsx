@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import AdminBase from "./AdminBase";
-import { api } from "../services/api";
+import { api, saveBlob } from "../services/api";
 
 export default function GenerateCertificate() {
   const navigate = useNavigate();
@@ -12,6 +12,7 @@ export default function GenerateCertificate() {
   });
   const [error, setError] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
+  const [generatedFile, setGeneratedFile] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
   const handleChange = (e) => {
@@ -22,6 +23,7 @@ export default function GenerateCertificate() {
     e.preventDefault();
     setError("");
     setSuccessMsg("");
+    setGeneratedFile("");
     setIsLoading(true);
     try {
       // Uses correct endpoint: POST /api/v1/certificates/generate on port 8000
@@ -30,6 +32,7 @@ export default function GenerateCertificate() {
       const res = await api.generateCertificate(payload);
       if (res && (res.success || res.message || res.filename)) {
         setSuccessMsg(res.message || "Certificate sent successfully to the donor.");
+        setGeneratedFile(res.filename || "");
         setForm({ donor_id: "", donation_date: "", location: "" });
       } else {
         setError(res?.detail || res?.message || "Failed to send certificate. Please try again.");
@@ -40,6 +43,18 @@ export default function GenerateCertificate() {
       setIsLoading(false);
     }
   };
+
+  // The download endpoint needs the bearer token, so fetch the file through the API client.
+  const handleDownload = async () => {
+    setError("");
+    try {
+      const blob = await api.downloadCertificate(generatedFile);
+      if (blob) saveBlob(blob, generatedFile);
+    } catch (err) {
+      setError(err.message || "Could not download the certificate.");
+    }
+  };
+
   return (
     <AdminBase active="certificates">
       <style>{`
@@ -114,6 +129,18 @@ export default function GenerateCertificate() {
 
         .cert-back-link:hover { text-decoration: underline; }
 
+        .cert-download {
+          display: block;
+          margin: 0 auto 18px;
+          padding: 10px 18px;
+          background: #003f88;
+          color: #fff;
+          border: none;
+          border-radius: 6px;
+          cursor: pointer;
+          font-size: 14px;
+        }
+
         .cert-success {
           background: #d4edda;
           color: #155724;
@@ -148,6 +175,11 @@ export default function GenerateCertificate() {
         <h2>Generate Manual Certificates</h2>
 
         {successMsg && <div className="cert-success">✅ {successMsg}</div>}
+        {generatedFile && (
+          <button type="button" className="cert-download" onClick={handleDownload}>
+            Download certificate
+          </button>
+        )}
         {error && <div className="cert-error">{error}</div>}
 
         <form onSubmit={handleSubmit}>
