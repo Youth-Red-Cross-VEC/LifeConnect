@@ -37,7 +37,7 @@ def _on_event_loop() -> bool:
 def bcrypt_calls(monkeypatch):
     """Record every real bcrypt hash/verify and whether it ran on the event-loop thread."""
     calls: list[tuple[str, bool]] = []
-    real_hash, real_verify = utils.pwd_context.hash, utils.pwd_context.verify
+    real_hash, real_verify = utils.bcrypt.hashpw, utils.bcrypt.checkpw
 
     def hash_(*a, **k):
         calls.append(("hash", _on_event_loop()))
@@ -47,8 +47,8 @@ def bcrypt_calls(monkeypatch):
         calls.append(("verify", _on_event_loop()))
         return real_verify(*a, **k)
 
-    monkeypatch.setattr(utils.pwd_context, "hash", hash_)
-    monkeypatch.setattr(utils.pwd_context, "verify", verify_)
+    monkeypatch.setattr(utils.bcrypt, "hashpw", hash_)
+    monkeypatch.setattr(utils.bcrypt, "checkpw", verify_)
     return calls
 
 
@@ -216,7 +216,7 @@ async def test_reset_confirm_answers_identically_for_known_and_unknown_emails(
     unknown = await client.post(url, json={**body, "email": "ghost@example.com"})
 
     assert known.status_code == unknown.status_code == 400
-    assert known.json() == unknown.json() == {"detail": "Invalid or expired OTP"}
+    assert known.json() == unknown.json() == {"detail": "Invalid or expired code"}
 
 
 class _Mailer:

@@ -1,6 +1,8 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { useEffect, useState } from "react";
 import "./App.css";
 import ProtectedRoute from "./components/ProtectedRoute";
+import { restoreSession } from "./services/api";
 
 // Import all pages
 import Landing from "./pages/Landing";
@@ -46,6 +48,13 @@ import AboutUs from "./pages/AboutUs";
 import NotFound from "./pages/NotFound";
 
 function App() {
+  const [sessionReady, setSessionReady] = useState(false);
+  useEffect(() => {
+    restoreSession().finally(() => setSessionReady(true));
+  }, []);
+
+  if (!sessionReady) return <div role="status" className="p-4">Loading...</div>;
+
   return (
     <BrowserRouter>
       <div className="w-full min-h-screen m-0 p-0 overflow-x-hidden">

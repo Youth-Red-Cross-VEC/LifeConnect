@@ -60,7 +60,7 @@ class TestOtp:
     async def test_otp_is_stored_hashed_and_expires(self, test_session):
         await store_otp(test_session, "c@example.com", "654321", PURPOSE_ADMIN_INVITE)
         row = (await test_session.execute(select(OtpCode))).scalar_one()
-        assert "654321" not in row.otp_hash
+        assert "654321" not in row.code_hmac
         row.expires_at = datetime.utcnow() - timedelta(seconds=1)
         await test_session.commit()
         assert not await verify_otp(test_session, "c@example.com", "654321", PURPOSE_ADMIN_INVITE)

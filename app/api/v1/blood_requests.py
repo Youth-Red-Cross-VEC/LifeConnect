@@ -6,6 +6,7 @@ Admin endpoints for managing request lifecycle.
 """
 
 import logging
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status, Query, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -60,6 +61,8 @@ async def _send_donation_certificates(donor_details, donation_date: str, locatio
                 certificate_path=path,
             )
             all_sent = all_sent and bool(sent)
+            if sent:
+                await cert_service.delete_certificate(Path(path).name)
         except Exception as e:
             all_sent = False
             logger.error(
@@ -80,6 +83,12 @@ def _status_changed() -> HTTPException:
         status_code=status.HTTP_409_CONFLICT,
         detail="This request was changed by someone else while you were working on it; reload and try again",
     )
+
+
+def _patient_initials(name: str) -> str:
+    """Return initials only for donor broadcast emails (for example ``R. K.``)."""
+    parts = [part for part in name.split() if part]
+    return " ".join(f"{part[0].upper()}." for part in parts) or "Patient"
 
 
 @router.post("/", response_model=BloodRequestResponse, status_code=status.HTTP_201_CREATED)
@@ -269,9 +278,7 @@ async def approve_blood_request(
         raise not_found_exception("Blood Request", request_id)
 
     if not can_transition(blood_request.status, BloodRequestStatus.APPROVED):
-        raise bad_request_exception(
-            f"Cannot approve request with status '{blood_request.status}'"
-        )
+        raise _status_changed()
 
     # Update status. The check and the write are one atomic UPDATE; if another admin got there first this
     # fails before any donor is emailed.
@@ -293,10 +300,12 @@ async def approve_blood_request(
                 donor_email=donor.email,
                 donor_name=donor.name,
                 blood_group=blood_request.blood_group,
-                patient_name=blood_request.patient_name,
+                patient_name=_patient_initials(blood_request.patient_name),
                 hospital_name=blood_request.hospital_name,
                 hospital_address=hospital.hospital_address if hospital else "",
-                contact_number=blood_request.contact_number,
+                contact_number=(
+                    blood_request.contact_number if get_settings().NOTIFY_INCLUDE_CONTACT else None
+                ),
                 due_date=str(blood_request.due_date),
                 attendant_name=blood_request.attendant_name or "",
                 units_required=blood_request.units_required,
@@ -336,9 +345,7 @@ async def decline_blood_request(
         raise not_found_exception("Blood Request", request_id)
 
     if not can_transition(blood_request.status, BloodRequestStatus.DECLINED):
-        raise bad_request_exception(
-            f"Cannot decline request with status '{blood_request.status}'"
-        )
+        raise _status_changed()
 
     if not await repo.update_status(
         request_id, BloodRequestStatus.DECLINED, expected_status=blood_request.status
@@ -381,9 +388,7 @@ async def close_blood_request(
         )
 
     if not can_transition(blood_request.status, BloodRequestStatus.CLOSED):
-        raise bad_request_exception(
-            f"Cannot close request with status '{blood_request.status}'"
-        )
+        raise _status_changed()
 
     # Validate donation data before changing anything
     donor_ids = list(dict.fromkeys(data.donor_ids))  # de-duplicate, keep order

@@ -43,22 +43,17 @@ export function createHttpClient({
 }) {
   let refreshInFlight = null;
 
-  // Exchange the stored refresh token for a new pair. Concurrent callers share one request:
-  // the server rotates tokens, so a second parallel call would look like token reuse.
+  // The browser sends the HttpOnly refresh cookie; JavaScript never sees its value.
   function refreshSession() {
-    const refreshToken = session.getRefreshToken();
-    if (!refreshToken) return Promise.resolve(false);
     if (!refreshInFlight) {
       refreshInFlight = fetchImpl(`${baseUrl}/api/v1/auth/refresh`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ refresh_token: refreshToken }),
+        credentials: "include",
       })
         .then(async (res) => {
           if (!res.ok) return false;
           const data = await res.json();
-          session.setToken(data.access_token);
-          session.setRefreshToken(data.refresh_token);
+          session.saveLogin(data, data.user_type);
           return true;
         })
         .catch(() => false)
@@ -86,12 +81,18 @@ export function createHttpClient({
       body = JSON.stringify(body);
     }
 
-    const response = await fetchImpl(`${baseUrl}${endpoint}`, { ...fetchOptions, headers, body });
+    const response = await fetchImpl(`${baseUrl}${endpoint}`, {
+      ...fetchOptions,
+      credentials: "include",
+      headers,
+      body,
+    });
 
     // An authenticated call was rejected: the access token expired. Refresh once and replay.
     // A 401 with NO token is just an answer (e.g. a wrong password at login), not an expired
     // session, so it must not clear anything or redirect.
-    if (response.status === 401 && token) {
+    const isLogin = /\/auth\/(donor|admin)\/login(?:\?|$)/.test(endpoint);
+    if (response.status === 401 && token && !isLogin) {
       if (!_retried && (await refreshSession())) {
         return request(endpoint, { ...options, _retried: true }, redirectOn401);
       }
@@ -111,21 +112,17 @@ export function createHttpClient({
     return parseBody(response);
   }
 
-  // Revoke the refresh token on the server, then clear the local session.
+  // Revoke the HttpOnly refresh cookie on the server, then clear in-memory state.
   async function logout() {
-    const refreshToken = session.getRefreshToken();
     try {
-      if (refreshToken) {
-        await fetchImpl(`${baseUrl}/api/v1/auth/logout`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ refresh_token: refreshToken }),
-        });
-      }
+      await fetchImpl(`${baseUrl}/api/v1/auth/logout`, {
+        method: "POST",
+        credentials: "include",
+      });
     } finally {
       session.clear();
     }
   }
 
-  return { request, logout };
+  return { request, logout, restoreSession: refreshSession };
 }

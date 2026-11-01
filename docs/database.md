@@ -41,6 +41,8 @@ transitions are defined in `app/core/request_status.py`.
 | id | VARCHAR(36) | no | primary key |
 | email | VARCHAR(100) | no | unique |
 | password | VARCHAR(250) | no |  |
+| token_version | INTEGER | no |  |
+| role | VARCHAR(20) | no |  |
 | username | VARCHAR(45) | no |  |
 | authentication_id | VARCHAR(36) | no | unique |
 | vec_registration_number | VARCHAR(36) | no | unique |
@@ -112,8 +114,10 @@ transitions are defined in `app/core/request_status.py`.
 | name | VARCHAR(100) | no |  |
 | email | VARCHAR(100) | no | unique |
 | password | VARCHAR(500) | no |  |
+| token_version | INTEGER | no |  |
 | blood_group | VARCHAR(10) | no | indexed |
 | active_status | BOOLEAN | no | indexed |
+| is_available | BOOLEAN | no | indexed |
 | authentication_id | VARCHAR(36) | no | unique |
 | last_donated_date | DATETIME | yes |  |
 | number_of_times_donated | INTEGER | no |  |
@@ -148,10 +152,20 @@ transitions are defined in `app/core/request_status.py`.
 | id | INTEGER | no | primary key |
 | purpose | VARCHAR(40) | no |  |
 | email | VARCHAR(100) | no |  |
-| otp_hash | VARCHAR(64) | no |  |
+| code_hmac | VARCHAR(64) | no |  |
 | expires_at | DATETIME | no | indexed |
 | attempts | INTEGER | no |  |
 | created_at | DATETIME | no |  |
+
+## `otp_failure_windows`
+
+| Column | Type | Nullable | Notes |
+| ------ | ---- | -------- | ----- |
+| id | INTEGER | no | primary key |
+| purpose | VARCHAR(40) | no |  |
+| email | VARCHAR(100) | no |  |
+| attempts | INTEGER | no |  |
+| window_started_at | DATETIME | no |  |
 
 ## `personal_details`
 
@@ -185,13 +199,13 @@ transitions are defined in `app/core/request_status.py`.
 | created_at | DATETIME | no |  |
 | updated_at | DATETIME | yes |  |
 
-## `refresh_sessions`
+## `refresh_tokens`
 
 | Column | Type | Nullable | Notes |
 | ------ | ---- | -------- | ----- |
 | jti | VARCHAR(36) | no | primary key |
 | user_id | VARCHAR(36) | no | indexed |
-| role | VARCHAR(10) | no |  |
+| user_type | VARCHAR(10) | no |  |
 | expires_at | DATETIME | no |  |
 | revoked_at | DATETIME | yes |  |
 | replaced_by | VARCHAR(36) | yes |  |
@@ -207,7 +221,7 @@ transitions are defined in `app/core/request_status.py`.
 | units_donated | INTEGER | yes |  |
 | certificate_status | VARCHAR(36) | yes |  |
 | donation_date | DATE | yes |  |
-| donor_ids | VARCHAR(255) | yes |  |
+| donor_ids | TEXT | yes |  |
 | created_at | DATETIME | no |  |
 | updated_at | DATETIME | yes |  |
 

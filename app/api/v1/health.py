@@ -5,6 +5,7 @@ Health check and utility endpoints.
 import logging
 
 from fastapi import APIRouter, Depends
+from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 
@@ -36,7 +37,8 @@ async def health_check(
         # This endpoint is public: driver errors carry hostnames, usernames and addresses. The
         # details go to the server log, the client only learns that the database is down.
         logger.error("Health check: database unreachable", exc_info=True)
-        db_status = "unavailable"
+        await session.rollback()
+        return JSONResponse(status_code=503, content={"status": "unhealthy"})
 
     return HealthResponse(
         status="healthy" if db_status == "connected" else "unhealthy",

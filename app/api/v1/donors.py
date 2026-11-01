@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
+import logging
 
 from app.core.database import get_db
 from app.repositories.admin import AdminRepository
@@ -35,7 +36,8 @@ from app.utils import (
     generate_terms_id,
     generate_auth_id,
 )
-from app.core.exceptions import duplicate_exception, not_found_exception
+from app.core.exceptions import not_found_exception
+from app.core.logging import mask_email
 from app.utils.emails import normalize_email
 from app.utils.dates import age_on, utcnow
 from app.services.audit_service import record_admin_action
@@ -43,6 +45,7 @@ from app.services.refresh_session_service import revoke_all_for_user
 from app.api.auth.deps import get_current_donor, get_current_admin, get_current_donor_or_admin
 
 router = APIRouter(prefix="/donors", tags=["Donors"])
+logger = logging.getLogger(__name__)
 
 
 @router.post("/register", response_model=DonorResponse, status_code=status.HTTP_201_CREATED)
@@ -62,7 +65,11 @@ async def register_donor(
     # Both refusals read the same, so the answer does not reveal which kind of account holds the address.
     email = normalize_email(data.email)
     if await repo.exists_by_email(email) or await AdminRepository(session).exists_by_email(email):
-        raise duplicate_exception("Donor", "email", data.email)
+        logger.info("Donor registration rejected: duplicate account address=%s", mask_email(email))
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Unable to register with these details",
+        )
 
     # Age is derived from the date of birth; a client-supplied age is never trusted (it goes stale
     # within a year and can be edited to bypass the 18-65 donation window).
@@ -73,7 +80,7 @@ async def register_donor(
             detail="Donors must be between 18 and 65 years old (checked against date_of_birth)",
         )
 
-    # Hash password using bcrypt via passlib (canonical implementation)
+    # Hash password with the shared direct-bcrypt utility off the event loop.
     from app.api.auth.utils import hash_password_async
     hashed_password = await hash_password_async(data.password)
 
@@ -131,7 +138,11 @@ async def register_donor(
         await repo.create(donor, personal_details, address_details, disease_details, terms)
     except IntegrityError:
         # Lost a race with a concurrent registration of the same address: the unique index caught it.
-        raise duplicate_exception("Donor", "email", data.email) from None
+        logger.info("Donor registration rejected after uniqueness conflict address=%s", mask_email(email))
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Unable to register with these details",
+        ) from None
 
     return DonorResponse.model_validate(donor)
 

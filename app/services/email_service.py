@@ -187,7 +187,7 @@ class EmailService:
         patient_name: str,
         hospital_name: str,
         hospital_address: str,
-        contact_number: str,
+        contact_number: Optional[str],
         due_date: str,
         attendant_name: str,
         units_required: int,
@@ -201,11 +201,15 @@ class EmailService:
         donor_name, blood_group, patient_name, hospital_name = (
             _esc(str(v)) for v in (donor_name, blood_group, patient_name, hospital_name)
         )
-        hospital_address, contact_number, due_date = (
-            _esc(str(v)) for v in (hospital_address, contact_number, due_date)
-        )
-        attendant_name, request_reason = _esc(str(attendant_name)), _esc(str(request_reason))
-        units_required, patient_age = _esc(str(units_required)), _esc(str(patient_age))
+        hospital_address, due_date = _esc(str(hospital_address)), _esc(str(due_date))
+        contact_row = ""
+        if contact_number:
+            contact_row = (
+                '<tr><td style="padding: 5px; font-weight: bold;">Attendant Contact:</td>'
+                f'<td style="padding: 5px;">{_esc(str(contact_number))}</td></tr>'
+            )
+        attendant_name = _esc(str(attendant_name))
+        units_required = _esc(str(units_required))
 
         html_body = f"""
         <html>
@@ -228,13 +232,11 @@ class EmailService:
                                 <tr><td style="padding: 5px; font-weight: bold;">Patient Name:</td><td style="padding: 5px;">{patient_name}</td></tr>
                                 <tr><td style="padding: 5px; font-weight: bold;">Blood Group Needed:</td><td style="padding: 5px;">{blood_group}</td></tr>
                                 <tr><td style="padding: 5px; font-weight: bold;">Units Required:</td><td style="padding: 5px;">{units_required}</td></tr>
-                                <tr><td style="padding: 5px; font-weight: bold;">Patient Age:</td><td style="padding: 5px;">{patient_age}</td></tr>
                                 <tr><td style="padding: 5px; font-weight: bold;">Hospital Name:</td><td style="padding: 5px;">{hospital_name}</td></tr>
                                 <tr><td style="padding: 5px; font-weight: bold;">Hospital Address:</td><td style="padding: 5px;">{hospital_address}</td></tr>
-                                <tr><td style="padding: 5px; font-weight: bold;">Contact Number:</td><td style="padding: 5px;">{contact_number}</td></tr>
+                                {contact_row}
                                 <tr><td style="padding: 5px; font-weight: bold;">Attendant Name:</td><td style="padding: 5px;">{attendant_name}</td></tr>
                                 <tr><td style="padding: 5px; font-weight: bold;">Due Date:</td><td style="padding: 5px;">{due_date}</td></tr>
-                                <tr><td style="padding: 5px; font-weight: bold;">Reason:</td><td style="padding: 5px;">{request_reason}</td></tr>
                             </table>
                             <p style="font-size: 16px; margin: 0 0 20px; line-height: 1.6;">
                                 If you are willing and available to donate, please contact us or the attendant directly.
@@ -266,18 +268,20 @@ class EmailService:
             to=message["to"], subject=message["subject"], html_body=message["html_body"]
         )
 
-    async def send_otp_email(self, email: str, otp: str, name: str) -> bool:
-        """Send OTP verification email."""
-        subject = "LifeConnect - Email Verification OTP"
+    async def send_otp_email(self, email: str, otp: str, name: str, purpose: str = "password_reset") -> bool:
+        """Send an OTP email with copy specific to its security purpose."""
+        invite = purpose == "admin_invite"
+        title = "Admin invitation code" if invite else "Password reset code"
+        subject = f"LifeConnect - {title}"
         name, otp = _esc(str(name)), _esc(str(otp))
 
         html_body = f"""
         <html>
             <body style="font-family: Arial, sans-serif; background-color: #f4f4f4; padding: 20px;">
                 <div style="max-width: 500px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px;">
-                    <h2 style="color: #8B0000; margin-bottom: 20px;">Email Verification</h2>
+                    <h2 style="color: #8B0000; margin-bottom: 20px;">{title}</h2>
                     <p>Dear {name},</p>
-                    <p>Your OTP for email verification is:</p>
+                    <p>Your {title.lower()} is:</p>
                     <h1 style="color: #8B0000; font-size: 36px; letter-spacing: 5px; text-align: center; padding: 20px; background: #f8f9fa; border-radius: 8px;">{otp}</h1>
                     <p>This OTP is valid for 10 minutes.</p>
                     <p style="color: #888; font-size: 12px; margin-top: 30px;">

@@ -16,7 +16,9 @@ from app.services.email_service import EmailService
 
 @pytest.fixture
 def service(tmp_path):
-    return CertificateService(template_dir=str(tmp_path / "templates"), output_dir=str(tmp_path / "certs"))
+    output = tmp_path / "certs"
+    output.mkdir()
+    return CertificateService(template_dir=str(tmp_path / "templates"), output_dir=str(output))
 
 
 class _Clock:

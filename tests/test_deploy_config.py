@@ -151,9 +151,13 @@ def test_spa_pages_and_assets_carry_the_security_headers():
     assert "server_tokens off;" in conf
     for name in (
         "X-Content-Type-Options", "X-Frame-Options", "Referrer-Policy", "Permissions-Policy",
-        "Strict-Transport-Security", "Content-Security-Policy",
+        "Content-Security-Policy",
     ):
         assert re.search(rf"add_header {name} .* always;", _snippet()), f"{name} missing"
+    # HSTS belongs only to the commented TLS server; plain HTTP must never emit it.
+    https = conf.split("# server {", 2)[-1]
+    assert 'add_header Strict-Transport-Security "max-age=31536000" always;' in https
+    assert "add_header Strict-Transport-Security" not in _snippet()
 
 
 def test_csp_is_strict_and_allows_exactly_the_origins_the_frontend_uses():

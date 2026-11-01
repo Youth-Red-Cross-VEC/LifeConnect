@@ -5,13 +5,13 @@ Endpoints for admin registration, profile management, and administration.
 Note: Authentication (login/logout) is handled by the auth module (partner's responsibility).
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Union
 
 from app.core.database import get_db
-from app.core.request_status import AdminStatus, BloodRequestStatus
+from app.core.request_status import AdminStatus, AdminRole, BloodRequestStatus
 
 from app.repositories.admin import AdminRepository
 from app.repositories.blood_request import BloodRequestRepository
@@ -28,9 +28,13 @@ from app.schemas.admin import (
 from app.schemas.common import SuccessResponse, PaginatedResponse
 from app.utils.emails import normalize_email
 from app.utils.id_generator import generate_prefixed_id
-from app.api.auth.deps import get_current_admin
+from app.api.auth.deps import get_current_admin, require_super_admin
 from app.services.audit_service import record_admin_action
-from app.services.otp_service import PURPOSE_ADMIN_INVITE, generate_otp, store_otp, verify_otp
+from app.services.otp_service import (
+    PURPOSE_ADMIN_INVITE, generate_otp, store_otp, verify_otp,
+    failed_confirmation_count, record_failed_confirmation, clear_failed_confirmations,
+)
+from app.core.rate_limiter import limiter
 from app.services.refresh_session_service import revoke_all_for_user
 
 router = APIRouter(prefix="/admins", tags=["Admins"])
@@ -49,12 +53,25 @@ async def _guard_deactivation(repo: AdminRepository, target: AdminDetails, actor
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="You cannot deactivate your own account; ask another admin to do it",
         )
-    if str(target.active_status).lower() == AdminStatus.ACTIVE.value.lower():
-        if await repo.count_active(exclude_id=target.id) == 0:
+    if target.active_status == AdminStatus.ACTIVE and target.role == AdminRole.SUPER_ADMIN:
+        if await repo.count_active_super_admins(exclude_id=target.id) == 0:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="Cannot deactivate the last active admin",
+                detail="Cannot deactivate the last active super admin",
             )
+
+
+async def _guard_role_change(repo: AdminRepository, target: AdminDetails, new_role: AdminRole) -> None:
+    if (
+        target.active_status == AdminStatus.ACTIVE
+        and target.role == AdminRole.SUPER_ADMIN
+        and new_role != AdminRole.SUPER_ADMIN
+        and await repo.count_active_super_admins(exclude_id=target.id) == 0
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Cannot demote the last active super admin",
+        )
 
 
 # =======================
@@ -69,7 +86,7 @@ async def _guard_deactivation(repo: AdminRepository, target: AdminDetails, actor
 async def invite_admin(
     data: AdminInviteRequest,
     session: AsyncSession = Depends(get_db, scope="function"),
-    current_admin: AdminDetails = Depends(get_current_admin),
+    current_admin: AdminDetails = Depends(require_super_admin),
 ):
     """
     Generate and email a 6-digit invite OTP to the given address.
@@ -86,6 +103,7 @@ async def invite_admin(
         email=data.email,
         otp=otp,
         name="New Admin",
+        purpose="admin_invite",
     )
     if not sent:
         # Do not report success when the invite never left the server: the invitee would wait for a
@@ -108,7 +126,9 @@ async def invite_admin(
     status_code=status.HTTP_201_CREATED,
     summary="Register a new admin",
 )
+@limiter.limit("5/minute")
 async def register_admin(
+    request: Request,
     data: AdminCreate,
     session: AsyncSession = Depends(get_db, scope="function"),
 ):
@@ -119,12 +139,17 @@ async def register_admin(
     The OTP is sent to the registrant's email and is valid for 10 minutes.
     This prevents self-registration without an existing admin's approval.
     """
+    if await failed_confirmation_count(session, data.email, PURPOSE_ADMIN_INVITE) >= 10:
+        raise HTTPException(status_code=429, detail="Too many failed code attempts; try again later")
+
     # Verify invite OTP
     if not await verify_otp(session, data.email, data.invite_otp, PURPOSE_ADMIN_INVITE):
+        await record_failed_confirmation(session, data.email, PURPOSE_ADMIN_INVITE)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid or expired invite OTP. Ask an existing admin to resend the invite.",
+            detail="Invalid or expired invite code",
         )
+    await clear_failed_confirmations(session, data.email, PURPOSE_ADMIN_INVITE)
 
     repo = AdminRepository(session)
     
@@ -146,7 +171,7 @@ async def register_admin(
     admin_id = generate_prefixed_id("ADM")
     auth_id = generate_prefixed_id("AUTHADM")
     
-    # Hash password using bcrypt via passlib (canonical implementation)
+    # Hash password with the shared direct-bcrypt utility off the event loop.
     from app.api.auth.utils import hash_password_async
     hashed_password = await hash_password_async(data.password)
     
@@ -194,7 +219,7 @@ async def list_admins(
     page_size: int = Query(20, ge=1, le=100),
     active_only: bool = Query(False),
     session: AsyncSession = Depends(get_db, scope="function"),
-    current_admin: AdminDetails = Depends(get_current_admin),
+        current_admin: AdminDetails = Depends(get_current_admin),
 ):
     """Get paginated list of all admins."""
     repo = AdminRepository(session)
@@ -277,6 +302,20 @@ async def update_admin(
             detail=f"Admin with ID {admin_id} not found",
         )
     
+    fields = data.model_fields_set
+    if current_admin.role != AdminRole.SUPER_ADMIN:
+        if admin.id != current_admin.id:
+            raise HTTPException(status_code=403, detail="Only a super admin may edit another admin")
+        if fields - {"username", "mobile_number"}:
+            raise HTTPException(status_code=403, detail="You may only edit your own name and mobile number")
+
+    if data.role is not None:
+        if admin.id == current_admin.id and data.role != admin.role:
+            await _guard_role_change(repo, admin, data.role)
+        elif data.role != admin.role:
+            await _guard_role_change(repo, admin, data.role)
+        admin.role = data.role
+
     # Update fields if provided
     if data.username is not None:
         admin.username = data.username
@@ -289,6 +328,7 @@ async def update_admin(
             await _guard_deactivation(repo, admin, current_admin)
             await revoke_all_for_user(session, admin.id, "admin")
         admin.active_status = data.active_status.value
+        admin.token_version += 1
     
     try:
         await repo.update(admin)
@@ -313,7 +353,7 @@ async def update_admin(
 async def deactivate_admin(
     admin_id: str,
     session: AsyncSession = Depends(get_db, scope="function"),
-    current_admin: AdminDetails = Depends(get_current_admin),
+    current_admin: AdminDetails = Depends(require_super_admin),
 ):
     """Deactivate an admin account."""
     repo = AdminRepository(session)
@@ -326,7 +366,8 @@ async def deactivate_admin(
         )
     
     await _guard_deactivation(repo, admin, current_admin)
-    admin.active_status = AdminStatus.INACTIVE.value
+    admin.active_status = AdminStatus.INACTIVE
+    admin.token_version += 1
     await revoke_all_for_user(session, admin.id, "admin")
     await repo.update(admin)
     record_admin_action(session, current_admin.id, "admin.deactivate", "admin", admin_id)
@@ -342,7 +383,7 @@ async def deactivate_admin(
 async def activate_admin(
     admin_id: str,
     session: AsyncSession = Depends(get_db, scope="function"),
-    current_admin: AdminDetails = Depends(get_current_admin),
+    current_admin: AdminDetails = Depends(require_super_admin),
 ):
     """Activate an admin account."""
     repo = AdminRepository(session)
@@ -354,7 +395,8 @@ async def activate_admin(
             detail=f"Admin with ID {admin_id} not found",
         )
     
-    admin.active_status = AdminStatus.ACTIVE.value
+    admin.active_status = AdminStatus.ACTIVE
+    admin.token_version += 1
     await repo.update(admin)
     record_admin_action(session, current_admin.id, "admin.activate", "admin", admin_id)
 

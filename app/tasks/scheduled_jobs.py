@@ -1,19 +1,21 @@
 from datetime import date, datetime, timedelta
 import logging
 import zlib
+from datetime import timezone
 
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import delete, text
+from sqlalchemy import delete, text, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.core.database import Database
 from app.repositories.blood_request import BloodRequestRepository
 from app.repositories.donor import DonorRepository
-from app.models.otp import OtpCode
+from app.models.otp import OtpCode, OtpFailureWindow
 from app.models.refresh_session import RefreshSession
 from app.utils.dates import utcnow
+from app.services.certificate_service import get_certificate_service
 
 logger = logging.getLogger(__name__)
 
@@ -94,10 +96,38 @@ async def purge_expired_auth_records(db: Database) -> None:
                 return
             now = utcnow()
             otps = await session.execute(delete(OtpCode).where(OtpCode.expires_at < now))
-            sessions = await session.execute(delete(RefreshSession).where(RefreshSession.expires_at < now))
-            logger.info(f"Purged {otps.rowcount} expired OTP(s) and {sessions.rowcount} expired refresh session(s)")
+            sessions = await session.execute(delete(RefreshSession).where(
+                or_(RefreshSession.expires_at < now, RefreshSession.revoked_at.isnot(None))
+            ))
+            failures = await session.execute(delete(OtpFailureWindow).where(
+                OtpFailureWindow.window_started_at < now - timedelta(hours=1)
+            ))
+            logger.info(
+                "Purged %s OTP(s), %s refresh token(s), and %s OTP failure window(s)",
+                otps.rowcount, sessions.rowcount, failures.rowcount,
+            )
     except Exception as e:
         logger.error(f"Error in purge_expired_auth_records: {e}")
+
+
+async def purge_old_certificates(db: Database) -> None:
+    """Delete certificate files older than the configured retention period."""
+    try:
+        async with db.session() as session:
+            if not await try_job_lock(session, "purge_old_certificates"):
+                logger.info("purge_old_certificates already running elsewhere; skipping")
+                return
+            service = get_certificate_service()
+            cutoff = utcnow().replace(tzinfo=timezone.utc).timestamp() - get_settings().CERT_RETENTION_DAYS * 86400
+            deleted = 0
+            if service.output_dir.exists():
+                for path in service.output_dir.iterdir():
+                    if path.is_file() and path.stat().st_mtime < cutoff:
+                        path.unlink()
+                        deleted += 1
+            logger.info("Purged %s expired certificate file(s)", deleted)
+    except Exception as e:
+        logger.error("Error in purge_old_certificates: %s", type(e).__name__)
 
 
 def setup_scheduled_jobs(scheduler, db: Database) -> None:
@@ -127,6 +157,14 @@ def setup_scheduled_jobs(scheduler, db: Database) -> None:
         job_id="purge_expired_auth_records",
         hour=0,
         minute=2,
+        db=db,
+    )
+
+    scheduler.add_cron_job(
+        purge_old_certificates,
+        job_id="purge_old_certificates",
+        hour=0,
+        minute=4,
         db=db,
     )
 

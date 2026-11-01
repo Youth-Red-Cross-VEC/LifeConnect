@@ -7,6 +7,7 @@ from sqlalchemy import select
 from app.api.auth.deps import get_current_admin
 from app.main import app
 from app.models.admin import AdminDetails
+from app.core.request_status import AdminStatus, AdminRole
 from tests.helpers import insert_admin
 
 ME = "ADM-test123"  # the admin behind the admin_client fixture
@@ -14,7 +15,8 @@ HIDDEN = {"date_of_birth", "mobile_number"}
 
 
 async def _status(session, admin_id: str) -> str:
-    return (await session.execute(select(AdminDetails.active_status).where(AdminDetails.id == admin_id))).scalar_one()
+    value = (await session.execute(select(AdminDetails.active_status).where(AdminDetails.id == admin_id))).scalar_one()
+    return value.value
 
 
 # ------------------------------------------------------------------ lock-out protection
@@ -24,14 +26,14 @@ async def test_admin_cannot_deactivate_themselves(admin_client: AsyncClient, tes
     r = await admin_client.patch(f"/api/v1/admins/{ME}/deactivate")
     assert r.status_code == 400
     assert "own account" in r.json()["detail"]
-    assert await _status(test_session, ME) == "active"
+    assert await _status(test_session, ME) == "Active"
 
 
 @pytest.mark.asyncio
 async def test_admin_cannot_deactivate_themselves_through_put(admin_client: AsyncClient, test_session):
     r = await admin_client.put(f"/api/v1/admins/{ME}", json={"active_status": "Inactive"})
     assert r.status_code == 400
-    assert await _status(test_session, ME) == "active"
+    assert await _status(test_session, ME) == "Active"
 
 
 @pytest.mark.asyncio
@@ -57,7 +59,7 @@ def stale_caller(test_session):
     """
     caller = AdminDetails(id="ADM-gone", email="gone@example.com", password="x", username="Gone",
                           authentication_id="A", vec_registration_number="V", date_of_birth="1990-01-01",
-                          mobile_number="1", active_status="Inactive")
+                          mobile_number="1", active_status=AdminStatus.INACTIVE, role=AdminRole.SUPER_ADMIN)
 
     async def override():
         return caller
@@ -69,7 +71,7 @@ def stale_caller(test_session):
 
 @pytest.mark.asyncio
 async def test_the_last_active_admin_cannot_be_deactivated(client: AsyncClient, test_session, stale_caller):
-    only_id = (await insert_admin(test_session, 1)).id  # read now: a 409 rolls the shared session back and expires rows
+    only_id = (await insert_admin(test_session, 1, role=AdminRole.SUPER_ADMIN)).id
 
     for call in (
         client.patch(f"/api/v1/admins/{only_id}/deactivate"),
@@ -77,7 +79,7 @@ async def test_the_last_active_admin_cannot_be_deactivated(client: AsyncClient, 
     ):
         r = await call
         assert r.status_code == 409, r.text
-        assert "last active admin" in r.json()["detail"]
+        assert "last active super admin" in r.json()["detail"]
     assert await _status(test_session, only_id) == "Active"
 
 

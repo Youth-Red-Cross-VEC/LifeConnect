@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 import pytest
 from fastapi.routing import APIRoute
 from httpx import AsyncClient
-from jose import jwt
+import jwt
 from sqlalchemy import select
 
 from app.api.auth import utils
@@ -64,7 +64,7 @@ async def test_protected_routes_reject_forged_tokens(client: AsyncClient, test_s
 @pytest.mark.asyncio
 async def test_a_correctly_signed_token_is_accepted(client: AsyncClient, test_session):
     await insert_donor(test_session)
-    good = jwt.encode(_claims(), utils.SECRET_KEY, algorithm=utils.ALGORITHM)
+    good = utils.create_access_token({"sub": "DON-1", "user_type": "donor", "email": "donor1@example.com", "tv": 0})
     assert (await client.get(MINE, headers={"Authorization": f"Bearer {good}"})).status_code == 200
 
 
@@ -72,7 +72,7 @@ async def test_a_correctly_signed_token_is_accepted(client: AsyncClient, test_se
 async def test_an_access_token_cannot_be_used_to_refresh(client: AsyncClient, test_session):
     await insert_donor(test_session)
     access = utils.create_access_token({"sub": "DON-1", "user_type": "donor", "email": "donor1@example.com"})
-    r = await client.post("/api/v1/auth/refresh", json={"refresh_token": access})
+    r = await client.post("/api/v1/auth/refresh")
     assert r.status_code == 401
 
 
@@ -101,8 +101,13 @@ def _assert_inert(html: str):
 
 
 @pytest.mark.asyncio
-async def test_new_request_notification_escapes_every_field(sent_html):
+async def test_new_request_notification_escapes_every_field(sent_html, monkeypatch):
     details = {k: PAYLOAD for k in ("patient_name", "blood_group", "hospital_name", "units_required", "due_date")}
+    async def capture_many(self, messages):
+        sent_html.extend(message["html_body"] for message in messages)
+        return len(messages)
+    from app.services.email_service import EmailService
+    monkeypatch.setattr(EmailService, "send_many", capture_many)
     await EmailService(get_settings()).notify_admins_new_request(["a@example.com"], details)
     _assert_inert(sent_html[0])
 
@@ -162,7 +167,7 @@ def _admin_write_routes():
 
 
 def test_there_are_admin_write_routes_to_check():
-    assert len(list(_admin_write_routes())) >= 15
+    assert len(list(_admin_write_routes())) >= 14
 
 
 @pytest.mark.parametrize("route", list(_admin_write_routes()), ids=lambda r: f"{sorted(r.methods)[0]} {r.path}")

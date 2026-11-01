@@ -86,7 +86,7 @@ async def _approve_setup(commit_client, monkeypatch):
     async def fake_notification(self, *args, **kwargs):
         events.append("email")
 
-    monkeypatch.setattr(EmailService, "send_blood_request_notification", fake_notification)
+    monkeypatch.setattr(EmailService, "send_many", fake_notification)
     token = create_access_token({"sub": "ADM-1", "user_type": "admin", "email": "admin1@example.com"})
     events.clear()
     return {"Authorization": f"Bearer {token}"}

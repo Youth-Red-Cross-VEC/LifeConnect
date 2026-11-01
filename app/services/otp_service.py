@@ -4,11 +4,11 @@ import hmac
 import secrets
 from datetime import timedelta
 
-from sqlalchemy import select
+from sqlalchemy import case, delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.models.otp import OtpCode
+from app.models.otp import OtpCode, OtpFailureWindow
 from app.utils.dates import utcnow
 
 
@@ -24,7 +24,9 @@ def generate_otp() -> str:
 
 
 def _hash(otp: str, purpose: str, email: str) -> str:
-    return hashlib.sha256(f"{purpose}:{email}:{otp}".encode()).hexdigest()
+    key = get_settings().SECRET_KEY.encode("utf-8")
+    message = f"{purpose}:{email}:{otp}".encode("utf-8")
+    return hmac.new(key, message, hashlib.sha256).hexdigest()
 
 
 async def store_otp(session: AsyncSession, email: str, otp: str, purpose: str) -> None:
@@ -41,7 +43,7 @@ async def store_otp(session: AsyncSession, email: str, otp: str, purpose: str) -
         select(OtpCode).where(OtpCode.purpose == purpose, OtpCode.email == email).with_for_update()
     )).scalar_one_or_none()
     if record is not None and record.expires_at > now:
-        record.otp_hash = _hash(otp, purpose, email)
+        record.code_hmac = _hash(otp, purpose, email)
     else:
         if record is not None:
             await session.delete(record)
@@ -49,7 +51,7 @@ async def store_otp(session: AsyncSession, email: str, otp: str, purpose: str) -
         session.add(OtpCode(
             purpose=purpose,
             email=email,
-            otp_hash=_hash(otp, purpose, email),
+            code_hmac=_hash(otp, purpose, email),
             expires_at=now + timedelta(seconds=get_settings().OTP_TTL_SECONDS),
             attempts=0,
         ))
@@ -73,10 +75,58 @@ async def verify_otp(session: AsyncSession, email: str, otp: str, purpose: str) 
         # "send me a code" request hand out a fresh set of guesses.
         return False
     record.attempts += 1
-    ok = hmac.compare_digest(record.otp_hash, _hash(otp, purpose, email))
+    ok = hmac.compare_digest(record.code_hmac, _hash(otp, purpose, email))
     if ok:
         await session.delete(record)
     # Commit here: callers raise HTTPException on failure, which rolls the request session back
     # and would otherwise discard the attempt counter.
     await session.commit()
     return ok
+
+
+async def failed_confirmation_count(session: AsyncSession, email: str, purpose: str) -> int:
+    email = email.lower()
+    row = (await session.execute(
+        select(OtpFailureWindow).where(
+            OtpFailureWindow.email == email,
+            OtpFailureWindow.purpose == purpose,
+            OtpFailureWindow.window_started_at > utcnow() - timedelta(hours=1),
+        )
+    )).scalar_one_or_none()
+    return row.attempts if row is not None else 0
+
+
+async def record_failed_confirmation(session: AsyncSession, email: str, purpose: str) -> int:
+    """Atomically add one failure to the email+purpose hourly budget."""
+    email = email.lower()
+    now = utcnow()
+    cutoff = now - timedelta(hours=1)
+    if session.get_bind().dialect.name == "postgresql":
+        from sqlalchemy.dialects.postgresql import insert
+    else:
+        from sqlalchemy.dialects.sqlite import insert
+    statement = insert(OtpFailureWindow).values(
+        email=email, purpose=purpose, attempts=1, window_started_at=now
+    )
+    statement = statement.on_conflict_do_update(
+        index_elements=["purpose", "email"],
+        set_={
+            "attempts": case(
+                (OtpFailureWindow.window_started_at <= cutoff, 1),
+                else_=OtpFailureWindow.attempts + 1,
+            ),
+            "window_started_at": case(
+                (OtpFailureWindow.window_started_at <= cutoff, now),
+                else_=OtpFailureWindow.window_started_at,
+            ),
+        },
+    ).returning(OtpFailureWindow.attempts)
+    attempts = (await session.execute(statement)).scalar_one()
+    await session.commit()
+    return attempts
+
+
+async def clear_failed_confirmations(session: AsyncSession, email: str, purpose: str) -> None:
+    await session.execute(delete(OtpFailureWindow).where(
+        OtpFailureWindow.email == email.lower(), OtpFailureWindow.purpose == purpose
+    ))

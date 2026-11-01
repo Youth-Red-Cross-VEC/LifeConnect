@@ -95,7 +95,7 @@ The backend uses `uv` for dependency management.
 | ------- | ---------- | ---------- |
 | `SECRET_KEY` | A generated key, 32+ characters | Same, in **every** environment. Placeholders and short keys are rejected at startup. |
 | `APP_ENV` | `development` | `production`: requires `RECAPTCHA_SECRET_KEY` **and** `RECAPTCHA_ENFORCED=true`, and turns `/docs`, `/redoc` and `/openapi.json` off |
-| `DOCS_ENABLED` | unset (docs on) | unset (docs off); `true` switches them on explicitly |
+| `ENABLE_DOCS` | unset (docs on) | unset (docs off); `true` switches them on explicitly |
 | `SCHEDULER_ENABLED` | `false` | `false` on every web worker; `true` on exactly **one** dedicated scheduler process (`docker compose` runs it as the `scheduler` service) |
 | `RECAPTCHA_ENFORCED` | `false` | `true`: login **and the public blood-request form** require a valid `recaptcha_token` and fail closed with 400 |
 | `RATE_LIMIT_PER_MINUTE` | `60` | Default per-IP limit for routes without their own limit |
@@ -126,21 +126,21 @@ different reverse proxy or a load balancer in front of nginx changes this: trust
 to the API.
 
 **SPA security headers.** `frontend/security-headers.conf` adds a Content-Security-Policy, `X-Frame-Options`,
-`X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy` and HSTS to every SPA response. HSTS is only
-honoured over HTTPS, so it does nothing until TLS is terminated in front of (or in) nginx. The CSP allows exactly
+`X-Content-Type-Options`, `Referrer-Policy` and `Permissions-Policy` to every SPA response. HSTS is only enabled
+in the commented TLS nginx configuration, never on plain HTTP. The CSP allows exactly
 the origins the frontend uses (reCAPTCHA, Google Fonts, Font Awesome from cdnjs). If you add a third-party script,
 font or API origin, extend it, and check the browser console for CSP violations on the login, landing and signup
 pages.
 
-**Dependencies in the image.** The API image installs `requirements-runtime.lock` (hash-pinned) with a
-version-and-digest-pinned `uv`; see `docs/supply-chain.md` for how to update it and which images and GitHub Actions
-still need their digests/SHAs pinned.
+**Dependencies in the image.** The API image installs the exact pinned runtime set in `requirements.txt`.
+Test and development tools live in `requirements-dev.txt`; see `docs/supply-chain.md` for the update process.
 
 ### Sessions, passwords and accounts
 
 - **Logout and access tokens.** Logging out revokes the refresh token on the server (`POST /auth/logout` works
-  without a valid access token). An access token that was already issued stays valid until it expires
-  (`ACCESS_TOKEN_EXPIRE_MINUTES`, 30 by default), so log out on shared computers and keep that value short. The
+  without a valid access token). Refresh tokens are carried in an HttpOnly, SameSite=Strict cookie scoped to
+  `/api/v1/auth`; only access tokens are held in browser memory. An access token stays valid until it expires
+  (`ACCESS_TOKEN_EXPIRE_MINUTES`, 15 by default), so log out on shared computers. The
   donor dashboard has a **Log out** button.
 - **Revocation.** A successful password reset, and deactivating an admin or donor, revoke **all** of that account's
   refresh sessions. A refresh token can be spent only once even if two requests race (the second one revokes the

@@ -51,7 +51,7 @@ def test_the_error_does_not_echo_secrets_or_other_settings():
 
 
 def test_the_error_tells_you_how_to_fix_it():
-    with pytest.raises(ValidationError, match="secrets.token_hex"):
+    with pytest.raises(ValidationError, match="secrets.token_urlsafe"):
         build(SECRET_KEY="short")
 
 
@@ -90,5 +90,5 @@ def test_docs_follow_the_environment_unless_set_explicitly():
     assert build(APP_ENV="development").docs_enabled is True
     prod = dict(RECAPTCHA_SECRET_KEY="r", RECAPTCHA_ENFORCED=True)
     assert build(APP_ENV="production", **prod).docs_enabled is False
-    assert build(APP_ENV="production", DOCS_ENABLED=True, **prod).docs_enabled is True
-    assert build(APP_ENV="development", DOCS_ENABLED=False).docs_enabled is False
+    assert build(APP_ENV="production", ENABLE_DOCS=True, **prod).docs_enabled is True
+    assert build(APP_ENV="development", ENABLE_DOCS=False).docs_enabled is False

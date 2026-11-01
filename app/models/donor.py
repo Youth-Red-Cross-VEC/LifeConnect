@@ -82,6 +82,7 @@ class DonorDetail(Base, TimestampMixin):
         String(100), unique=True, nullable=False, index=True
     )
     password: Mapped[str] = mapped_column(String(500), nullable=False)
+    token_version: Mapped[int] = mapped_column(Integer, default=0, nullable=False, server_default="0")
     blood_group: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
     active_status: Mapped[bool] = mapped_column(
         Boolean, default=True, nullable=False, index=True

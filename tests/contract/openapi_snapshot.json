@@ -155,8 +155,8 @@
     "GET /api/v1/blood-requests/ongoing": {
       "body": null,
       "params": [
-        "query:limit:optional",
-        "query:offset:optional"
+        "query:page:optional",
+        "query:page_size:optional"
       ],
       "responses": {
         "200": "array<BloodRequestListResponse>",
@@ -167,8 +167,8 @@
     "GET /api/v1/blood-requests/pending": {
       "body": null,
       "params": [
-        "query:limit:optional",
-        "query:offset:optional"
+        "query:page:optional",
+        "query:page_size:optional"
       ],
       "responses": {
         "200": "array<BloodRequestListResponse>",
@@ -486,20 +486,26 @@
       "secured": false
     },
     "POST /api/v1/auth/logout": {
-      "body": "RefreshRequest",
+      "body": null,
       "params": [],
       "responses": {
-        "200": "app__api__auth__router__MessageResponse",
-        "422": "HTTPValidationError"
+        "200": "app__api__auth__router__MessageResponse"
       },
       "secured": false
     },
-    "POST /api/v1/auth/refresh": {
-      "body": "RefreshRequest",
+    "POST /api/v1/auth/logout-all": {
+      "body": null,
       "params": [],
       "responses": {
-        "200": "TokenResponse",
-        "422": "HTTPValidationError"
+        "200": "app__api__auth__router__MessageResponse"
+      },
+      "secured": true
+    },
+    "POST /api/v1/auth/refresh": {
+      "body": null,
+      "params": [],
+      "responses": {
+        "200": "TokenResponse"
       },
       "secured": false
     },
@@ -680,9 +686,11 @@
       "id": "string",
       "last_login_date": "null|string",
       "mobile_number": "string",
+      "role": "AdminRole",
       "username": "string",
       "vec_registration_number": "string"
     },
+    "AdminRole": {},
     "AdminStatsResponse": {
       "active_donors": "integer",
       "ongoing_requests": "integer",
@@ -700,6 +708,7 @@
       "email": "string",
       "id": "string",
       "last_login_date": "null|string",
+      "role": "AdminRole",
       "username": "string",
       "vec_registration_number": "string"
     },
@@ -707,13 +716,14 @@
       "active_status": "AdminStatus|null?",
       "department": "null|string?",
       "mobile_number": "null|string?",
+      "role": "AdminRole|null?",
       "username": "null|string?"
     },
     "BloodRequestClose": {
       "donation_date": "string",
       "donor_ids": "array<string>?",
       "report": "null|string?",
-      "request_id": "string",
+      "request_id": "null|string?",
       "send_certificates": "boolean?",
       "status": "string?",
       "units_donated": "integer"
@@ -793,6 +803,7 @@
       "city": "null|string?",
       "email": "string",
       "id": "string",
+      "is_available": "boolean",
       "last_donated_date": "null|string",
       "name": "string"
     },
@@ -803,6 +814,7 @@
       "created_at": "string",
       "email": "string",
       "id": "string",
+      "is_available": "boolean",
       "last_donated_date": "null|string",
       "last_login_date": "null|string",
       "name": "string",
@@ -810,11 +822,11 @@
       "personal_details": "PersonalDetailsResponse|null?"
     },
     "DonorUpdate": {
-      "active_status": "boolean|null?",
       "address": "null|string?",
       "blood_group": "null|string?",
       "city": "null|string?",
       "contact_number": "null|string?",
+      "is_available": "boolean|null?",
       "name": "null|string?",
       "pincode": "null|string?",
       "state": "null|string?"
@@ -885,7 +897,7 @@
       "email": "string"
     },
     "PersonalDetailsCreate": {
-      "age": "integer",
+      "age": "integer|null?",
       "contact_number": "string",
       "date_of_birth": "string",
       "first_name": "string",
@@ -940,12 +952,8 @@
       "user_query": "null|string",
       "user_query_date": "null|string"
     },
-    "RefreshRequest": {
-      "refresh_token": "string"
-    },
     "TokenResponse": {
       "access_token": "string",
-      "refresh_token": "string",
       "token_type": "string?",
       "user_id": "string",
       "user_type": "string",

@@ -1,7 +1,7 @@
 import { useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useGoogleReCaptcha } from "react-google-recaptcha-v3";
-import { api, setToken, setRefreshToken, setUserType, setUserId, setUsername } from "../services/api";
+import { api, setToken, setUserType, setUserId, setUsername } from "../services/api";
 
 const AdminLogin = () => {
   const [form, setForm] = useState({
@@ -34,7 +34,6 @@ const AdminLogin = () => {
       });
       if (res && res.access_token) {
         setToken(res.access_token);
-        setRefreshToken(res.refresh_token);
         setUserType("admin");
         setUserId(res.user_id || "");
         setUsername(res.username || "Admin");

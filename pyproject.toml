@@ -14,58 +14,24 @@ authors = [
 packages = ["app"]
 
 dependencies = [
-    # Core Framework
-    "fastapi>=0.109.0",
-    "uvicorn[standard]>=0.27.0",
-    "gunicorn>=21.2.0",
-    
-    # Data Validation
-    "pydantic>=2.5.0",
-    "pydantic-settings>=2.1.0",
-    "email-validator>=2.1.0",
-    
-    # Database
-    "sqlalchemy[asyncio]>=2.0.25",
-    "asyncpg>=0.29.0",
-    "alembic>=1.13.0",
-    
-    # Authentication
-    "python-jose[cryptography]>=3.3.0",
-    "passlib[bcrypt]>=1.7.4",
-    "bcrypt<4.0.0",
-    "python-multipart>=0.0.6",
-    
-    # Background Tasks
-    "apscheduler>=3.10.4",
-    
-    # HTTP Client
-    "httpx>=0.26.0",
-    
-    # Email
-    "aiosmtplib>=3.0.0",
-    
-    # Logging
-    "structlog>=24.1.0",
-    
-    # Rate Limiting
-    "slowapi>=0.1.9",
-    
-    # Environment
-    "python-dotenv>=1.0.0",
-    
-    # Image Processing (certificates)
-    "pillow>=10.0.0",
-]
-
-[project.optional-dependencies]
-dev = [
-    "pytest>=8.0.0",
-    "pytest-asyncio>=0.23.0",
-    "pytest-cov>=4.1.0",
-    "aiosqlite>=0.19.0",
-    "black>=24.1.0",
-    "ruff>=0.1.14",
-    "mypy>=1.8.0",
+    "fastapi==0.141.1",
+    "uvicorn[standard]==0.52.1",
+    "pydantic==2.13.4",
+    "pydantic-settings==2.14.2",
+    "email-validator==2.3.0",
+    "SQLAlchemy==2.0.51",
+    "asyncpg==0.31.0",
+    "alembic==1.18.5",
+    "PyJWT==2.15.0",
+    "bcrypt>=4.2,<6",
+    "python-multipart==0.0.32",
+    "APScheduler==3.11.3",
+    "httpx==0.28.1",
+    "aiosmtplib==5.1.2",
+    "pillow==13.0.0",
+    "structlog==26.1.0",
+    "slowapi==0.1.10",
+    "python-dotenv==1.2.2",
 ]
 
 [build-system]
@@ -75,6 +41,8 @@ build-backend = "hatchling.build"
 [tool.ruff]
 target-version = "py311"
 line-length = 100
+
+[tool.ruff.lint]
 select = [
     "E",   # pycodestyle errors
     "W",   # pycodestyle warnings
@@ -87,10 +55,14 @@ select = [
 ignore = [
     "E501",  # line too long (handled by black)
     "B008",  # do not perform function calls in argument defaults
+    "B904",  # legacy handlers raise HTTPException from generic exception blocks
 ]
 
-[tool.ruff.isort]
+[tool.ruff.lint.isort]
 known-first-party = ["app"]
+
+[tool.ruff.lint.per-file-ignores]
+"app/**/*.py" = ["B008", "B904"]
 
 [tool.black]
 target-version = ["py311"]

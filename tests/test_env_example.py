@@ -26,6 +26,9 @@ def test_every_setting_is_documented_in_env_example():
 
 
 def test_example_secret_is_an_obvious_placeholder_and_compose_password_is_not_a_default():
-    assert ENV["SECRET_KEY"] == "CHANGE_ME"
+    assert ENV["SECRET_KEY"] == ""
+    assert "token_urlsafe(48)" in (Path(__file__).resolve().parent.parent / ".env.example").read_text(encoding="utf-8")
     assert ENV["POSTGRES_PASSWORD"].startswith("CHANGE_ME")
     assert ENV["RECAPTCHA_ENFORCED"] == "false"  # development default; production is forced by config validation
+    assert ENV["ACCESS_TOKEN_EXPIRE_MINUTES"] == "15"
+    assert ENV["REFRESH_TOKEN_EXPIRE_DAYS"] == "7"

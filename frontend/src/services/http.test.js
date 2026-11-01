@@ -30,6 +30,7 @@ function response(status, body, { type = "application/json", statusText = "" } =
 // fetch fake: `script` maps "METHOD url" to a response (or a function / array of responses)
 function setup({ stored = {}, script = {} } = {}) {
   const session = createSession(memoryStore(stored));
+  if (stored.lc_token) session.setToken(stored.lc_token);
   const calls = [];
   const redirects = [];
   const fetchImpl = async (url, init = {}) => {
@@ -73,28 +74,27 @@ test("P2-36: an authenticated call that is rejected and cannot be refreshed clea
 
 test("expired access token: refreshes once and replays the request with the new token", async () => {
   const { client, session, calls, redirects } = setup({
-    stored: { lc_token: "OLD", lc_refresh_token: "R1" },
+    stored: { lc_token: "OLD" },
     script: {
       "GET /api/v1/donors/": [response(401, { detail: "expired" }), response(200, { items: [1] })],
-      "POST /api/v1/auth/refresh": response(200, { access_token: "NEW", refresh_token: "R2" }),
+      "POST /api/v1/auth/refresh": response(200, { access_token: "NEW", user_type: "donor", user_id: "DON-1", username: "Donor" }),
     },
   });
   const res = await client.request("/api/v1/donors/", {}, "/admin/login");
   assert.deepEqual(res, { items: [1] });
   assert.deepEqual(redirects, []);
   assert.equal(session.getToken(), "NEW");
-  assert.equal(session.getRefreshToken(), "R2");
   const replay = calls.filter((c) => c.url.endsWith("/api/v1/donors/")).pop();
   assert.equal(replay.init.headers.Authorization, "Bearer NEW");
 });
 
 test("concurrent 401s share a single refresh call (the server rotates tokens)", async () => {
   const { client, calls } = setup({
-    stored: { lc_token: "OLD", lc_refresh_token: "R1" },
+    stored: { lc_token: "OLD" },
     script: {
       "GET /a": [response(401, {}), response(200, { ok: "a" })],
       "GET /b": [response(401, {}), response(200, { ok: "b" })],
-      "POST /api/v1/auth/refresh": response(200, { access_token: "NEW", refresh_token: "R2" }),
+      "POST /api/v1/auth/refresh": response(200, { access_token: "NEW", user_type: "donor", user_id: "DON-1", username: "Donor" }),
     },
   });
   const [a, b] = await Promise.all([client.request("/a"), client.request("/b")]);
@@ -104,7 +104,7 @@ test("concurrent 401s share a single refresh call (the server rotates tokens)", 
 
 test("failed refresh clears the session and redirects once", async () => {
   const { client, session, redirects } = setup({
-    stored: { lc_token: "OLD", lc_refresh_token: "R1" },
+    stored: { lc_token: "OLD" },
     script: {
       "GET /x": response(401, {}),
       "POST /api/v1/auth/refresh": response(401, { detail: "reuse" }),
@@ -113,7 +113,6 @@ test("failed refresh clears the session and redirects once", async () => {
   assert.equal(await client.request("/x", {}, "/admin/login"), undefined);
   assert.deepEqual(redirects, ["/admin/login"]);
   assert.equal(session.getToken(), null);
-  assert.equal(session.getRefreshToken(), null);
 });
 
 test("P2-31: 204 and empty bodies resolve to null instead of throwing", async () => {
@@ -174,17 +173,18 @@ test("object bodies are sent as JSON", async () => {
 
 test("logout revokes the refresh token on the server and clears the session", async () => {
   const { client, session, calls } = setup({
-    stored: { lc_token: "T", lc_refresh_token: "R1", lc_user_type: "admin" },
+    stored: { lc_token: "T", lc_user_type: "admin" },
     script: { "POST /api/v1/auth/logout": response(200, { message: "Logged out" }) },
   });
   await client.logout();
-  assert.equal(JSON.parse(calls[0].init.body).refresh_token, "R1");
+  assert.equal(calls[0].init.body, undefined);
   assert.equal(session.getToken(), null);
   assert.equal(session.getUserType(), null);
 });
 
 test("logout still clears the session when the server is unreachable", async () => {
-  const session = createSession(memoryStore({ lc_token: "T", lc_refresh_token: "R1" }));
+  const session = createSession(memoryStore());
+  session.setToken("T");
   const client = createHttpClient({
     baseUrl: "http://api",
     session,

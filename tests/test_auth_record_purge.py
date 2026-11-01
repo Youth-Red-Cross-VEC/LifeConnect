@@ -26,8 +26,8 @@ class _FakeDb:
 async def test_job_removes_only_expired_rows(test_session):
     now = datetime.utcnow()
     test_session.add_all([
-        OtpCode(purpose="admin_invite", email="old@example.com", otp_hash="h", expires_at=now - timedelta(minutes=1)),
-        OtpCode(purpose="admin_invite", email="new@example.com", otp_hash="h", expires_at=now + timedelta(minutes=5)),
+        OtpCode(purpose="admin_invite", email="old@example.com", code_hmac="h", expires_at=now - timedelta(minutes=1)),
+        OtpCode(purpose="admin_invite", email="new@example.com", code_hmac="h", expires_at=now + timedelta(minutes=5)),
         RefreshSession(jti="old", user_id="DON-1", role="donor", expires_at=now - timedelta(days=1)),
         RefreshSession(jti="live", user_id="DON-1", role="donor", expires_at=now + timedelta(days=1)),
     ])

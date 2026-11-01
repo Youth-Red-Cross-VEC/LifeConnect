@@ -9,6 +9,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import logging
+import uuid
 
 from app.config import get_settings
 from app.core.database import init_db, db
@@ -78,7 +79,7 @@ def create_app() -> FastAPI:
         title=settings.APP_NAME,
         version=settings.APP_VERSION,
         description="Blood Donation Management System API",
-        # Interactive docs and the schema map every route; off when APP_ENV=production unless DOCS_ENABLED=true.
+        # Interactive docs and the schema map every route; off in production unless ENABLE_DOCS=true.
         docs_url="/docs" if settings.docs_enabled else None,
         redoc_url="/redoc" if settings.docs_enabled else None,
         openapi_url="/openapi.json" if settings.docs_enabled else None,
@@ -118,10 +119,11 @@ def create_app() -> FastAPI:
 
     @app.exception_handler(Exception)
     async def general_exception_handler(request: Request, exc: Exception):
-        logger.error(f"Unhandled exception: {exc}", exc_info=True)
+        error_id = uuid.uuid4().hex
+        logger.error("Unhandled request failure error_id=%s", error_id)
         return JSONResponse(
             status_code=500,
-            content={"detail": "Internal server error"},
+            content={"detail": "Internal server error", "error_id": error_id},
         )
 
     # Include routers

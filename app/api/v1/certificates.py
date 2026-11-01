@@ -25,6 +25,16 @@ from app.api.auth.deps import get_current_admin
 router = APIRouter(prefix="/certificates", tags=["Certificates"])
 
 
+async def _email_then_delete(email_service: EmailService, cert_service: CertificateService,
+                             donor_name: str, donor_email: str, path: str) -> bool:
+    sent = await email_service.send_certificate(
+        donor_name=donor_name, donor_email=donor_email, certificate_path=path
+    )
+    if sent:
+        await cert_service.delete_certificate(Path(path).name)
+    return sent
+
+
 # =======================
 # Schemas
 # =======================
@@ -130,10 +140,7 @@ async def generate_certificate(
 
     if data.send_email:
         background_tasks.add_task(
-            email_service.send_certificate,
-            donor_name=donor.name,
-            donor_email=donor.email,
-            certificate_path=file_path,
+            _email_then_delete, email_service, cert_service, donor.name, donor.email, file_path
         )
         email_sent = True
 
@@ -247,10 +254,7 @@ async def send_certificate_email(
         )
     
     background_tasks.add_task(
-        email_service.send_certificate,
-        donor_name=donor.name,
-        donor_email=donor.email,
-        certificate_path=str(file_path),
+        _email_then_delete, email_service, cert_service, donor.name, donor.email, str(file_path)
     )
 
     record_admin_action(

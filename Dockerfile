@@ -5,8 +5,7 @@
 FROM python:3.11-alpine AS builder
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    UV_SYSTEM_PYTHON=1
+    PYTHONUNBUFFERED=1
 
 WORKDIR /build
 
@@ -21,32 +20,25 @@ RUN apk add --no-cache \
     zlib-dev \
     libjpeg
 
-# uv for fast package installation, taken from the official image pinned to an exact release and digest
-# instead of piping a downloaded script into a shell. To bump it: change the tag, look up the new digest with
-#   docker buildx imagetools inspect ghcr.io/astral-sh/uv:<tag>
-# and regenerate requirements-runtime.lock (the command is in requirements-runtime.in).
-COPY --from=ghcr.io/astral-sh/uv:0.12.23@sha256:61d393e44e249f2e4b526b6c7ddcecce245946826e608e11c93ad4f5bba55b21 /uv /bin/uv
-RUN uv --version | grep -q '^uv 0.12.23 '
-
-# Install exactly the audited, hash-pinned dependency set: no version is resolved at build time, a package whose
-# hash is not in the lock is refused, and --no-deps means nothing outside the lock can sneak in.
-COPY requirements-runtime.lock ./
-RUN uv pip install --require-hashes --no-deps --target=/deps -r requirements-runtime.lock
+# Install the exact runtime versions pinned in requirements.txt. Development and test tools are
+# isolated in requirements-dev.txt and are not copied into the image.
+COPY requirements.txt ./
+RUN python -m pip install --no-cache-dir --prefix=/install -r requirements.txt
 
 # Remove unnecessary files from deps to reduce size
-RUN find /deps -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true && \
-    find /deps -type d -name "tests" -exec rm -rf {} + 2>/dev/null || true && \
-    find /deps -type d -name "test" -exec rm -rf {} + 2>/dev/null || true && \
-    find /deps -type f -name "*.pyc" -delete 2>/dev/null || true && \
-    find /deps -type f -name "*.pyo" -delete 2>/dev/null || true && \
-    find /deps -type f -name "*.so" -exec strip {} \; 2>/dev/null || true
+RUN find /install -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true && \
+    find /install -type d -name "tests" -exec rm -rf {} + 2>/dev/null || true && \
+    find /install -type d -name "test" -exec rm -rf {} + 2>/dev/null || true && \
+    find /install -type f -name "*.pyc" -delete 2>/dev/null || true && \
+    find /install -type f -name "*.pyo" -delete 2>/dev/null || true && \
+    find /install -type f -name "*.so" -exec strip {} \; 2>/dev/null || true
 
 # Stage 2: Minimal production image
 FROM python:3.11-alpine AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PYTHONPATH=/deps
+    PYTHONPATH=/install/lib/python3.11/site-packages
 
 WORKDIR /code
 
@@ -58,7 +50,7 @@ RUN apk add --no-cache \
     && adduser -D -u 1000 appuser
 
 # Copy dependencies from builder
-COPY --from=builder /deps /deps
+COPY --from=builder /install /install
 
 # Copy application code
 COPY --chown=appuser:appuser app/ ./app/

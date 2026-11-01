@@ -25,7 +25,7 @@ def test_database_md_has_no_obsolete_table_names():
     text = _read("docs/database.md")
     for old in ("PersonalDetailsUser", "AddressDetailsUser", "DiseaseDetailsUser"):
         assert old not in text
-    for table in ("personal_details", "address_details", "otp_codes", "refresh_sessions"):
+    for table in ("personal_details", "address_details", "otp_codes", "refresh_tokens"):
         assert f"`{table}`" in text
 
 

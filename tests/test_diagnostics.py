@@ -16,6 +16,9 @@ class _BrokenSession:
     async def execute(self, *args, **kwargs):
         raise ConnectionError(SECRET_DETAIL)
 
+    async def rollback(self):
+        pass
+
 
 @pytest.fixture
 async def broken_db_client():
@@ -34,14 +37,13 @@ async def test_health_hides_database_error_details(broken_db_client, caplog):
 
     response = await broken_db_client.get("/api/v1/health")
 
-    assert response.status_code == 200
+    assert response.status_code == 503
     body = response.json()
-    assert body["status"] == "unhealthy"
-    assert body["database"] == "unavailable"
+    assert body == {"status": "unhealthy"}
     for leaked in ("db.internal.corp", "10.1.2.3", "lifeconnect_admin", "password", "ConnectionError"):
         assert leaked not in response.text
     # ...but an operator can still find out what went wrong, in the server log.
-    assert SECRET_DETAIL in caplog.text
+    assert "database unreachable" in caplog.text
 
 
 @pytest.mark.asyncio
@@ -73,11 +75,11 @@ async def test_docs_are_off_in_production(monkeypatch, path):
 @pytest.mark.asyncio
 async def test_docs_can_be_switched_on_explicitly_in_production(monkeypatch):
     monkeypatch.setattr(get_settings(), "APP_ENV", "production")
-    monkeypatch.setattr(get_settings(), "DOCS_ENABLED", True)
+    monkeypatch.setattr(get_settings(), "ENABLE_DOCS", True)
     assert await _status(create_app(), "/docs") == 200
 
 
 @pytest.mark.asyncio
 async def test_the_api_itself_still_works_when_docs_are_off(monkeypatch):
-    monkeypatch.setattr(get_settings(), "DOCS_ENABLED", False)
+    monkeypatch.setattr(get_settings(), "ENABLE_DOCS", False)
     assert await _status(create_app(), "/api/v1/") == 200

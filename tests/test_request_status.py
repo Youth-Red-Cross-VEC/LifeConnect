@@ -41,16 +41,16 @@ def test_expiry_sources():
 @pytest.mark.asyncio
 async def test_declined_request_cannot_be_approved_or_closed(admin_client: AsyncClient, test_session):
     await insert_request(test_session, 1, status="Declined")
-    assert (await admin_client.post(f"{P}/REQ-1/approve")).status_code == 400
+    assert (await admin_client.post(f"{P}/REQ-1/approve")).status_code == 409
     assert (await admin_client.post(
-        f"{P}/REQ-1/close", json={"request_id": "REQ-1", "units_donated": 0, "donation_date": "2030-01-01"}
-    )).status_code == 400
+        f"{P}/REQ-1/close", json={"request_id": "REQ-1", "units_donated": 0, "donation_date": date.today().isoformat()}
+    )).status_code == 409
 
 
 @pytest.mark.asyncio
 async def test_approved_request_cannot_be_declined(admin_client: AsyncClient, test_session):
     await insert_request(test_session, 2, status="Approved")
-    assert (await admin_client.post(f"{P}/REQ-2/decline")).status_code == 400
+    assert (await admin_client.post(f"{P}/REQ-2/decline")).status_code == 409
 
 
 @pytest.mark.asyncio
@@ -66,8 +66,9 @@ async def test_overdue_expiry_uses_transition_sources(test_session):
     req = await insert_request(test_session, 4, status="Pending")
     req.due_date = date(2000, 1, 1)
     await test_session.commit()
-    await insert_request(test_session, 5, status="Approved")
+    overdue_approved = await insert_request(test_session, 5, status="Approved")
+    overdue_approved.due_date = date(2000, 1, 1)
     repo = BloodRequestRepository(test_session)
-    assert await repo.expire_overdue_requests(date.today()) == 1
+    assert await repo.expire_overdue_requests(date.today()) == 2
     rows = {r.id: r.status for r in (await test_session.execute(select(BloodRequestDetails))).scalars()}
-    assert rows["REQ-4"] == "Expired" and rows["REQ-5"] == "Approved"
+    assert rows["REQ-4"] == "Expired" and rows["REQ-5"] == "Expired"

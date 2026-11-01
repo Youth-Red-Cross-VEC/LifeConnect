@@ -9,7 +9,7 @@ LifeConnect is a modern, full-stack web application designed to bring blood dono
 ## Tech Stack
 
 LifeConnect has been completely rewritten into a modern split-stack architecture:
-- **Backend**: FastAPI (Python 3.11+), SQLAlchemy (Async), Alembic, Pydantic, Passlib (bcrypt), JOSE (JWT), APScheduler
+- **Backend**: FastAPI (Python 3.11+), SQLAlchemy (Async), Alembic, Pydantic, bcrypt, PyJWT, APScheduler
 - **Frontend**: React, Vite, React Router
 - **Database**: PostgreSQL (development and production). SQLite is used only by the automated test suite.
 
@@ -34,6 +34,6 @@ The Youth Red Cross (YRC) is a humanitarian organization that encourages student
 
 **Built by the Youth Red Cross team at Velammal Engineering College. Together, let's make a difference!**
 
-**Contact Us**  
-📞 Phone: 9150450401  
+**Contact Us**
+📞 Phone: 9150450401
 📧 Email: yrcveclifeconnect@gmail.com

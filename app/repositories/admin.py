@@ -1,4 +1,4 @@
-from app.core.request_status import AdminStatus
+from app.core.request_status import AdminStatus, AdminRole
 from app.utils.emails import normalize_email
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, update
@@ -46,7 +46,16 @@ class AdminRepository:
     async def count_active(self, exclude_id: Optional[str] = None) -> int:
         """Number of active admins, optionally not counting one of them."""
         query = select(func.count()).select_from(AdminDetails).where(
-            func.lower(AdminDetails.active_status) == AdminStatus.ACTIVE.value.lower()
+            AdminDetails.active_status == AdminStatus.ACTIVE
+        )
+        if exclude_id is not None:
+            query = query.where(AdminDetails.id != exclude_id)
+        return (await self.session.execute(query)).scalar() or 0
+
+    async def count_active_super_admins(self, exclude_id: Optional[str] = None) -> int:
+        query = select(func.count()).select_from(AdminDetails).where(
+            AdminDetails.active_status == AdminStatus.ACTIVE,
+            AdminDetails.role == AdminRole.SUPER_ADMIN,
         )
         if exclude_id is not None:
             query = query.where(AdminDetails.id != exclude_id)
@@ -54,7 +63,7 @@ class AdminRepository:
 
     async def get_all_active(self) -> List[AdminDetails]:
         """Get all active admins."""
-        query = select(AdminDetails).where(AdminDetails.active_status == AdminStatus.ACTIVE.value)
+        query = select(AdminDetails).where(AdminDetails.active_status == AdminStatus.ACTIVE)
         result = await self.session.execute(query)
         return list(result.scalars().all())
 
@@ -68,12 +77,12 @@ class AdminRepository:
         query = select(AdminDetails)
 
         if active_only:
-            query = query.where(AdminDetails.active_status == AdminStatus.ACTIVE.value)
+            query = query.where(AdminDetails.active_status == AdminStatus.ACTIVE)
 
         # Count
         count_query = select(func.count()).select_from(AdminDetails)
         if active_only:
-            count_query = count_query.where(AdminDetails.active_status == AdminStatus.ACTIVE.value)
+            count_query = count_query.where(AdminDetails.active_status == AdminStatus.ACTIVE)
         count_result = await self.session.execute(count_query)
         total = count_result.scalar()
 

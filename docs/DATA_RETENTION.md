@@ -15,15 +15,16 @@ implemented in code today.
 | Support queries | `query_table` | Yes (name, email; `donor_id` links a query to the donor who filed it while signed in, NULL for anonymous and pre-ownership rows) | Kept until an admin deletes them | 24 months after resolution |
 | Admin audit trail | `admin_audit_log` | Identifiers only | Kept indefinitely (append-only) | 24 months |
 | One-time codes | `otp_codes` | Hashed codes + email | **Enforced:** expire after `OTP_TTL_SECONDS` (default 10 min) and are purged daily | n/a |
-| Refresh sessions | `refresh_sessions` | User id only | **Enforced:** expired rows purged daily (`purge_expired_auth_records`) | n/a |
-| Generated certificates | files under `app/static` | Yes (donor name) | Kept until an admin deletes the file | Delete 12 months after generation; donors can be re-issued one |
+| OTP failure windows | `otp_failure_windows` | Email + failed attempt count | **Enforced:** one-hour failure budget; expired windows purged daily | n/a |
+| Refresh tokens | `refresh_tokens` | User id only | **Enforced:** expired or revoked rows purged daily (`purge_expired_auth_records`) | n/a |
+| Generated certificates | files under `app/static` | Yes (donor name) | **Enforced:** delete after `CERT_RETENTION_DAYS` (default 30 days) | n/a |
 | Logs | stdout | Masked emails, no exception text (see P1-28) | Set by the log platform | 90 days |
 
 ## Gaps to close once periods are approved
 
 1. **Erasure on request**: there is no endpoint or script that deletes a donor and their related rows.
    Until one exists, an admin must delete them in the database by hand.
-2. **Scheduled anonymization/purge** for the "Proposed" rows above. The scheduler (`SCHEDULER_ENABLED=true`
+2. **Scheduled anonymization/purge** for the "Proposed" rows above. The scheduler (`RUN_SCHEDULER=true`
    on the dedicated process) is the place to run them; `purge_expired_auth_records` in
    `app/tasks/scheduled_jobs.py` is the pattern to follow. Make each period a setting, not a literal.
 3. **Backups** keep deleted data until they rotate: state the backup retention next to the periods above.

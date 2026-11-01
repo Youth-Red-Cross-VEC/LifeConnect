@@ -1,6 +1,7 @@
 """Shared test data builders."""
 
 from datetime import date, datetime
+from http.cookies import SimpleCookie
 from functools import lru_cache
 
 from app.api.auth.utils import hash_password
@@ -13,6 +14,7 @@ from app.models.donor import (
     TermsAndConditions,
 )
 from app.models.hospital import HospitalDetails
+from app.core.request_status import AdminRole, AdminStatus
 
 
 @lru_cache(maxsize=None)
@@ -75,6 +77,7 @@ async def insert_request(
 
 async def insert_admin(
     session, n: int = 1, password: str = "Secret123", active: bool = True, email: str | None = None,
+    role: AdminRole = AdminRole.ADMIN,
 ):
     """Insert an admin with a known password (n >= 1; ADM-test123 is the admin_client fixture's admin)."""
     from app.models.admin import AdminDetails
@@ -83,7 +86,8 @@ async def insert_admin(
         id=f"ADM-{n}", email=email or f"admin{n}@example.com", password=_hashed(password),
         username=f"Admin {n}", authentication_id=f"AUTHADM-{n}", vec_registration_number=f"VEC-H{n:04d}",
         date_of_birth=date(1990, 1, 1), mobile_number=f"98100{n:05d}", department="IT",
-        active_status="Active" if active else "Inactive",
+        active_status=AdminStatus.ACTIVE if active else AdminStatus.INACTIVE,
+        role=role,
         approved_donation_count=0, closed_requests_count=0,
     )
     session.add(admin)
@@ -104,3 +108,14 @@ def registration_payload(email: str, password: str = "Secret123") -> dict:
         },
         "disease_details": {"name": "None"},
     }
+
+
+def refresh_cookie(response) -> str:
+    """Extract the HttpOnly refresh cookie from an auth response (it is never in JSON)."""
+    cookie = SimpleCookie()
+    cookie.load(response.headers.get("set-cookie", ""))
+    return cookie["lc_refresh_token"].value
+
+
+def cookie_headers(token: str) -> dict[str, str]:
+    return {"Cookie": f"lc_refresh_token={token}"}

@@ -110,6 +110,7 @@ def admin_token() -> str:
 
 
 from app.models.admin import AdminDetails
+from app.core.request_status import AdminStatus, AdminRole
 from datetime import date
 from app.api.auth.utils import hash_password
 
@@ -131,7 +132,8 @@ async def admin_client(test_session, admin_token) -> AsyncGenerator[AsyncClient,
         date_of_birth=date(1990, 1, 1),
         mobile_number="9999999999",
         department="IT",
-        active_status="active",
+        active_status=AdminStatus.ACTIVE,
+        role=AdminRole.SUPER_ADMIN,
         approved_donation_count=0,
         closed_requests_count=0,
     )

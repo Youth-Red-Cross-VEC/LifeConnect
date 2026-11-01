@@ -11,8 +11,9 @@ import hmac
 import secrets
 from datetime import timedelta
 from typing import Optional, Dict, Any
-from jose import JWTError, jwt
-from passlib.context import CryptContext
+import bcrypt
+import jwt
+from jwt import InvalidTokenError
 
 from app.config import get_settings
 from app.utils.dates import utcnow
@@ -26,13 +27,6 @@ SECRET_KEY = _settings.SECRET_KEY
 ALGORITHM = _settings.ALGORITHM
 ACCESS_TOKEN_EXPIRE_MINUTES = _settings.ACCESS_TOKEN_EXPIRE_MINUTES
 REFRESH_TOKEN_EXPIRE_DAYS = _settings.REFRESH_TOKEN_EXPIRE_DAYS
-
-# Password hashing context
-pwd_context = CryptContext(
-    schemes=["bcrypt"],
-    deprecated="auto",
-    bcrypt__rounds=12
-)
 
 # ============================================================
 # PASSWORD UTILITIES
@@ -51,7 +45,10 @@ def hash_password(password: str) -> str:
     Example:
         >>> hashed = hash_password("mypassword")
     """
-    return pwd_context.hash(password)
+    password_bytes = password.encode("utf-8")
+    if len(password_bytes) > 72:
+        raise ValueError("Password must be at most 72 UTF-8 bytes")
+    return bcrypt.hashpw(password_bytes, bcrypt.gensalt(rounds=12)).decode("ascii")
 
 
 async def hash_password_async(password: str) -> str:
@@ -88,7 +85,10 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     if hashed_password.startswith("scrypt:"):
         return _verify_legacy_scrypt(plain_password, hashed_password)
     try:
-        return pwd_context.verify(plain_password, hashed_password)
+        password_bytes = plain_password.encode("utf-8")
+        if len(password_bytes) > 72:
+            return False
+        return bcrypt.checkpw(password_bytes, hashed_password.encode("ascii"))
     except Exception:
         return False
 
@@ -101,7 +101,9 @@ async def verify_password_async(plain_password: str, hashed_password: str) -> bo
 # A real bcrypt hash of a random value nobody knows. Login verifies against it when the email is unknown,
 # so "no such account" costs the same time as "wrong password" and cannot be told apart by timing.
 # Computed once at import (a quarter second) rather than lazily, so no request pays for it.
-DUMMY_PASSWORD_HASH = pwd_context.hash(secrets.token_urlsafe(24))
+DUMMY_PASSWORD_HASH = bcrypt.hashpw(
+    secrets.token_urlsafe(24).encode("ascii"), bcrypt.gensalt(rounds=12)
+).decode("ascii")
 
 
 def needs_rehash(hashed_password: str) -> bool:
@@ -146,10 +148,11 @@ def create_access_token(
     to_encode.update({
         "exp": expire,
         "iat": utcnow(),
-        "type": "access"
+        "type": "access",
+        "tv": int(to_encode.get("tv", 0)),
     })
     
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm="HS256")
     return encoded_jwt
 
 
@@ -177,10 +180,11 @@ def create_refresh_token(data: Dict[str, Any]) -> str:
     to_encode.update({
         "exp": expire,
         "iat": utcnow(),
-        "type": "refresh"
+        "type": "refresh",
+        "tv": int(to_encode.get("tv", 0)),
     })
     
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm="HS256")
     return encoded_jwt
 
 
@@ -204,8 +208,9 @@ def decode_token(token: str) -> Optional[Dict[str, Any]]:
         payload = jwt.decode(
             token,
             SECRET_KEY,
-            algorithms=[ALGORITHM]
+            algorithms=["HS256"],
+            options={"require": ["exp"]},
         )
         return payload
-    except JWTError:
+    except InvalidTokenError:
         return None

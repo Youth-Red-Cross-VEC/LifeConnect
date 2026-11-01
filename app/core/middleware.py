@@ -5,6 +5,7 @@ Adds security headers to all HTTP responses to protect against common attacks.
 """
 
 import logging
+import uuid
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
@@ -26,8 +27,12 @@ class CatchAllMiddleware(BaseHTTPMiddleware):
         try:
             return await call_next(request)
         except Exception:
-            logger.error("Unhandled exception", exc_info=True)
-            return JSONResponse(status_code=500, content={"detail": "Internal server error"})
+            error_id = uuid.uuid4().hex
+            logger.error("Unhandled request failure error_id=%s", error_id)
+            return JSONResponse(
+                status_code=500,
+                content={"detail": "Internal server error", "error_id": error_id},
+            )
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
@@ -57,11 +62,9 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         # Legacy XSS protection for older browsers
         response.headers["X-XSS-Protection"] = "1; mode=block"
         
-        # Force HTTPS (enable in production with proper SSL)
-        # max-age=31536000 = 1 year
-        response.headers["Strict-Transport-Security"] = (
-            "max-age=31536000; includeSubDomains"
-        )
+        # Browsers only honor HSTS over TLS. Never advertise it on plain HTTP responses.
+        if request.url.scheme == "https":
+            response.headers["Strict-Transport-Security"] = "max-age=31536000"
         
         # Content Security Policy - relaxed for docs pages
         if request.url.path in ["/docs", "/redoc", "/openapi.json"]:

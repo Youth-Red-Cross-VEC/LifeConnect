@@ -202,7 +202,6 @@ class DonorLoginResponse(BaseModel):
     """Schema for donor login response."""
 
     access_token: str
-    refresh_token: str
     token_type: str = "bearer"
     user_id: str
     user_type: str = "donor"

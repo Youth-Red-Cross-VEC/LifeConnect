@@ -14,6 +14,7 @@ import logging
 from app.core.database import get_db
 from app.models.donor import DonorDetail
 from app.models.admin import AdminDetails
+from app.core.request_status import AdminStatus, AdminRole
 from app.api.auth.utils import decode_token
 
 logger = logging.getLogger(__name__)
@@ -100,7 +101,7 @@ async def get_current_user(
         is_active = bool(account and account.active_status)
     elif user_type == "admin":
         account = await session.get(AdminDetails, user_id)
-        is_active = bool(account and str(account.active_status).lower() == "active")
+        is_active = bool(account and account.active_status == AdminStatus.ACTIVE)
     else:
         is_active = False
 
@@ -108,6 +109,13 @@ async def get_current_user(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Account is inactive or no longer exists",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    if payload.get("tv") != account.token_version:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Session has been revoked",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
@@ -212,6 +220,18 @@ async def get_current_admin(
         )
     
     return admin
+
+
+async def require_super_admin(
+    current_admin: AdminDetails = Depends(get_current_admin),
+) -> AdminDetails:
+    """Require the account's current database role to be super_admin."""
+    if current_admin.role != AdminRole.SUPER_ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Super admin privileges required",
+        )
+    return current_admin
 
 
 async def get_current_donor_or_admin(

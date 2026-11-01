@@ -19,6 +19,11 @@ class AdminStatus(str, Enum):
     INACTIVE = "Inactive"
 
 
+class AdminRole(str, Enum):
+    SUPER_ADMIN = "super_admin"
+    ADMIN = "admin"
+
+
 # Allowed transitions, derived from what the API and scheduler actually do:
 #   approve  Pending            -> Approved
 #   decline  Pending            -> Declined

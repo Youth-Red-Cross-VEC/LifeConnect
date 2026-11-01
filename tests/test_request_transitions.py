@@ -146,9 +146,9 @@ async def test_close_rejects_body_request_id_that_differs_from_path(admin_client
 # ------------------------------------------------------------------ the ordinary paths still behave
 
 @pytest.mark.asyncio
-async def test_a_plain_second_approve_is_still_the_usual_400(admin_client: AsyncClient, test_session, donor_emails):
+async def test_a_plain_second_approve_returns_conflict(admin_client: AsyncClient, test_session, donor_emails):
     await insert_request(test_session, 1, status="Pending")
     assert (await admin_client.post("/api/v1/blood-requests/REQ-1/approve")).status_code == 200
     again = await admin_client.post("/api/v1/blood-requests/REQ-1/approve")
-    assert again.status_code == 400
-    assert "Cannot approve" in again.json()["detail"]
+    assert again.status_code == 409
+    assert "changed" in again.json()["detail"].lower()

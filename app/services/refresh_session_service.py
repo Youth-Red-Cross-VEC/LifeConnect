@@ -1,6 +1,6 @@
 """Refresh-token rotation with reuse detection."""
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from sqlalchemy import update
@@ -23,7 +23,7 @@ async def issue_refresh_token(session: AsyncSession, token_data: dict) -> tuple[
         jti=jti,
         user_id=token_data["sub"],
         role=token_data["user_type"],
-        expires_at=datetime.utcfromtimestamp(exp),
+        expires_at=datetime.fromtimestamp(exp, tz=timezone.utc).replace(tzinfo=None),
     ))
     return token, jti
 

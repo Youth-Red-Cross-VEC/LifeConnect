@@ -1,7 +1,7 @@
 import { useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useGoogleReCaptcha } from "react-google-recaptcha-v3";
-import { api, setToken, setRefreshToken, setUserType, setUserId, setUsername } from "../services/api";
+import { api, setToken, setUserType, setUserId, setUsername } from "../services/api";
 
 export default function DonorLogin() {
   const [form, setForm] = useState({
@@ -34,7 +34,6 @@ export default function DonorLogin() {
       });
       if (res && res.access_token) {
         setToken(res.access_token);
-        setRefreshToken(res.refresh_token);
         setUserType("donor");
         setUserId(res.user_id || "");
         setUsername(res.username || "");

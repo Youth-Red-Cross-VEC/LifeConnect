@@ -1,5 +1,5 @@
 from pydantic import BaseModel, EmailStr, Field, field_validator
-from app.core.request_status import AdminStatus
+from app.core.request_status import AdminStatus, AdminRole
 from typing import Optional
 from datetime import datetime, date
 from app.schemas.common import BaseSchema
@@ -36,6 +36,7 @@ class AdminUpdate(BaseModel):
     mobile_number: Optional[str] = Field(None, max_length=36)
     department: Optional[str] = Field(None, max_length=50)
     active_status: Optional[AdminStatus] = None
+    role: Optional[AdminRole] = None
 
 
 class AdminSummaryResponse(BaseSchema):
@@ -47,6 +48,7 @@ class AdminSummaryResponse(BaseSchema):
     vec_registration_number: str
     department: Optional[str]
     active_status: str
+    role: AdminRole
     last_login_date: Optional[datetime]
     approved_donation_count: int
     closed_requests_count: int
@@ -76,7 +78,6 @@ class AdminLoginResponse(BaseModel):
     """Schema for admin login response."""
 
     access_token: str
-    refresh_token: str
     token_type: str = "bearer"
     user_id: str
     user_type: str = "admin"

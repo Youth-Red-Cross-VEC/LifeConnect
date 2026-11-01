@@ -65,7 +65,7 @@ def test_a_populated_0004_database_upgrades_to_head_without_losing_anything(old_
     assert done.returncode == 0, done.stdout + done.stderr
 
     emails = [e for (e,) in asyncio.run(_fetch(url, "SELECT email FROM donor_details WHERE id IN ('DON-1', 'DON-2') ORDER BY id"))]
-    assert emails == ["a@example.com", "B@Example.com"], "existing emails are not rewritten"
+    assert emails == ["a@example.com", "b@example.com"], "existing emails are normalized during upgrade"
     assert asyncio.run(_fetch(url, "SELECT COUNT(*) FROM admin_details WHERE id = 'ADM-9'"))[0][0] == 1
 
     queries = asyncio.run(_fetch(url, "SELECT user_query, admin_response, donor_id FROM query_table WHERE user_email IN ('visitor@example.com', 'a@example.com') ORDER BY id"))
