@@ -6,6 +6,9 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# How late (after its scheduled time) a job may still start: covers a container restart or a deploy.
+MISFIRE_GRACE_SECONDS = 6 * 60 * 60
+
 
 class Scheduler:
     """
@@ -18,7 +21,21 @@ class Scheduler:
     """
 
     def __init__(self, timezone: str = "Asia/Kolkata"):
-        self.scheduler = AsyncIOScheduler(timezone=timezone)
+        # CronTrigger does not inherit the scheduler timezone when it is built separately, so keep
+        # it here and pass it explicitly; otherwise SCHEDULER_TIMEZONE would be silently ignored and
+        # "midnight" would be the container's local (usually UTC) midnight.
+        self.timezone = timezone
+        self.scheduler = AsyncIOScheduler(
+            timezone=timezone,
+            job_defaults={
+                # APScheduler's default grace is 1 second: a restart a moment after 00:00 would silently skip
+                # the day. Every job is idempotent or date-cutoff based, so a late run is safe; coalesce
+                # collapses several missed runs into one, and max_instances stops a slow run overlapping.
+                "misfire_grace_time": MISFIRE_GRACE_SECONDS,
+                "coalesce": True,
+                "max_instances": 1,
+            },
+        )
         self._jobs: dict[str, Any] = {}
 
     def add_cron_job(
@@ -41,7 +58,7 @@ class Scheduler:
         """
         self.scheduler.add_job(
             func,
-            CronTrigger(hour=hour, minute=minute),
+            CronTrigger(hour=hour, minute=minute, timezone=self.timezone),
             id=job_id,
             replace_existing=True,
             kwargs=kwargs,
@@ -111,9 +128,12 @@ def init_scheduler(timezone: str = "Asia/Kolkata") -> Scheduler:
 
 
 def start_scheduler_if_enabled(settings, database) -> Scheduler | None:
-    """Start the job scheduler only when SCHEDULER_ENABLED is true for this process."""
-    if not settings.SCHEDULER_ENABLED:
-        logger.info("Scheduler disabled for this process (SCHEDULER_ENABLED=false)")
+    """Start the job scheduler only when SCHEDULER_ENABLED and RUN_SCHEDULER are true here."""
+    if not settings.SCHEDULER_ENABLED or not settings.RUN_SCHEDULER:
+        logger.info(
+            "Scheduler disabled for this process "
+            f"(SCHEDULER_ENABLED={settings.SCHEDULER_ENABLED}, RUN_SCHEDULER={settings.RUN_SCHEDULER})"
+        )
         return None
 
     from app.tasks import setup_scheduled_jobs

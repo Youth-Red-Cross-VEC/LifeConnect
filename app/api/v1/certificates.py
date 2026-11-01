@@ -53,6 +53,8 @@ class CertificateResponse(BaseModel):
     """Response schema for certificate generation."""
     
     message: str
+    # Just the file name: the path /certificates/download/{filename} is how clients fetch it,
+    # and the server's absolute path must not leak. Use the `filename` field for the same value.
     file_path: str
     filename: str
     email_sent: bool = False
@@ -80,7 +82,7 @@ async def generate_certificate(
     background_tasks: BackgroundTasks,
     cert_service: CertificateService = Depends(get_certificate_service),
     email_service: EmailService = Depends(get_email_service),
-    session: AsyncSession = Depends(get_db),
+    session: AsyncSession = Depends(get_db, scope="function"),
     current_admin = Depends(get_current_admin),
 ):
     """
@@ -137,7 +139,7 @@ async def generate_certificate(
 
     return CertificateResponse(
         message=f"Certificate generated for {donor.name}",
-        file_path=file_path,
+        file_path=filename,
         filename=filename,
         email_sent=email_sent,
     )
@@ -194,7 +196,7 @@ async def list_certificates(
 async def delete_certificate(
     filename: str,
     cert_service: CertificateService = Depends(get_certificate_service),
-    session: AsyncSession = Depends(get_db),
+    session: AsyncSession = Depends(get_db, scope="function"),
     current_admin = Depends(get_current_admin),
 ):
     """Delete a certificate file."""
@@ -221,7 +223,7 @@ async def send_certificate_email(
     background_tasks: BackgroundTasks,
     cert_service: CertificateService = Depends(get_certificate_service),
     email_service: EmailService = Depends(get_email_service),
-    session: AsyncSession = Depends(get_db),
+    session: AsyncSession = Depends(get_db, scope="function"),
     current_admin = Depends(get_current_admin),
 ):
     """

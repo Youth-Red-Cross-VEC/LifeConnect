@@ -1,15 +1,21 @@
-import { useState } from "react";
 import AdminBase from "./AdminBase";
+import RequestsTable from "../components/RequestsTable";
+import { useApiData } from "../hooks/useApiData";
+import { api } from "../services/api";
+import { unwrapList } from "../services/unwrap";
 
-export default function ClosedRequestsAdmin({ requests = [] }) {
-    const [openId, setOpenId] = useState(null);
+const loadClosed = async () =>
+  unwrapList(await api.getClosedRequests(), "Failed to load closed requests.");
 
-    const toggleDetails = (id) =>
-        setOpenId((prev) => (prev === id ? null : id));
+export default function ClosedRequestsAdmin() {
+  const { data: requests, isLoading, error } = useApiData(loadClosed, {
+    initial: [],
+    errorMessage: "Server error. Could not load closed requests.",
+  });
 
-    return (
-        <AdminBase active="closed-requests">
-            <style>{`
+  return (
+    <AdminBase active="closed-requests">
+      <style>{`
         .closed-requests-main {
           padding: 20px;
         }
@@ -67,128 +73,16 @@ export default function ClosedRequestsAdmin({ requests = [] }) {
         .details-inner-table td { padding: 6px 8px; border: 1px solid #eee; font-size: 14px; }
       `}</style>
 
-            <main className="closed-requests-main">
-                <h1>Closed Blood Requests</h1>
-                <table className="closed-requests-table">
-                    <thead>
-                        <tr>
-                            <th>Patient Name</th>
-                            <th>Blood Group</th>
-                            <th>Hospital Name</th>
-                            <th>Contact Number</th>
-                            <th>Status</th>
-                            <th>Action</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {requests.map((request) => {
-                            const isOpen = openId === request.id;
-                            return (
-                                <FragmentRow key={request.id}>
-                                    <tr>
-                                        <td>{request.patient_name}</td>
-                                        <td>{request.blood_group}</td>
-                                        <td>{request.hospital_name}</td>
-                                        <td>{request.contact_number}</td>
-                                        <td>{request.status}</td>
-                                        <td>
-                                            <button
-                                                className="view-btn"
-                                                type="button"
-                                                onClick={() => toggleDetails(request.id)}
-                                            >
-                                                View Details
-                                            </button>
-                                        </td>
-                                    </tr>
-                                    <tr className={`details-row ${isOpen ? "open" : ""}`} id={`details${request.id}`}>
-                                        <td colSpan={6}>
-                                            <table className="details-inner-table">
-                                                <tbody>
-                                                    {[
-                                                        ["Request ID", request.id],
-                                                        ["Patient Name", request.patient_name],
-                                                        ["Patient Age", request.patient_age],
-                                                        ["Blood Group", request.blood_group],
-                                                        ["Contact Number", request.contact_number],
-                                                        ["Attendant Name", request.attendant_name],
-                                                        ["Units Required", request.units_required],
-                                                        ["Request Reason", request.request_reason],
-                                                        ["Due Date", request.due_date],
-                                                        ["Approved AdminID", request.approved_admin_id],
-                                                        ["Closed AdminID", request.closed_admin_id],
-                                                        ["Hospital ID", request.hospital_id],
-                                                        ["Hospital Name", request.hospital_name],
-                                                        ["Hospital Address", request.hospital_address],
-                                                        ["Response ID", request.response_id],
-                                                        ["Response Status", request.response_status],
-                                                        ["Response Report", request.report],
-                                                        ["Units Donated", request.units_donated],
-                                                        ["Certificate Status", request.certificate_status],
-                                                        ["Donation Date", request.donation_date],
-                                                        ["Responded Donors ID", request.response_donor_ids],
-                                                    ].map(([label, value]) => (
-                                                        <tr key={label}>
-                                                            <td><strong>{label}:</strong></td>
-                                                            <td>{value}</td>
-                                                        </tr>
-                                                    ))}
-                                                </tbody>
-                                            </table>
-                                        </td>
-                                    </tr>
-                                </FragmentRow>
-                            );
-                        })}
-                    </tbody>
-                </table>
-            </main>
-
-            {/*
-        ======================================================
-        BACKEND CALL STRUCTURE — Closed Requests Admin
-        ======================================================
-
-        ENDPOINT
-        --------
-        GET /admin/requests/closed
-
-        AUTH
-        ----
-        Admin session / JWT required
-
-        RESPONSE (example)
-        ------------------
-        {
-          requests: [
-            {
-              id, patient_name, patient_age, blood_group,
-              contact_number, attendant_name, units_required,
-              request_reason, due_date, status,
-              approved_admin_id, closed_admin_id,
-              hospital_id, hospital_name, hospital_address,
-              response_id, response_status, report,
-              units_donated, certificate_status,
-              donation_date, response_donor_ids
-            }
-          ]
-        }
-
-        FRONTEND RESPONSIBILITY
-        -----------------------
-        - Display requests in a table
-        - Toggle expandable detail rows on "View Details"
-        - Read-only view (no actions)
-
-        ERROR CASES
-        -----------
-        - 401 → redirect to /admin/login
-        - 500 → server error
-      */}
-        </AdminBase>
-    );
-}
-
-function FragmentRow({ children }) {
-    return <>{children}</>;
+      <main className="closed-requests-main">
+        <h1>Closed Blood Requests</h1>
+        <RequestsTable
+          requests={requests}
+          isLoading={isLoading}
+          error={error}
+          tableClass="closed-requests-table"
+          emptyText="No closed requests."
+        />
+      </main>
+    </AdminBase>
+  );
 }

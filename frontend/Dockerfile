@@ -28,6 +28,8 @@ RUN rm /etc/nginx/conf.d/default.conf
 
 # Copy our custom nginx config
 COPY nginx.conf /etc/nginx/conf.d/default.conf
+# Security headers, included by nginx.conf (kept outside conf.d so nginx does not load it on its own)
+COPY security-headers.conf /etc/nginx/snippets/security-headers.conf
 
 # Copy built assets from builder stage
 COPY --from=builder /app/dist /usr/share/nginx/html

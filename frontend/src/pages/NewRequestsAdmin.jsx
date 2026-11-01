@@ -3,6 +3,7 @@ import AdminBase from "./AdminBase";
 import AsyncState from "../components/AsyncState";
 import { useApiData } from "../hooks/useApiData";
 import { api } from "../services/api";
+import { removeRequestById } from "../services/requests";
 import { unwrapList } from "../services/unwrap";
 
 const loadPending = async () =>
@@ -30,7 +31,7 @@ export default function NewRequestsAdmin() {
             const res = await api.approveRequest(requestId);
             if (res && (res.message || !res.detail)) {
                 setActionMsg(`✅ Request ${requestId} approved. Donors notified.`);
-                setRequests((prev) => prev.filter((r) => r.request_id !== requestId));
+                setRequests((prev) => removeRequestById(prev, requestId));
             } else {
                 setActionMsg(`❌ ${res?.detail || "Failed to approve request."}`);
             }
@@ -45,7 +46,7 @@ export default function NewRequestsAdmin() {
             const res = await api.declineRequest(requestId);
             if (res && (res.message || !res.detail)) {
                 setActionMsg(`Request ${requestId} declined.`);
-                setRequests((prev) => prev.filter((r) => r.request_id !== requestId));
+                setRequests((prev) => removeRequestById(prev, requestId));
             } else {
                 setActionMsg(`❌ ${res?.detail || "Failed to decline request."}`);
             }

@@ -2,6 +2,7 @@ from app.utils.search import LIKE_ESCAPE, escape_like
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_
 from app.models.hospital import HospitalDetails
+from app.models.blood_request import BloodRequestDetails
 from typing import Optional, List
 
 
@@ -112,6 +113,13 @@ class HospitalRepository:
         await self.session.merge(hospital)
         await self.session.flush()
         return hospital
+
+    async def count_requests(self, hospital_id: str) -> int:
+        """How many blood requests reference this hospital (0 means it is safe to delete)."""
+        query = select(func.count()).select_from(BloodRequestDetails).where(
+            BloodRequestDetails.hospital_id == hospital_id
+        )
+        return (await self.session.execute(query)).scalar() or 0
 
     async def delete(self, hospital_id: str) -> bool:
         """Delete a hospital."""

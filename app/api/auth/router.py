@@ -4,13 +4,12 @@ Authentication Router - Complete Implementation
 Login, logout, and password reset endpoints for donors and admins.
 """
 import logging
-from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-from pydantic import BaseModel, EmailStr
+from sqlalchemy import func, select
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 from app.core.database import get_db
 from app.config import get_settings
@@ -19,7 +18,12 @@ from app.core.recaptcha import verify_recaptcha
 from app.models.donor import DonorDetail
 from app.models.admin import AdminDetails
 from app.services.email_service import get_email_service
-from app.services.refresh_session_service import issue_refresh_token, revoke_chain
+from app.services.refresh_session_service import (
+    claim_session,
+    issue_refresh_token,
+    revoke_all_for_user,
+    revoke_chain,
+)
 from app.models.refresh_session import RefreshSession
 from app.services.otp_service import (
     PURPOSE_ADMIN_RESET,
@@ -29,15 +33,25 @@ from app.services.otp_service import (
     verify_otp,
 )
 from app.api.auth.utils import (
-    hash_password,
-    verify_password,
+    DUMMY_PASSWORD_HASH,
+    hash_password_async,
+    verify_password_async,
     needs_rehash,
     create_access_token,
     decode_token
 )
-from app.api.auth.deps import get_current_donor, get_current_admin
+from app.schemas.passwords import check_new_password, check_password_length
+from app.utils.emails import normalize_email
+from app.utils.dates import utcnow
 
 logger = logging.getLogger(__name__)
+
+
+async def _send_reset_email(email: str, otp: str, name: str) -> None:
+    """Send a reset code after the generic response and warn if delivery fails."""
+    sent = await get_email_service().send_otp_email(email, otp, name)
+    if not sent:
+        logger.warning("Password reset email delivery failed")
 _settings = get_settings()
 
 # ============================================================
@@ -46,9 +60,14 @@ _settings = get_settings()
 
 class LoginRequest(BaseModel):
     """Login request schema."""
-    email: EmailStr
+    email: EmailStr = Field(..., max_length=100)
     password: str
     recaptcha_token: Optional[str] = None
+
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, v: str) -> str:
+        return check_password_length(v)
     
     class Config:
         json_schema_extra = {
@@ -88,14 +107,19 @@ class RefreshRequest(BaseModel):
 
 class PasswordResetRequest(BaseModel):
     """Password reset request."""
-    email: EmailStr
+    email: EmailStr = Field(..., max_length=100)
 
 
 class PasswordResetConfirm(BaseModel):
     """Password reset confirmation."""
-    email: EmailStr
+    email: EmailStr = Field(..., max_length=100)
     otp: str
     new_password: str
+
+    @field_validator("new_password")
+    @classmethod
+    def validate_new_password(cls, v: str) -> str:
+        return check_new_password(v)
 
 
 class MessageResponse(BaseModel):
@@ -112,6 +136,18 @@ async def enforce_recaptcha(token: Optional[str], action: str) -> None:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="reCAPTCHA verification failed",
         )
+
+
+async def _reject_reused_refresh_token(session: AsyncSession, old_session: RefreshSession) -> None:
+    """A spent refresh token is being replayed: assume theft, kill the whole chain, answer 401."""
+    await revoke_chain(session, old_session.jti)
+    # Commit now: raising below rolls the request transaction back and would undo the revocation.
+    await session.commit()
+    logger.warning(f"Refresh token reuse detected for {old_session.role} {old_session.user_id}")
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Invalid or expired refresh token",
+    )
 
 
 # ============================================================
@@ -132,7 +168,7 @@ router = APIRouter(
 async def donor_login(
     request: Request,
     credentials: LoginRequest,
-    session: AsyncSession = Depends(get_db)
+    session: AsyncSession = Depends(get_db, scope="function")
 ):
     """
     Donor login endpoint.
@@ -154,12 +190,14 @@ async def donor_login(
     try:
         # Get donor by email
         result = await session.execute(
-            select(DonorDetail).where(DonorDetail.email == credentials.email)
+            select(DonorDetail).where(func.lower(DonorDetail.email) == normalize_email(credentials.email))
         )
         donor = result.scalar_one_or_none()
         
         # Check if donor exists
         if not donor:
+            # Same bcrypt cost as a wrong password, so response time does not reveal which emails exist.
+            await verify_password_async(credentials.password, DUMMY_PASSWORD_HASH)
             logger.warning("Login attempt with unknown email")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -167,7 +205,7 @@ async def donor_login(
             )
         
         # Verify password
-        if not verify_password(credentials.password, donor.password):
+        if not await verify_password_async(credentials.password, donor.password):
             logger.warning(f"Failed login attempt for donor: {donor.id}")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -182,10 +220,10 @@ async def donor_login(
             )
 
         if needs_rehash(donor.password):
-            donor.password = hash_password(credentials.password)
+            donor.password = await hash_password_async(credentials.password)
 
         # Update last login — store full datetime
-        donor.last_login_date = datetime.now()
+        donor.last_login_date = utcnow()
         
         logger.info(f"Donor {donor.id} logged in successfully")
         
@@ -223,7 +261,7 @@ async def donor_login(
 async def admin_login(
     request: Request,
     credentials: LoginRequest,
-    session: AsyncSession = Depends(get_db)
+    session: AsyncSession = Depends(get_db, scope="function")
 ):
     """
     Admin login endpoint.
@@ -245,12 +283,13 @@ async def admin_login(
     try:
         # Get admin by email
         result = await session.execute(
-            select(AdminDetails).where(AdminDetails.email == credentials.email)
+            select(AdminDetails).where(func.lower(AdminDetails.email) == normalize_email(credentials.email))
         )
         admin = result.scalar_one_or_none()
         
         # Check if admin exists
         if not admin:
+            await verify_password_async(credentials.password, DUMMY_PASSWORD_HASH)
             logger.warning("Admin login attempt with unknown email")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -258,7 +297,7 @@ async def admin_login(
             )
         
         # Verify password
-        if not verify_password(credentials.password, admin.password):
+        if not await verify_password_async(credentials.password, admin.password):
             logger.warning(f"Failed admin login attempt: {admin.id}")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -273,10 +312,10 @@ async def admin_login(
             )
         
         if needs_rehash(admin.password):
-            admin.password = hash_password(credentials.password)
+            admin.password = await hash_password_async(credentials.password)
 
         # Update last login — store full datetime
-        admin.last_login_date = datetime.now()
+        admin.last_login_date = utcnow()
         
         logger.info(f"Admin {admin.id} logged in successfully")
         
@@ -316,7 +355,7 @@ async def admin_login(
 @router.post("/refresh", response_model=TokenResponse)
 async def refresh_token(
     data: RefreshRequest,
-    session: AsyncSession = Depends(get_db)
+    session: AsyncSession = Depends(get_db, scope="function")
 ):
     """
     Refresh access token using refresh token.
@@ -361,16 +400,8 @@ async def refresh_token(
                 detail="Invalid or expired refresh token",
             )
         if old_session.revoked_at is not None:
-            # A rotated-out token is being replayed: assume theft and kill the whole chain.
-            await revoke_chain(session, old_session.jti)
-            # Commit now: raising below rolls the request transaction back and would undo the revocation.
-            await session.commit()
-            logger.warning(f"Refresh token reuse detected for {old_session.role} {old_session.user_id}")
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or expired refresh token",
-            )
-        if old_session.expires_at < datetime.utcnow():
+            await _reject_reused_refresh_token(session, old_session)
+        if old_session.expires_at < utcnow():
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid or expired refresh token",
@@ -418,9 +449,12 @@ async def refresh_token(
             "email": user.email,
         }
         
+        # Spend the old token atomically. If a concurrent request already did, this one is a replay.
+        if not await claim_session(session, old_session.jti):
+            await _reject_reused_refresh_token(session, old_session)
+
         access_token = create_access_token(token_data)
         refresh_token, new_jti = await issue_refresh_token(session, token_data)
-        old_session.revoked_at = datetime.utcnow()
         old_session.replaced_by = new_jti
         
         logger.info(f"Token refreshed for {user_type} {user.id}")
@@ -449,7 +483,7 @@ async def refresh_token(
 @router.post("/logout", response_model=MessageResponse)
 async def logout(
     data: RefreshRequest,
-    session: AsyncSession = Depends(get_db)
+    session: AsyncSession = Depends(get_db, scope="function")
 ):
     """
     Log out: revoke the given refresh token and any token rotated from it.
@@ -472,7 +506,8 @@ async def logout(
 async def request_donor_password_reset(
     request: Request,
     data: PasswordResetRequest,
-    session: AsyncSession = Depends(get_db)
+    background_tasks: BackgroundTasks,
+    session: AsyncSession = Depends(get_db, scope="function")
 ):
     """
     Request password reset for a donor.
@@ -489,7 +524,7 @@ async def request_donor_password_reset(
     try:
         # Check if donor exists
         result = await session.execute(
-            select(DonorDetail).where(DonorDetail.email == data.email)
+            select(DonorDetail).where(func.lower(DonorDetail.email) == normalize_email(data.email))
         )
         donor = result.scalar_one_or_none()
         
@@ -506,8 +541,8 @@ async def request_donor_password_reset(
         # Store OTP in database with expiry
         otp = generate_otp()
         await store_otp(session, donor.email, otp, PURPOSE_DONOR_RESET)
-        email_service = get_email_service()
-        await email_service.send_otp_email(donor.email, otp, donor.name)
+        # Send after the response: awaiting SMTP here would make known emails answer slower than unknown ones.
+        background_tasks.add_task(_send_reset_email, donor.email, otp, donor.name)
         
         logger.info(f"Password reset requested for donor: {donor.id}")
         
@@ -526,7 +561,7 @@ async def request_donor_password_reset(
 @router.post("/donor/password-reset/confirm", response_model=MessageResponse)
 async def confirm_donor_password_reset(
     data: PasswordResetConfirm,
-    session: AsyncSession = Depends(get_db)
+    session: AsyncSession = Depends(get_db, scope="function")
 ):
     """
     Confirm password reset with OTP.
@@ -544,20 +579,18 @@ async def confirm_donor_password_reset(
     try:
         # Find donor
         result = await session.execute(
-            select(DonorDetail).where(DonorDetail.email == data.email)
+            select(DonorDetail).where(func.lower(DonorDetail.email) == normalize_email(data.email))
         )
         donor = result.scalar_one_or_none()
-        
-        if not donor:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Donor not found",
-            )
 
-        if not await verify_otp(session, data.email, data.otp, PURPOSE_DONOR_RESET):
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,detail="Invalid or expired OTP",)
+        # One answer for "no such account" and "wrong or expired code", and the same work for both
+        # (verify_otp runs either way), so this endpoint cannot be used to discover registered emails.
+        otp_ok = await verify_otp(session, data.email, data.otp, PURPOSE_DONOR_RESET)
+        if donor is None or not otp_ok:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired OTP")
         # Hash new password
-        donor.password = hash_password(data.new_password)
+        donor.password = await hash_password_async(data.new_password)
+        await revoke_all_for_user(session, donor.id, "donor")
         
         logger.info(f"Password reset for donor: {donor.id}")
         
@@ -578,12 +611,13 @@ async def confirm_donor_password_reset(
 async def request_admin_password_reset(
     request: Request,
     data: PasswordResetRequest,
-    session: AsyncSession = Depends(get_db)
+    background_tasks: BackgroundTasks,
+    session: AsyncSession = Depends(get_db, scope="function")
 ):
     """Request password reset for an admin."""
     try:
         result = await session.execute(
-            select(AdminDetails).where(AdminDetails.email == data.email)
+            select(AdminDetails).where(func.lower(AdminDetails.email) == normalize_email(data.email))
         )
         admin = result.scalar_one_or_none()
         
@@ -592,8 +626,7 @@ async def request_admin_password_reset(
         else:
             otp = generate_otp()
             await store_otp(session, admin.email, otp, PURPOSE_ADMIN_RESET)
-            email_service = get_email_service()
-            await email_service.send_otp_email(admin.email, otp, admin.username)
+            background_tasks.add_task(_send_reset_email, admin.email, otp, admin.username)
             logger.info(f"Admin password reset requested for: {admin.id}")
 
         return MessageResponse(
@@ -610,26 +643,22 @@ async def request_admin_password_reset(
 @router.post("/admin/password-reset/confirm", response_model=MessageResponse)
 async def confirm_admin_password_reset(
     data: PasswordResetConfirm,
-    session: AsyncSession = Depends(get_db)
+    session: AsyncSession = Depends(get_db, scope="function")
 ):
     """Confirm password reset for admin."""
     try:
         result = await session.execute(
-            select(AdminDetails).where(AdminDetails.email == data.email)
+            select(AdminDetails).where(func.lower(AdminDetails.email) == normalize_email(data.email))
         )
         admin = result.scalar_one_or_none()
-        
-        if not admin:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Admin not found",
-            )
-        
-        # Verify OTP (simplified)
-        if not await verify_otp(session, data.email, data.otp, PURPOSE_ADMIN_RESET):
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,detail="Invalid or expired OTP",)
+
+        # Same single answer and same work as the donor flow (no account enumeration).
+        otp_ok = await verify_otp(session, data.email, data.otp, PURPOSE_ADMIN_RESET)
+        if admin is None or not otp_ok:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired OTP")
         # Hash new password
-        admin.password = hash_password(data.new_password)
+        admin.password = await hash_password_async(data.new_password)
+        await revoke_all_for_user(session, admin.id, "admin")
         
         logger.info(f"Password reset for admin: {admin.id}")
         

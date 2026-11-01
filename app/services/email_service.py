@@ -6,6 +6,7 @@ from email import encoders
 from typing import Optional, List
 from pathlib import Path
 import logging
+import asyncio
 from html import escape as _esc
 
 from app.config import Settings
@@ -35,6 +36,7 @@ class EmailService:
         html_body: str,
         text_body: Optional[str] = None,
         attachment_path: Optional[Path] = None,
+        bcc: Optional[List[str]] = None,
     ) -> bool:
         """
         Send an email asynchronously.
@@ -45,6 +47,7 @@ class EmailService:
             html_body: HTML content
             text_body: Plain text fallback
             attachment_path: Optional file to attach
+            bcc: Extra recipients that receive the message without appearing in any header
             
         Returns:
             True if sent successfully
@@ -66,9 +69,10 @@ class EmailService:
             if attachment_path and attachment_path.exists():
                 await self._attach_file(message, attachment_path)
 
-            # Send email
+            # Send email. Bcc recipients go in the SMTP envelope only, never in a header.
             await aiosmtplib.send(
                 message,
+                recipients=[to, *(bcc or [])],
                 hostname=self.settings.MAIL_SERVER,
                 port=self.settings.MAIL_PORT,
                 username=self.settings.MAIL_USERNAME,
@@ -83,19 +87,99 @@ class EmailService:
             logger.error(f"Failed to send email to {mask_email(to)}: {type(e).__name__}")
             return False
 
+    def _build_message(
+        self,
+        to: str,
+        subject: str,
+        html_body: str,
+        text_body: Optional[str] = None,
+        attachment_path: Optional[Path] = None,
+    ) -> MIMEMultipart:
+        """Build one MIME message. Shared by single and batched sends."""
+        message = MIMEMultipart("alternative")
+        message["From"] = self.settings.MAIL_FROM
+        message["To"] = to
+        message["Subject"] = subject
+        if text_body:
+            message.attach(MIMEText(text_body, "plain"))
+        message.attach(MIMEText(html_body, "html"))
+        if attachment_path and attachment_path.exists():
+            self._attach_file_sync(message, attachment_path)
+        return message
+
+    def _attach_file_sync(self, message: MIMEMultipart, file_path: Path) -> None:
+        with open(file_path, "rb") as f:
+            part = MIMEBase("application", "octet-stream")
+            part.set_payload(f.read())
+            encoders.encode_base64(part)
+            part.add_header("Content-Disposition", "attachment", filename=file_path.name)
+            message.attach(part)
+
+    async def send_many(self, messages: List[dict]) -> int:
+        """Send several messages over ONE SMTP connection.
+
+        Returns how many were sent. A failure on one message does not abort the rest (the old
+        per-message background task had the same behaviour, but opened a connection each time).
+        """
+        if not messages:
+            return 0
+
+        sent = 0
+        client = aiosmtplib.SMTP(
+            hostname=self.settings.MAIL_SERVER,
+            port=self.settings.MAIL_PORT,
+            start_tls=self.settings.MAIL_USE_TLS,
+        )
+        try:
+            await client.connect()
+            if self.settings.MAIL_USERNAME:
+                await client.login(self.settings.MAIL_USERNAME, self.settings.MAIL_PASSWORD)
+        except Exception as e:
+            logger.error(f"Batch email: SMTP connection failed: {type(e).__name__}")
+            return 0
+
+        try:
+            for index, item in enumerate(messages):
+                try:
+                    message = self._build_message(
+                        to=item["to"],
+                        subject=item["subject"],
+                        html_body=item["html_body"],
+                        text_body=item.get("text_body"),
+                        attachment_path=item.get("attachment_path"),
+                    )
+                    await client.send_message(
+                        message, recipients=[item["to"], *(item.get("bcc") or [])]
+                    )
+                    sent += 1
+                    if index + 1 < len(messages):
+                        await asyncio.sleep(0.2)
+                except Exception as e:
+                    logger.error(
+                        f"Batch email: failed for {mask_email(item.get('to', ''))}: "
+                        f"{type(e).__name__}"
+                    )
+        finally:
+            try:
+                await client.quit()
+            except Exception:
+                pass
+
+        logger.info(f"Batch email: sent {sent}/{len(messages)}")
+        return sent
+
     async def _attach_file(self, message: MIMEMultipart, file_path: Path) -> None:
         """Attach a file to the email."""
         with open(file_path, "rb") as f:
             part = MIMEBase("application", "octet-stream")
             part.set_payload(f.read())
             encoders.encode_base64(part)
-            part.add_header(
-                "Content-Disposition",
-                f"attachment; filename={file_path.name}",
-            )
+            # Let the email package quote/encode the name; interpolating it into the header by hand would let
+            # a space or a quote in a file name split or terminate the parameter.
+            part.add_header("Content-Disposition", "attachment", filename=file_path.name)
             message.attach(part)
 
-    async def send_blood_request_notification(
+    def build_blood_request_notification(
         self,
         donor_email: str,
         donor_name: str,
@@ -109,8 +193,8 @@ class EmailService:
         units_required: int,
         request_reason: str,
         patient_age: int,
-    ) -> bool:
-        """Send blood request notification to a donor."""
+    ) -> dict:
+        """Build one donor's notification message (for send_many)."""
         subject = "Urgent Blood Donation Request"
 
         # Escape all user-controlled values before HTML interpolation
@@ -173,7 +257,14 @@ class EmailService:
         </html>
         """
 
-        return await self.send_email(to=donor_email, subject=subject, html_body=html_body)
+        return {"to": donor_email, "subject": subject, "html_body": html_body}
+
+    async def send_blood_request_notification(self, **kwargs) -> bool:
+        """Send a single donor notification (kept for direct callers/tests)."""
+        message = self.build_blood_request_notification(**kwargs)
+        return await self.send_email(
+            to=message["to"], subject=message["subject"], html_body=message["html_body"]
+        )
 
     async def send_otp_email(self, email: str, otp: str, name: str) -> bool:
         """Send OTP verification email."""
@@ -233,7 +324,12 @@ class EmailService:
     async def notify_admins_new_request(
         self, admin_emails: List[str], request_details: dict
     ) -> None:
-        """Notify all admins about a new blood request."""
+        """
+        Tell the active admins about a new blood request with ONE email (BCC), not one per admin.
+
+        The public request form triggers this, so the cost of a submission must not scale with the
+        number of admins: one SMTP session per request, to at most ADMIN_NOTIFY_MAX_RECIPIENTS addresses.
+        """
         subject = "New Blood Request Submitted"
         request_details = {k: _esc(str(v)) for k, v in request_details.items()}
 
@@ -254,8 +350,24 @@ class EmailService:
         </html>
         """
 
-        for email in admin_emails:
-            await self.send_email(to=email, subject=subject, html_body=html_body)
+        cap = self.settings.ADMIN_NOTIFY_MAX_RECIPIENTS
+        recipients = list(dict.fromkeys(admin_emails))
+        if len(recipients) > cap:
+            logger.warning(
+                f"{len(recipients)} active admins but ADMIN_NOTIFY_MAX_RECIPIENTS={cap}: "
+                f"notifying the first {cap} only"
+            )
+            recipients = recipients[:cap]
+        if not recipients:
+            return
+
+        # To: the sending address itself, so the admins only ever appear in the (invisible) envelope.
+        await self.send_many([{
+            "to": self.settings.MAIL_FROM,
+            "subject": subject,
+            "html_body": html_body,
+            "bcc": recipients,
+        }])
 
     async def send_certificate(
         self,

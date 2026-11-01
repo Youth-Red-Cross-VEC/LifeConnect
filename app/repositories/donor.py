@@ -1,3 +1,4 @@
+from app.utils.emails import normalize_email
 from app.utils.search import LIKE_ESCAPE, escape_like
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, or_, func, update, delete
@@ -11,7 +12,10 @@ from app.models.donor import (
     AuthenticationDetailsDonor,
 )
 from typing import Optional, List
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
+
+from app.config import get_settings
+from app.utils.dates import utcnow
 
 
 class DonorRepository:
@@ -39,21 +43,30 @@ class DonorRepository:
         return result.scalar_one_or_none()
 
     async def get_by_email(self, email: str) -> Optional[DonorDetail]:
-        """Get donor by email."""
-        query = select(DonorDetail).where(DonorDetail.email == email)
+        """Get donor by email (case-insensitive)."""
+        query = select(DonorDetail).where(func.lower(DonorDetail.email) == normalize_email(email))
         result = await self.session.execute(query)
         return result.scalar_one_or_none()
 
     async def exists_by_email(self, email: str) -> bool:
-        """Check if donor with email exists."""
-        query = select(func.count()).where(DonorDetail.email == email)
+        """Check if donor with email exists (case-insensitive)."""
+        query = select(func.count()).where(func.lower(DonorDetail.email) == normalize_email(email))
         result = await self.session.execute(query)
         return result.scalar() > 0
 
     async def get_active_by_blood_group(
         self, blood_group: str
     ) -> List[DonorDetail]:
-        """Get all active donors with matching blood group."""
+        """Get donors of this blood group who may donate now.
+
+        A donor qualifies when the account is enabled (``active_status``), they are not in a
+        donation cooldown (``is_available`` / ``last_donated_date``), and they have no declared
+        disease. The disease filter is a medical decision and is deliberately not implemented.
+
+        TODO(medical): exclude donors with a ``disease_details`` row once the exclusion list is
+        agreed; today every registered donor has a (possibly empty) disease row.
+        """
+        cooldown_start = utcnow().date() - timedelta(days=get_settings().DONATION_COOLDOWN_DAYS)
         query = (
             select(DonorDetail)
             .options(
@@ -62,8 +75,14 @@ class DonorRepository:
             )
             .where(
                 and_(
+                    # Exact-match policy is intentional until medical staff approve a compatibility matrix.
                     DonorDetail.blood_group == blood_group,
                     DonorDetail.active_status == True,
+                    DonorDetail.is_available == True,
+                    or_(
+                        DonorDetail.last_donated_date.is_(None),
+                        DonorDetail.last_donated_date <= cooldown_start,
+                    ),
                 )
             )
         )
@@ -141,27 +160,27 @@ class DonorRepository:
         stmt = (
             update(DonorDetail)
             .where(DonorDetail.id == donor_id)
-            .values(last_login_date=datetime.utcnow())
+            .values(last_login_date=utcnow())
         )
         await self.session.execute(stmt)
 
     async def update_last_donated(
         self, donor_id: str, donation_date: datetime
     ) -> None:
-        """Update donor's last donated date and increment count."""
+        """Record a donation and put the donor into the donation cooldown."""
         stmt = (
             update(DonorDetail)
             .where(DonorDetail.id == donor_id)
             .values(
                 last_donated_date=donation_date,
                 number_of_times_donated=DonorDetail.number_of_times_donated + 1,
-                active_status=False,  # Deactivate after donation
+                is_available=False,  # Cooldown starts; the account itself stays enabled.
             )
         )
         await self.session.execute(stmt)
 
     async def set_active_status(self, donor_id: str, active: bool) -> None:
-        """Set donor active status."""
+        """Enable or disable a donor account (admin action)."""
         stmt = (
             update(DonorDetail)
             .where(DonorDetail.id == donor_id)
@@ -169,17 +188,31 @@ class DonorRepository:
         )
         await self.session.execute(stmt)
 
+    async def set_available(self, donor_id: str, available: bool) -> None:
+        """Set whether the donor is currently willing/able to donate."""
+        stmt = (
+            update(DonorDetail)
+            .where(DonorDetail.id == donor_id)
+            .values(is_available=available)
+        )
+        await self.session.execute(stmt)
+
     async def reactivate_eligible_donors(self, cutoff_date: date) -> int:
-        """Reactivate donors who haven't donated since cutoff date."""
+        """Lift the cooldown for donors whose last donation is old enough.
+
+        Only ``is_available`` is changed. Donors an admin disabled stay disabled.
+        """
         stmt = (
             update(DonorDetail)
             .where(
                 and_(
-                    DonorDetail.active_status == False,
+                    DonorDetail.is_available == False,
+                    DonorDetail.active_status == True,
+                    DonorDetail.last_donated_date.isnot(None),
                     DonorDetail.last_donated_date <= cutoff_date,
                 )
             )
-            .values(active_status=True)
+            .values(is_available=True)
         )
         result = await self.session.execute(stmt)
         return result.rowcount

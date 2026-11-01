@@ -3,6 +3,7 @@ import AsyncState from "../components/AsyncState";
 import { useApiData } from "../hooks/useApiData";
 import { api } from "../services/api";
 import { unwrapList } from "../services/unwrap";
+import { safeHttpUrl } from "../services/safeUrl.js";
 
 // The endpoint is paginated ({ items, total, ... }); 200 is its maximum page size.
 const loadBloodBanks = async () => {
@@ -324,8 +325,8 @@ export default function BloodBanks() {
                       <td>{hospital.ADDRESS}</td>
                       <td>{hospital["Contact Number"]}</td>
                       <td>
-                        {hospital.Website ? (
-                          <a href={hospital.Website} target="_blank" rel="noreferrer">
+                        {safeHttpUrl(hospital.Website) ? (
+                          <a href={safeHttpUrl(hospital.Website)} target="_blank" rel="noreferrer">
                             Visit Website
                           </a>
                         ) : (

@@ -1,4 +1,16 @@
 # LifeConnect Docker Configuration
+#
+# Exposure model
+#   - Only the frontend (nginx, port 80) is published. It serves the SPA and proxies /api/ to the API.
+#   - PostgreSQL and the API are reachable only on the compose network. To debug them from the host use
+#     the loopback-only override:  docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+#   - POSTGRES_PASSWORD has no default: compose refuses to start without it.
+#
+# Client IP behind nginx
+#   The API is the only service that sees the browser through a proxy. Uvicorn runs with --proxy-headers and
+#   trusts X-Forwarded-For from exactly one address, the nginx container, which is pinned below. Anything
+#   else that connects (and any X-Forwarded-For it sends) is ignored, so rate limits key on the real client.
+#   Never set FORWARDED_ALLOW_IPS to "*". If you change the subnet or the frontend address, change both.
 
 services:
   # PostgreSQL Database
@@ -7,10 +19,8 @@ services:
     container_name: lifeconnect-db
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-lifeconnect}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env (see .env.example)}
       POSTGRES_DB: ${POSTGRES_DB:-lifeconnect}
-    ports:
-      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -25,23 +35,23 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: lifeconnect-api
-    ports:
-      - "8000:8000"
     env_file:
       - .env
     environment:
       # Override DATABASE_URL to use Docker network hostname
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-lifeconnect}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-lifeconnect}
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-lifeconnect}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env (see .env.example)}@postgres:5432/${POSTGRES_DB:-lifeconnect}
       # Allow requests from the frontend container and local dev
       - ALLOWED_ORIGINS=["http://localhost:3000","http://localhost:5173","http://localhost:80","http://localhost","http://frontend:80"]
       # Web workers never run scheduled jobs; the `scheduler` service below does.
       - SCHEDULER_ENABLED=false
+      # The nginx container (pinned address below) is the only peer whose X-Forwarded-For is believed.
+      - FORWARDED_ALLOW_IPS=${FORWARDED_ALLOW_IPS:-172.28.0.10}
     volumes:
       - ./app/static:/code/app/static
     depends_on:
       postgres:
         condition: service_healthy
-    command: sh -c "python -m alembic upgrade head && python -m uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    command: sh -c "python -m alembic upgrade head && python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers"
 
   # Dedicated scheduler: run exactly ONE of these (expiry, donor reactivation, age increments)
   scheduler:
@@ -52,7 +62,7 @@ services:
     env_file:
       - .env
     environment:
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-lifeconnect}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-lifeconnect}
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-lifeconnect}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env (see .env.example)}@postgres:5432/${POSTGRES_DB:-lifeconnect}
       - SCHEDULER_ENABLED=true
     depends_on:
       postgres:
@@ -78,8 +88,18 @@ services:
     container_name: lifeconnect-frontend
     ports:
       - "80:80"
+    networks:
+      default:
+        # Pinned so the API can trust exactly this address as the reverse proxy (see FORWARDED_ALLOW_IPS).
+        ipv4_address: 172.28.0.10
     depends_on:
       - api
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.28.0.0/24
 
 volumes:
   postgres_data:

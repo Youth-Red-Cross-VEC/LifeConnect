@@ -5,6 +5,7 @@ from sqlalchemy import DateTime, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
+from app.utils.dates import utcnow
 
 
 class AdminAuditLog(Base):
@@ -19,5 +20,5 @@ class AdminAuditLog(Base):
     entity_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     detail: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, default=datetime.utcnow, index=True
+        DateTime, nullable=False, default=utcnow, index=True
     )

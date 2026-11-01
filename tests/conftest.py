@@ -2,6 +2,15 @@
 Pytest configuration and fixtures.
 """
 
+import os
+
+# Settings are validated when app.config is first imported, and a developer's local .env can hold anything
+# (including a real secret, or a placeholder after `cp .env.example .env`). Pin the security-relevant values
+# here, before any app import, so the suite neither depends on nor reads a local secret.
+os.environ["SECRET_KEY"] = "test-only-" + "0123456789abcdef" * 4
+os.environ["APP_ENV"] = "development"
+os.environ["RECAPTCHA_ENFORCED"] = "false"
+
 import pytest
 from httpx import AsyncClient, ASGITransport
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker

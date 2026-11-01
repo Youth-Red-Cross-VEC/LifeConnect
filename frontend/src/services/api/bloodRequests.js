@@ -13,6 +13,11 @@ export const bloodRequestApi = {
       method: "GET",
     }, "/admin/login"),
 
+  getBloodRequest: (requestId) =>
+    request(`/api/v1/blood-requests/${encodeURIComponent(requestId)}`, {
+      method: "GET",
+    }, "/admin/login"),
+
   getPendingRequests: () =>
     request("/api/v1/blood-requests/pending", {
       method: "GET",

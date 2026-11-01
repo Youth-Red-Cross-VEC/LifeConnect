@@ -67,3 +67,18 @@ def test_upgrade_head_creates_all_tables_and_no_drift(tmp_path, kind):
 
     check = _run_alembic(async_url, "check")
     assert check.returncode == 0, check.stdout + check.stderr
+
+
+@pytest.mark.parametrize("kind", ["sqlite", "postgres"])
+def test_latest_migration_can_be_reversed_and_reapplied(tmp_path, kind):
+    chosen = dict(_database_urls(tmp_path))
+    if kind not in chosen:
+        pytest.skip("set MIGRATION_TEST_DATABASE_URL to an EMPTY throwaway Postgres to test it")
+    url = chosen[kind]
+
+    for args in (("upgrade", "head"), ("downgrade", "-1"), ("upgrade", "head")):
+        done = _run_alembic(url, *args)
+        assert done.returncode == 0, f"alembic {' '.join(args)} failed: {done.stderr}"
+
+    check = _run_alembic(url, "check")
+    assert check.returncode == 0, check.stdout + check.stderr

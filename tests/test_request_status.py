@@ -23,6 +23,7 @@ def test_every_status_has_a_row_in_the_table():
     ("Pending", S.DECLINED, True),
     ("Pending", S.CLOSED, False),
     ("Approved", S.CLOSED, True),
+    ("Approved", S.EXPIRED, True),
     ("Approved", S.DECLINED, False),
     ("Expired", S.CLOSED, True),
     ("Declined", S.APPROVED, False),
@@ -34,7 +35,7 @@ def test_can_transition(src, dst, ok):
 
 
 def test_expiry_sources():
-    assert set(sources_for(S.EXPIRED)) == {S.PENDING, S.NOT_APPROVED}
+    assert set(sources_for(S.EXPIRED)) == {S.PENDING, S.APPROVED, S.NOT_APPROVED}
 
 
 @pytest.mark.asyncio

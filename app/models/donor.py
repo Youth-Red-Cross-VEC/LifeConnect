@@ -1,4 +1,4 @@
-from sqlalchemy import String, Boolean, Integer, DateTime, Date, Time, ForeignKey
+from sqlalchemy import String, Boolean, Integer, DateTime, Date, Time, ForeignKey, Index, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base, TimestampMixin
 from datetime import datetime, date, time
@@ -86,6 +86,11 @@ class DonorDetail(Base, TimestampMixin):
     active_status: Mapped[bool] = mapped_column(
         Boolean, default=True, nullable=False, index=True
     )
+    # Donation-specific availability. An admin disabling the account sets active_status; the
+    # donation cooldown sets is_available. Notifying donors must respect both.
+    is_available: Mapped[bool] = mapped_column(
+        Boolean, default=True, nullable=False, index=True
+    )
     authentication_id: Mapped[str] = mapped_column(
         String(36), unique=True, nullable=False
     )
@@ -119,6 +124,16 @@ class DonorDetail(Base, TimestampMixin):
     disease: Mapped["DiseaseDetails"] = relationship(
         back_populates="donor", lazy="joined"
     )
+
+    @property
+    def city(self) -> Optional[str]:
+        """City from the joined address, so list responses can show it without lazy loads."""
+
+        return self.address.city if self.address is not None else None
+
+
+# One account per address whatever the letter case (the column's own unique constraint is case-sensitive).
+Index("uq_donor_details_email_lower", func.lower(DonorDetail.email), unique=True)
 
 
 class AuthenticationDetailsDonor(Base):

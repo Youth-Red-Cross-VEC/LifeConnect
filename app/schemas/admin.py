@@ -3,12 +3,13 @@ from app.core.request_status import AdminStatus
 from typing import Optional
 from datetime import datetime, date
 from app.schemas.common import BaseSchema
+from app.schemas.passwords import check_new_password, check_password_length
 
 
 class AdminCreate(BaseModel):
     """Schema for admin registration."""
 
-    email: EmailStr
+    email: EmailStr = Field(..., max_length=100)
     password: str = Field(..., min_length=8, max_length=100)
     username: str = Field(..., min_length=2, max_length=45)
     vec_registration_number: str = Field(..., max_length=36)
@@ -20,18 +21,12 @@ class AdminCreate(BaseModel):
     @field_validator("password")
     @classmethod
     def validate_password(cls, v: str) -> str:
-        if len(v) < 8:
-            raise ValueError("Password must be at least 8 characters")
-        if not any(c.isupper() for c in v):
-            raise ValueError("Password must contain at least one uppercase letter")
-        if not any(c.isdigit() for c in v):
-            raise ValueError("Password must contain at least one digit")
-        return v
+        return check_new_password(v)
 
 
 class AdminInviteRequest(BaseModel):
     """Schema for requesting an admin invite OTP."""
-    email: EmailStr = Field(..., description="Email address of the person to invite as admin")
+    email: EmailStr = Field(..., max_length=100, description="Email address of the person to invite as admin")
 
 
 class AdminUpdate(BaseModel):
@@ -43,15 +38,13 @@ class AdminUpdate(BaseModel):
     active_status: Optional[AdminStatus] = None
 
 
-class AdminResponse(BaseSchema):
-    """Schema for admin response."""
+class AdminSummaryResponse(BaseSchema):
+    """What one admin may see of another: no date of birth, no phone number."""
 
     id: str
     email: str
     username: str
     vec_registration_number: str
-    date_of_birth: date
-    mobile_number: str
     department: Optional[str]
     active_status: str
     last_login_date: Optional[datetime]
@@ -60,11 +53,23 @@ class AdminResponse(BaseSchema):
     created_at: datetime
 
 
+class AdminResponse(AdminSummaryResponse):
+    """An admin's own full record (/admins/me/profile, registration, and their own row elsewhere)."""
+
+    date_of_birth: date
+    mobile_number: str
+
+
 class AdminLoginRequest(BaseModel):
     """Schema for admin login."""
 
-    email: EmailStr
+    email: EmailStr = Field(..., max_length=100)
     password: str
+
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, v: str) -> str:
+        return check_password_length(v)
 
 
 class AdminLoginResponse(BaseModel):

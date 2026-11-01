@@ -25,15 +25,21 @@ async def test_scheduler_not_started_when_disabled():
 
 
 @pytest.mark.asyncio
+async def test_scheduler_not_started_when_this_process_opts_out():
+    settings = Settings(**BASE, SCHEDULER_ENABLED=True, RUN_SCHEDULER=False)
+    assert start_scheduler_if_enabled(settings, object()) is None
+
+
+@pytest.mark.asyncio
 async def test_scheduler_started_when_enabled():
     from app.core import scheduler as sched_mod
 
     started = start_scheduler_if_enabled(Settings(**BASE, SCHEDULER_ENABLED=True), object())
     try:
         assert started is not None
-        assert {"expire_blood_requests", "activate_donor_status", "increment_donor_ages"} <= set(
-            started.get_jobs()
-        )
+        jobs = set(started.get_jobs())
+        assert {"expire_blood_requests", "activate_donor_status"} <= jobs
+        assert "increment_donor_ages" not in jobs
     finally:
         started.shutdown()
         sched_mod.scheduler = None

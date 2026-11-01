@@ -23,14 +23,16 @@ class AdminStatus(str, Enum):
 #   approve  Pending            -> Approved
 #   decline  Pending            -> Declined
 #   close    Approved, Expired  -> Closed
-#   expire   Pending, Not_Approved -> Expired   (daily job)
+#   expire   Pending, Approved, Not_Approved -> Expired   (daily job)
 # Declined and Closed are terminal. Ongoing is never assigned by any code path.
 TRANSITIONS: dict[BloodRequestStatus, frozenset[BloodRequestStatus]] = {
     BloodRequestStatus.PENDING: frozenset({
         BloodRequestStatus.APPROVED, BloodRequestStatus.DECLINED, BloodRequestStatus.EXPIRED,
     }),
     BloodRequestStatus.NOT_APPROVED: frozenset({BloodRequestStatus.EXPIRED}),
-    BloodRequestStatus.APPROVED: frozenset({BloodRequestStatus.CLOSED}),
+    BloodRequestStatus.APPROVED: frozenset({
+        BloodRequestStatus.CLOSED, BloodRequestStatus.EXPIRED,
+    }),
     BloodRequestStatus.EXPIRED: frozenset({BloodRequestStatus.CLOSED}),
     BloodRequestStatus.DECLINED: frozenset(),
     BloodRequestStatus.ONGOING: frozenset(),

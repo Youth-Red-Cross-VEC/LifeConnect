@@ -12,18 +12,17 @@ from app.core.request_status import BloodRequestStatus
 from app.core.database import get_db
 from app.api.auth.deps import get_current_admin
 from app.repositories.blood_request import BloodRequestRepository
-from app.repositories.donor import DonorRepository
-from app.repositories.hospital import HospitalRepository
 from app.models.donor import DonorDetail
 from app.models.blood_request import BloodRequestDetails
 from app.models.hospital import HospitalDetails
+from app.utils.dates import utcnow
 
 router = APIRouter(prefix="/analytics", tags=["Analytics"])
 
 
 @router.get("/dashboard")
 async def get_dashboard_stats(
-    session: AsyncSession = Depends(get_db),
+    session: AsyncSession = Depends(get_db, scope="function"),
     current_admin = Depends(get_current_admin),
 ):
     """
@@ -74,7 +73,7 @@ async def get_dashboard_stats(
 
 @router.get("/donors/by-blood-group")
 async def get_donors_by_blood_group(
-    session: AsyncSession = Depends(get_db),
+    session: AsyncSession = Depends(get_db, scope="function"),
     current_admin = Depends(get_current_admin),
 ):
     """Get donor count by blood group."""
@@ -99,7 +98,7 @@ async def get_donors_by_blood_group(
 
 @router.get("/donors/by-city")
 async def get_donors_by_city(
-    session: AsyncSession = Depends(get_db),
+    session: AsyncSession = Depends(get_db, scope="function"),
     current_admin = Depends(get_current_admin),
 ):
     """Get donor count by city."""
@@ -122,15 +121,15 @@ async def get_donors_by_city(
 
 @router.get("/requests/monthly")
 async def get_monthly_request_stats(
-    session: AsyncSession = Depends(get_db),
+    session: AsyncSession = Depends(get_db, scope="function"),
     current_admin = Depends(get_current_admin),
 ):
     """Get request counts by month for the last 12 months."""
     from sqlalchemy import extract
-    from datetime import datetime, timedelta, timezone
+    from datetime import timedelta
 
     # Get requests from last 12 months
-    twelve_months_ago = datetime.now(timezone.utc) - timedelta(days=365)
+    twelve_months_ago = utcnow() - timedelta(days=365)
 
     query = (
         select(

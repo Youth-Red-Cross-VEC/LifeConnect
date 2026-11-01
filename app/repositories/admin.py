@@ -1,9 +1,12 @@
 from app.core.request_status import AdminStatus
+from app.utils.emails import normalize_email
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, func, update
+from sqlalchemy import select, func, update
 from app.models.admin import AdminDetails, AuthenticationDetailsAdmin
 from typing import Optional, List
-from datetime import datetime, date
+from datetime import date
+
+from app.utils.dates import utcnow
 
 
 class AdminRepository:
@@ -21,14 +24,14 @@ class AdminRepository:
         return result.scalar_one_or_none()
 
     async def get_by_email(self, email: str) -> Optional[AdminDetails]:
-        """Get admin by email."""
-        query = select(AdminDetails).where(AdminDetails.email == email)
+        """Get admin by email (case-insensitive)."""
+        query = select(AdminDetails).where(func.lower(AdminDetails.email) == normalize_email(email))
         result = await self.session.execute(query)
         return result.scalar_one_or_none()
 
     async def exists_by_email(self, email: str) -> bool:
-        """Check if admin with email exists."""
-        query = select(func.count()).where(AdminDetails.email == email)
+        """Check if admin with email exists (case-insensitive)."""
+        query = select(func.count()).where(func.lower(AdminDetails.email) == normalize_email(email))
         result = await self.session.execute(query)
         return result.scalar() > 0
 
@@ -39,6 +42,15 @@ class AdminRepository:
         )
         result = await self.session.execute(query)
         return result.scalar() > 0
+
+    async def count_active(self, exclude_id: Optional[str] = None) -> int:
+        """Number of active admins, optionally not counting one of them."""
+        query = select(func.count()).select_from(AdminDetails).where(
+            func.lower(AdminDetails.active_status) == AdminStatus.ACTIVE.value.lower()
+        )
+        if exclude_id is not None:
+            query = query.where(AdminDetails.id != exclude_id)
+        return (await self.session.execute(query)).scalar() or 0
 
     async def get_all_active(self) -> List[AdminDetails]:
         """Get all active admins."""
@@ -89,7 +101,7 @@ class AdminRepository:
         stmt = (
             update(AdminDetails)
             .where(AdminDetails.id == admin_id)
-            .values(last_login_date=datetime.utcnow())
+            .values(last_login_date=utcnow())
         )
         await self.session.execute(stmt)
 

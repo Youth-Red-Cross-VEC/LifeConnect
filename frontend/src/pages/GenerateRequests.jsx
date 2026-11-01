@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { useGoogleReCaptcha } from "react-google-recaptcha-v3";
 import { api } from "../services/api";
 
 export default function GenerateRequests() {
@@ -23,6 +24,7 @@ export default function GenerateRequests() {
   const [suggestions, setSuggestions] = useState([]);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const { executeRecaptcha } = useGoogleReCaptcha();
   const navigate = useNavigate();
   const suggestionsRef = useRef(null);
 
@@ -74,11 +76,16 @@ export default function GenerateRequests() {
     setError("");
     setIsLoading(true);
     try {
-      const res = await api.generateBloodRequest(form);
-      if (res && res.success === true) {
+      // The API answers 201 with the created request (an object with an id), not { success: true }.
+      // The token is only checked when the server runs with RECAPTCHA_ENFORCED=true.
+      const recaptcha_token = executeRecaptcha ? await executeRecaptcha("blood_request") : undefined;
+      const res = await api.generateBloodRequest({ ...form, recaptcha_token });
+      if (res && res.id) {
         navigate("/blood-request/confirmation");
       } else {
-        setError(res?.message || "Failed to submit request. Please try again.");
+        // 400/409 carry { detail }; the rate limiter's 429 carries { error }.
+        const detail = [res?.detail, res?.error].find((v) => typeof v === "string");
+        setError(detail || res?.message || "Failed to submit request. Please try again.");
       }
     } catch {
       setError("Server error. Try again.");

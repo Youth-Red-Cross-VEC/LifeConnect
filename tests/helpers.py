@@ -71,3 +71,36 @@ async def insert_request(
     session.add(request)
     await session.commit()
     return request
+
+
+async def insert_admin(
+    session, n: int = 1, password: str = "Secret123", active: bool = True, email: str | None = None,
+):
+    """Insert an admin with a known password (n >= 1; ADM-test123 is the admin_client fixture's admin)."""
+    from app.models.admin import AdminDetails
+
+    admin = AdminDetails(
+        id=f"ADM-{n}", email=email or f"admin{n}@example.com", password=_hashed(password),
+        username=f"Admin {n}", authentication_id=f"AUTHADM-{n}", vec_registration_number=f"VEC-H{n:04d}",
+        date_of_birth=date(1990, 1, 1), mobile_number=f"98100{n:05d}", department="IT",
+        active_status="Active" if active else "Inactive",
+        approved_donation_count=0, closed_requests_count=0,
+    )
+    session.add(admin)
+    await session.commit()
+    return admin
+
+
+def registration_payload(email: str, password: str = "Secret123") -> dict:
+    """A valid POST /donors/register body."""
+    return {
+        "name": "Test Registrant", "email": email, "password": password, "blood_group": "O+",
+        "personal_details": {
+            "first_name": "Test", "last_name": "Registrant", "age": 30, "date_of_birth": "1994-01-01",
+            "contact_number": "9000000001",
+        },
+        "address_details": {
+            "address": "1 Test Street", "pincode": "600001", "country": "India", "state": "TN", "city": "Chennai",
+        },
+        "disease_details": {"name": "None"},
+    }

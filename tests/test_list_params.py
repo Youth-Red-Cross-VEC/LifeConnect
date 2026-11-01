@@ -7,6 +7,11 @@ from app.api.auth.utils import create_access_token
 from tests.helpers import insert_donor, insert_request
 
 BASE = "/api/v1/blood-requests"
+PAGINATED = {"pending", "ongoing"}
+
+
+def _items(payload, path: str) -> list:
+    return payload["items"] if path in PAGINATED else payload
 
 
 @pytest.mark.asyncio
@@ -17,20 +22,37 @@ BASE = "/api/v1/blood-requests"
 async def test_request_lists_accept_limit_and_offset(admin_client: AsyncClient, test_session, path, status):
     for n in (1, 2, 3):
         await insert_request(test_session, n, status=status)
-    everything = (await admin_client.get(f"{BASE}/{path}")).json()
+    everything = _items((await admin_client.get(f"{BASE}/{path}")).json(), path)
     assert len(everything) == 3
-    first_two = (await admin_client.get(f"{BASE}/{path}", params={"limit": 2})).json()
+    first_two = _items((await admin_client.get(f"{BASE}/{path}", params={"limit": 2})).json(), path)
     assert len(first_two) == 2
-    rest = (await admin_client.get(f"{BASE}/{path}", params={"limit": 2, "offset": 2})).json()
+    rest = _items((await admin_client.get(f"{BASE}/{path}", params={"limit": 2, "offset": 2})).json(), path)
     assert len(rest) == 1
     assert {r["id"] for r in first_two} | {r["id"] for r in rest} == {r["id"] for r in everything}
 
 
 @pytest.mark.asyncio
-async def test_pending_list_is_no_longer_silently_capped_at_50(admin_client: AsyncClient, test_session):
+@pytest.mark.parametrize("path", ["pending", "ongoing"])
+async def test_paginated_request_lists_expose_the_total(admin_client: AsyncClient, test_session, path):
+    for n in (1, 2, 3):
+        await insert_request(test_session, n, status="Pending" if path == "pending" else "Approved")
+    response = await admin_client.get(f"{BASE}/{path}", params={"page": 2, "page_size": 1})
+    assert response.status_code == 200
+    assert response.headers["X-Total-Count"] == "3"
+    body = response.json()
+    assert (body["total"], body["page"], body["page_size"]) == (3, 2, 1)
+    assert len(body["items"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_pending_list_reports_the_full_total_beyond_one_page(admin_client: AsyncClient, test_session):
     for n in range(1, 56):
         await insert_request(test_session, n, status="Pending")
-    assert len((await admin_client.get(f"{BASE}/pending")).json()) == 55
+    default_page = (await admin_client.get(f"{BASE}/pending")).json()
+    assert default_page["total"] == 55
+    assert len(default_page["items"]) == 20
+    full_page = (await admin_client.get(f"{BASE}/pending", params={"page_size": 100})).json()
+    assert len(full_page["items"]) == 55
 
 
 @pytest.mark.asyncio
@@ -57,11 +79,11 @@ async def test_query_lists_accept_limit_and_offset(admin_client: AsyncClient, cl
 async def test_my_queries_is_bounded(client: AsyncClient, test_session):
     await insert_donor(test_session)
     token = create_access_token({"sub": "DON-1", "user_type": "donor", "email": "donor1@example.com"})
-    for n in range(3):
+    headers = {"Authorization": f"Bearer {token}"}
+    for n in range(3):  # filed while signed in, so the donor owns them
         await client.post("/api/v1/queries/", json={
             "user_name": "D", "user_email": "donor1@example.com", "user_query": f"My question number {n}",
-        })
-    headers = {"Authorization": f"Bearer {token}"}
+        }, headers=headers)
     assert len((await client.get("/api/v1/queries/my-queries", headers=headers)).json()) == 3
     page = await client.get("/api/v1/queries/my-queries", params={"limit": 2}, headers=headers)
     assert len(page.json()) == 2

@@ -4,10 +4,30 @@ Security Headers Middleware.
 Adds security headers to all HTTP responses to protect against common attacks.
 """
 
+import logging
+
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from starlette.responses import Response
+from starlette.responses import JSONResponse, Response
 from typing import Callable
+
+logger = logging.getLogger(__name__)
+
+
+class CatchAllMiddleware(BaseHTTPMiddleware):
+    """Turn an unhandled exception into a plain 500 without leaking details.
+
+    This middleware is installed inside CORSMiddleware, so the browser still receives the CORS
+    headers on the error response; Starlette's built-in ServerErrorMiddleware sits outside CORS
+    and its responses have no CORS headers, which the frontend reports as an opaque network error.
+    """
+
+    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        try:
+            return await call_next(request)
+        except Exception:
+            logger.error("Unhandled exception", exc_info=True)
+            return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):

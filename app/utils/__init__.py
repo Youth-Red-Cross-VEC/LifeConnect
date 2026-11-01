@@ -1,5 +1,6 @@
 # Utils package
 
+from app.utils.dates import age_on, utcnow
 from app.utils.id_generator import (
     generate_uuid,
     generate_prefixed_id,
@@ -17,6 +18,8 @@ from app.utils.id_generator import (
 )
 
 __all__ = [
+    "utcnow",
+    "age_on",
     "generate_uuid",
     "generate_prefixed_id",
     "generate_donor_id",

@@ -1,0 +1,52 @@
+# Build context for the API image (docker build . / docker-compose "api" and "scheduler" services).
+#
+# The context is sent to the Docker daemon and may be copied into image layers, so anything listed here is
+# kept out of both. The Dockerfile COPYs only app/, alembic.ini and migrations/; everything below is either
+# a secret, personal data, or simply not needed to run the API. The frontend has its own context
+# (frontend/.dockerignore). tests/test_docker_context.py checks that this file never removes something the
+# Dockerfile needs, and never lets a secret through.
+
+# Version control, CI, editors, assistants
+.git
+.github
+.gitignore
+.vscode
+.idea
+.claude
+.remember
+
+# Secrets and local configuration (including .env.example: the image reads its settings from the environment)
+.env
+.env.*
+**/.env
+**/.env.*
+
+# Python environments and caches
+venv
+.venv
+**/__pycache__
+**/*.pyc
+.pytest_cache
+.mypy_cache
+.ruff_cache
+
+# Node: the frontend is built from its own context
+frontend
+**/node_modules
+
+# Database dumps and seed data: real personal data lives in dumps, and the seed has a published admin password
+**/*.sql
+**/*.dump
+**/*.bak
+
+# Generated certificates carry donor names; they are runtime data, never image content
+app/static/images/certificates
+
+# Not needed at runtime
+tests
+docs
+scripts
+graphify-out
+**/*.pdf
+*.md
+FIX_LOG.md

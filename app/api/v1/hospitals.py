@@ -3,6 +3,7 @@ Hospital API Routes.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
 
@@ -27,7 +28,7 @@ router = APIRouter(prefix="/hospitals", tags=["Hospitals"])
 @router.post("/", response_model=HospitalResponse, status_code=status.HTTP_201_CREATED)
 async def create_hospital(
     data: HospitalCreate,
-    session: AsyncSession = Depends(get_db),
+    session: AsyncSession = Depends(get_db, scope="function"),
     current_admin = Depends(get_current_admin),
 ):
     """Create a new hospital (admin only)."""
@@ -52,7 +53,13 @@ async def create_hospital(
         landmark=data.landmark,
     )
 
-    await repo.create(hospital)
+    try:
+        await repo.create(hospital)
+    except IntegrityError:
+        raise duplicate_exception(
+            "Hospital", "name, branch and pincode",
+            f"{data.hospital_name}, {data.branch or '-'}, {data.pincode}",
+        ) from None
     record_admin_action(session, current_admin.id, "hospital.create", "hospital", hospital.id)
     return HospitalResponse.model_validate(hospital)
 
@@ -63,7 +70,7 @@ async def list_hospitals(
     page_size: int = Query(default=20, ge=1, le=100),
     city: Optional[str] = Query(default=None),
     search: Optional[str] = Query(default=None),
-    session: AsyncSession = Depends(get_db),
+    session: AsyncSession = Depends(get_db, scope="function"),
 ):
     """List all hospitals with pagination."""
     repo = HospitalRepository(session)
@@ -90,7 +97,7 @@ async def list_blood_banks(
     page_size: int = Query(default=50, ge=1, le=200),
     city: Optional[str] = Query(default=None),
     search: Optional[str] = Query(default=None),
-    session: AsyncSession = Depends(get_db),
+    session: AsyncSession = Depends(get_db, scope="function"),
 ):
     """List hospitals as blood banks (public endpoint for blood bank lookup)."""
     repo = HospitalRepository(session)
@@ -115,7 +122,7 @@ async def list_blood_banks(
 async def hospital_autofill(
     q: str = Query(..., min_length=2, description="Search query"),
     limit: int = Query(default=10, le=20),
-    session: AsyncSession = Depends(get_db),
+    session: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Get hospital suggestions for autofill."""
     repo = HospitalRepository(session)
@@ -133,7 +140,7 @@ async def hospital_autofill(
 
 
 @router.get("/cities", response_model=List[str])
-async def get_cities(session: AsyncSession = Depends(get_db)):
+async def get_cities(session: AsyncSession = Depends(get_db, scope="function")):
     """Get list of cities with hospitals."""
     repo = HospitalRepository(session)
     return await repo.get_cities()
@@ -142,7 +149,7 @@ async def get_cities(session: AsyncSession = Depends(get_db)):
 @router.get("/{hospital_id}", response_model=HospitalResponse)
 async def get_hospital(
     hospital_id: str,
-    session: AsyncSession = Depends(get_db),
+    session: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Get hospital details by ID."""
     repo = HospitalRepository(session)
@@ -158,7 +165,7 @@ async def get_hospital(
 async def update_hospital(
     hospital_id: str,
     data: HospitalUpdate,
-    session: AsyncSession = Depends(get_db),
+    session: AsyncSession = Depends(get_db, scope="function"),
     current_admin = Depends(get_current_admin),
 ):
     """Update hospital details (admin only)."""
@@ -181,7 +188,13 @@ async def update_hospital(
     for field, value in update_data.items():
         setattr(hospital, field, value)
 
-    await repo.update(hospital)
+    try:
+        await repo.update(hospital)
+    except IntegrityError:
+        raise duplicate_exception(
+            "Hospital", "name, branch and pincode",
+            f"{hospital.hospital_name}, {hospital.branch or '-'}, {hospital.pincode}",
+        ) from None
     record_admin_action(
         session, current_admin.id, "hospital.update", "hospital", hospital_id,
         detail="fields=" + ",".join(sorted(update_data)),
@@ -192,13 +205,26 @@ async def update_hospital(
 @router.delete("/{hospital_id}", response_model=MessageResponse)
 async def delete_hospital(
     hospital_id: str,
-    session: AsyncSession = Depends(get_db),
+    session: AsyncSession = Depends(get_db, scope="function"),
     current_admin = Depends(get_current_admin),
 ):
     """Delete a hospital (admin only)."""
     repo = HospitalRepository(session)
 
-    deleted = await repo.delete(hospital_id)
+    if await repo.count_requests(hospital_id):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This hospital is referenced by blood requests and cannot be deleted",
+        )
+
+    try:
+        deleted = await repo.delete(hospital_id)
+    except IntegrityError:
+        # A request may have been added after count_requests; the FK is the final guard.
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This hospital is referenced by blood requests and cannot be deleted",
+        ) from None
     if not deleted:
         raise not_found_exception("Hospital", hospital_id)
 

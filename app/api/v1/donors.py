@@ -6,11 +6,12 @@ Protected endpoints require authentication (handled by partner's auth module).
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import List, Optional
-from datetime import date
+from typing import Optional
 
 from app.core.database import get_db
+from app.repositories.admin import AdminRepository
 from app.repositories.donor import DonorRepository
 from app.schemas.donor import (
     DonorCreate,
@@ -35,7 +36,10 @@ from app.utils import (
     generate_auth_id,
 )
 from app.core.exceptions import duplicate_exception, not_found_exception
+from app.utils.emails import normalize_email
+from app.utils.dates import age_on, utcnow
 from app.services.audit_service import record_admin_action
+from app.services.refresh_session_service import revoke_all_for_user
 from app.api.auth.deps import get_current_donor, get_current_admin, get_current_donor_or_admin
 
 router = APIRouter(prefix="/donors", tags=["Donors"])
@@ -44,7 +48,7 @@ router = APIRouter(prefix="/donors", tags=["Donors"])
 @router.post("/register", response_model=DonorResponse, status_code=status.HTTP_201_CREATED)
 async def register_donor(
     data: DonorCreate,
-    session: AsyncSession = Depends(get_db),
+    session: AsyncSession = Depends(get_db, scope="function"),
 ):
     """
     Register a new blood donor.
@@ -54,20 +58,31 @@ async def register_donor(
     """
     repo = DonorRepository(session)
 
-    # Check if email already exists
-    if await repo.exists_by_email(data.email):
+    # One identity per address, whatever the letter case, and never an address an admin already uses.
+    # Both refusals read the same, so the answer does not reveal which kind of account holds the address.
+    email = normalize_email(data.email)
+    if await repo.exists_by_email(email) or await AdminRepository(session).exists_by_email(email):
         raise duplicate_exception("Donor", "email", data.email)
 
+    # Age is derived from the date of birth; a client-supplied age is never trusted (it goes stale
+    # within a year and can be edited to bypass the 18-65 donation window).
+    age = age_on(data.personal_details.date_of_birth)
+    if age is None or not (18 <= age <= 65):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Donors must be between 18 and 65 years old (checked against date_of_birth)",
+        )
+
     # Hash password using bcrypt via passlib (canonical implementation)
-    from app.api.auth.utils import hash_password
-    hashed_password = hash_password(data.password)
+    from app.api.auth.utils import hash_password_async
+    hashed_password = await hash_password_async(data.password)
 
     # Create related entities
     personal_details = PersonalDetails(
         id=generate_personal_details_id(),
         first_name=data.personal_details.first_name,
         last_name=data.personal_details.last_name,
-        age=data.personal_details.age,
+        age=age,
         date_of_birth=data.personal_details.date_of_birth,
         contact_number=data.personal_details.contact_number,
         secondary_contact_number=data.personal_details.secondary_contact_number,
@@ -92,17 +107,18 @@ async def register_donor(
     terms = TermsAndConditions(
         id=generate_terms_id(),
         version="1.0",
-        effective_date=date.today(),
+        effective_date=utcnow().date(),
     )
 
     # Create donor
     donor = DonorDetail(
         id=generate_donor_id(),
         name=data.name,
-        email=data.email,
+        email=email,
         password=hashed_password,
         blood_group=data.blood_group,
         active_status=True,
+        is_available=True,
         authentication_id=generate_auth_id(),
         number_of_times_donated=0,
         personal_details_id=personal_details.id,
@@ -111,7 +127,11 @@ async def register_donor(
         terms_and_conditions_id=terms.id,
     )
 
-    await repo.create(donor, personal_details, address_details, disease_details, terms)
+    try:
+        await repo.create(donor, personal_details, address_details, disease_details, terms)
+    except IntegrityError:
+        # Lost a race with a concurrent registration of the same address: the unique index caught it.
+        raise duplicate_exception("Donor", "email", data.email) from None
 
     return DonorResponse.model_validate(donor)
 
@@ -124,7 +144,7 @@ async def list_donors(
     active_only: bool = Query(default=False),
     search: Optional[str] = Query(default=None, description="Match on donor name"),
     name_search: Optional[str] = Query(default=None, description="Deprecated alias of `search`", deprecated=True),
-    session: AsyncSession = Depends(get_db),
+    session: AsyncSession = Depends(get_db, scope="function"),
     current_admin = Depends(get_current_admin),
 ):
     """
@@ -154,7 +174,7 @@ async def list_donors(
 @router.get("/{donor_id}", response_model=DonorResponse)
 async def get_donor(
     donor_id: str,
-    session: AsyncSession = Depends(get_db),
+    session: AsyncSession = Depends(get_db, scope="function"),
     current_user = Depends(get_current_donor_or_admin),
 ):
     """
@@ -185,7 +205,7 @@ async def get_donor(
 async def update_donor(
     donor_id: str,
     data: DonorUpdate,
-    session: AsyncSession = Depends(get_db),
+    session: AsyncSession = Depends(get_db, scope="function"),
     current_donor = Depends(get_current_donor),
 ):
     """
@@ -207,12 +227,12 @@ async def update_donor(
         raise not_found_exception("Donor", donor_id)
 
     # Update fields if provided
+    # blood_group is deliberately not applied: changing it would silently alter who is notified
+    # for a request. It stays immutable for donors and admins alike.
     if data.name is not None:
         donor.name = data.name
-    if data.blood_group is not None:
-        donor.blood_group = data.blood_group
-    if data.active_status is not None:
-        donor.active_status = data.active_status
+    if data.is_available is not None:
+        donor.is_available = data.is_available
     if data.contact_number is not None:
         donor.personal_details.contact_number = data.contact_number
     for field in ("address", "city", "state", "pincode"):
@@ -228,7 +248,7 @@ async def update_donor(
 async def get_donors_by_blood_group(
     blood_group: str,
     active_only: bool = Query(default=True),
-    session: AsyncSession = Depends(get_db),
+    session: AsyncSession = Depends(get_db, scope="function"),
     current_admin = Depends(get_current_admin),
 ):
     """
@@ -249,7 +269,7 @@ async def get_donors_by_blood_group(
 @router.post("/{donor_id}/deactivate", response_model=MessageResponse)
 async def deactivate_donor(
     donor_id: str,
-    session: AsyncSession = Depends(get_db),
+    session: AsyncSession = Depends(get_db, scope="function"),
     current_admin = Depends(get_current_admin),
 ):
     """
@@ -264,6 +284,7 @@ async def deactivate_donor(
         raise not_found_exception("Donor", donor_id)
 
     await repo.set_active_status(donor_id, False)
+    await revoke_all_for_user(session, donor_id, "donor")
     record_admin_action(session, current_admin.id, "donor.deactivate", "donor", donor_id)
     return MessageResponse(message=f"Donor {donor_id} deactivated successfully")
 
@@ -271,7 +292,7 @@ async def deactivate_donor(
 @router.post("/{donor_id}/activate", response_model=MessageResponse)
 async def activate_donor(
     donor_id: str,
-    session: AsyncSession = Depends(get_db),
+    session: AsyncSession = Depends(get_db, scope="function"),
     current_admin = Depends(get_current_admin),
 ):
     """

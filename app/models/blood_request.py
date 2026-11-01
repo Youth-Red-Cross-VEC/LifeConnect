@@ -1,5 +1,5 @@
 from app.core.request_status import BloodRequestStatus
-from sqlalchemy import CheckConstraint, String, Integer, DateTime, Date, ForeignKey
+from sqlalchemy import CheckConstraint, String, Text, Integer, DateTime, Date, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base, TimestampMixin
 from datetime import datetime, date
@@ -34,8 +34,8 @@ class ResponseDetails(Base, TimestampMixin):
     certificate_status: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
     donation_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     donor_ids: Mapped[Optional[str]] = mapped_column(
-        String(255), nullable=True
-    )  # Comma-separated donor IDs
+        Text, nullable=True
+    )  # Comma-separated donor IDs (Text: a request can list many donors)
 
     # Relationship
     blood_request: Mapped["BloodRequestDetails"] = relationship(

@@ -6,13 +6,13 @@ Note: Authentication (login/logout) is handled by the auth module (partner's res
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Optional
-from datetime import datetime
+from typing import Union
 
 from app.core.database import get_db
 from app.core.request_status import AdminStatus, BloodRequestStatus
-from app.core.exceptions import DuplicateEntityError, EntityNotFoundError
+
 from app.repositories.admin import AdminRepository
 from app.repositories.blood_request import BloodRequestRepository
 from app.repositories.donor import DonorRepository
@@ -22,15 +22,39 @@ from app.schemas.admin import (
     AdminInviteRequest,
     AdminUpdate,
     AdminResponse,
+    AdminSummaryResponse,
     AdminStatsResponse,
 )
 from app.schemas.common import SuccessResponse, PaginatedResponse
+from app.utils.emails import normalize_email
 from app.utils.id_generator import generate_prefixed_id
 from app.api.auth.deps import get_current_admin
 from app.services.audit_service import record_admin_action
 from app.services.otp_service import PURPOSE_ADMIN_INVITE, generate_otp, store_otp, verify_otp
+from app.services.refresh_session_service import revoke_all_for_user
 
 router = APIRouter(prefix="/admins", tags=["Admins"])
+
+
+def _admin_view(admin: AdminDetails, viewer: AdminDetails) -> Union[AdminResponse, AdminSummaryResponse]:
+    """The full record for the viewer's own row; everyone else's without date of birth and phone number."""
+    model = AdminResponse if admin.id == viewer.id else AdminSummaryResponse
+    return model.model_validate(admin)
+
+
+async def _guard_deactivation(repo: AdminRepository, target: AdminDetails, actor: AdminDetails) -> None:
+    """Refuse the two ways an admin can lock the team out: switching themselves off, or the last admin off."""
+    if target.id == actor.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You cannot deactivate your own account; ask another admin to do it",
+        )
+    if str(target.active_status).lower() == AdminStatus.ACTIVE.value.lower():
+        if await repo.count_active(exclude_id=target.id) == 0:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Cannot deactivate the last active admin",
+            )
 
 
 # =======================
@@ -44,7 +68,7 @@ router = APIRouter(prefix="/admins", tags=["Admins"])
 )
 async def invite_admin(
     data: AdminInviteRequest,
-    session: AsyncSession = Depends(get_db),
+    session: AsyncSession = Depends(get_db, scope="function"),
     current_admin: AdminDetails = Depends(get_current_admin),
 ):
     """
@@ -58,11 +82,18 @@ async def invite_admin(
     await store_otp(session, data.email, otp, PURPOSE_ADMIN_INVITE)
 
     email_svc = get_email_service()
-    await email_svc.send_otp_email(
+    sent = await email_svc.send_otp_email(
         email=data.email,
         otp=otp,
         name="New Admin",
     )
+    if not sent:
+        # Do not report success when the invite never left the server: the invitee would wait for a
+        # code that is not coming. A retry issues a new code.
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Could not send the invite email; please try again later",
+        )
     record_admin_action(session, current_admin.id, "admin.invite", "admin_invite")
     return {"message": f"Invite OTP sent to {data.email}. Valid for 10 minutes."}
 
@@ -79,7 +110,7 @@ async def invite_admin(
 )
 async def register_admin(
     data: AdminCreate,
-    session: AsyncSession = Depends(get_db),
+    session: AsyncSession = Depends(get_db, scope="function"),
 ):
     """
     Register a new admin account.
@@ -116,13 +147,13 @@ async def register_admin(
     auth_id = generate_prefixed_id("AUTHADM")
     
     # Hash password using bcrypt via passlib (canonical implementation)
-    from app.api.auth.utils import hash_password
-    hashed_password = hash_password(data.password)
+    from app.api.auth.utils import hash_password_async
+    hashed_password = await hash_password_async(data.password)
     
     # Create admin
     admin = AdminDetails(
         id=admin_id,
-        email=data.email,
+        email=normalize_email(data.email),
         password=hashed_password,
         username=data.username,
         authentication_id=auth_id,
@@ -136,7 +167,14 @@ async def register_admin(
         closed_requests_count=0,
     )
     
-    await repo.create(admin)
+    try:
+        await repo.create(admin)
+    except IntegrityError:
+        # Two registrations raced past the existence checks; the unique constraint is authoritative.
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Admin with this email or registration number already exists",
+        ) from None
     record_admin_action(session, admin_id, "admin.register", "admin", admin_id)
     
     return admin
@@ -155,7 +193,7 @@ async def list_admins(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     active_only: bool = Query(False),
-    session: AsyncSession = Depends(get_db),
+    session: AsyncSession = Depends(get_db, scope="function"),
     current_admin: AdminDetails = Depends(get_current_admin),
 ):
     """Get paginated list of all admins."""
@@ -169,7 +207,7 @@ async def list_admins(
     )
     
     return PaginatedResponse(
-        items=[AdminResponse.model_validate(a) for a in admins],
+        items=[_admin_view(a, current_admin) for a in admins],
         total=total,
         page=page,
         page_size=page_size,
@@ -179,25 +217,25 @@ async def list_admins(
 
 @router.get(
     "/{admin_id}",
-    response_model=AdminResponse,
+    response_model=Union[AdminResponse, AdminSummaryResponse],
     summary="Get admin by ID",
 )
 async def get_admin(
     admin_id: str,
-    session: AsyncSession = Depends(get_db),
+    session: AsyncSession = Depends(get_db, scope="function"),
     current_admin: AdminDetails = Depends(get_current_admin),
 ):
-    """Get admin details by ID."""
+    """Get admin details by ID (date of birth and phone number only for your own record)."""
     repo = AdminRepository(session)
     admin = await repo.get_by_id(admin_id)
-    
+
     if not admin:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Admin with ID {admin_id} not found",
         )
-    
-    return admin
+
+    return _admin_view(admin, current_admin)
 
 
 @router.get(
@@ -206,7 +244,7 @@ async def get_admin(
     summary="Get current admin profile",
 )
 async def get_my_profile(
-    session: AsyncSession = Depends(get_db),
+    session: AsyncSession = Depends(get_db, scope="function"),
     current_admin: AdminDetails = Depends(get_current_admin),
 ):
     """
@@ -220,13 +258,13 @@ async def get_my_profile(
 
 @router.put(
     "/{admin_id}",
-    response_model=AdminResponse,
+    response_model=Union[AdminResponse, AdminSummaryResponse],
     summary="Update admin details",
 )
 async def update_admin(
     admin_id: str,
     data: AdminUpdate,
-    session: AsyncSession = Depends(get_db),
+    session: AsyncSession = Depends(get_db, scope="function"),
     current_admin: AdminDetails = Depends(get_current_admin),
 ):
     """Update admin details."""
@@ -247,15 +285,24 @@ async def update_admin(
     if data.department is not None:
         admin.department = data.department
     if data.active_status is not None:
+        if data.active_status == AdminStatus.INACTIVE:
+            await _guard_deactivation(repo, admin, current_admin)
+            await revoke_all_for_user(session, admin.id, "admin")
         admin.active_status = data.active_status.value
     
-    await repo.update(admin)
+    try:
+        await repo.update(admin)
+    except IntegrityError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="That value is already used by another admin",
+        ) from None
     record_admin_action(
         session, current_admin.id, "admin.update", "admin", admin_id,
         detail="fields=" + ",".join(sorted(data.model_dump(exclude_unset=True))),
     )
 
-    return admin
+    return _admin_view(admin, current_admin)
 
 
 @router.patch(
@@ -265,7 +312,7 @@ async def update_admin(
 )
 async def deactivate_admin(
     admin_id: str,
-    session: AsyncSession = Depends(get_db),
+    session: AsyncSession = Depends(get_db, scope="function"),
     current_admin: AdminDetails = Depends(get_current_admin),
 ):
     """Deactivate an admin account."""
@@ -278,7 +325,9 @@ async def deactivate_admin(
             detail=f"Admin with ID {admin_id} not found",
         )
     
+    await _guard_deactivation(repo, admin, current_admin)
     admin.active_status = AdminStatus.INACTIVE.value
+    await revoke_all_for_user(session, admin.id, "admin")
     await repo.update(admin)
     record_admin_action(session, current_admin.id, "admin.deactivate", "admin", admin_id)
 
@@ -292,7 +341,7 @@ async def deactivate_admin(
 )
 async def activate_admin(
     admin_id: str,
-    session: AsyncSession = Depends(get_db),
+    session: AsyncSession = Depends(get_db, scope="function"),
     current_admin: AdminDetails = Depends(get_current_admin),
 ):
     """Activate an admin account."""
@@ -323,7 +372,7 @@ async def activate_admin(
 )
 async def get_admin_stats(
     admin_id: str,
-    session: AsyncSession = Depends(get_db),
+    session: AsyncSession = Depends(get_db, scope="function"),
     current_admin: AdminDetails = Depends(get_current_admin),
 ):
     """Get performance statistics for a specific admin."""

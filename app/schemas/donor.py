@@ -2,6 +2,7 @@ from pydantic import BaseModel, EmailStr, Field, field_validator
 from typing import Optional
 from datetime import datetime, date
 from app.schemas.common import BaseSchema
+from app.schemas.passwords import check_new_password, check_password_length
 import re
 
 
@@ -13,7 +14,8 @@ class PersonalDetailsCreate(BaseModel):
 
     first_name: str = Field(..., min_length=1, max_length=45)
     last_name: Optional[str] = Field(None, max_length=45)
-    age: int = Field(..., ge=18, le=65, description="Age must be between 18 and 65")
+    # Accepted for backwards compatibility but ignored: the server derives age from date_of_birth.
+    age: Optional[int] = Field(None, description="Ignored; computed from date_of_birth")
     date_of_birth: date
     contact_number: str = Field(..., min_length=10, max_length=15)
     secondary_contact_number: Optional[str] = Field(None, max_length=15)
@@ -95,7 +97,7 @@ class DonorCreate(BaseModel):
     """Schema for donor registration."""
 
     name: str = Field(..., min_length=2, max_length=100)
-    email: EmailStr
+    email: EmailStr = Field(..., max_length=100)
     password: str = Field(..., min_length=8, max_length=100)
     blood_group: str = Field(..., description="Blood group (A+, A-, B+, B-, AB+, AB-, O+, O-)")
 
@@ -115,20 +117,16 @@ class DonorCreate(BaseModel):
     @field_validator("password")
     @classmethod
     def validate_password(cls, v: str) -> str:
-        if len(v) < 8:
-            raise ValueError("Password must be at least 8 characters")
-        if not any(c.isupper() for c in v):
-            raise ValueError("Password must contain at least one uppercase letter")
-        if not any(c.isdigit() for c in v):
-            raise ValueError("Password must contain at least one digit")
-        return v
+        return check_new_password(v)
 
 
 class DonorUpdate(BaseModel):
     """Schema for updating donor details."""
     name: Optional[str] = Field(None, min_length=2, max_length=100)
+    # Accepted and validated, but never applied: blood group is immutable for self-service.
     blood_group: Optional[str] = None
-    active_status: Optional[bool] = None
+    # Donors control their own availability; only an admin can enable/disable the account.
+    is_available: Optional[bool] = None
     contact_number: Optional[str] = Field(None, max_length=15)
     address: Optional[str] = Field(None, min_length=5, max_length=200)
     city: Optional[str] = Field(None, min_length=1, max_length=45)
@@ -164,6 +162,7 @@ class DonorResponse(BaseSchema):
     email: str
     blood_group: str
     active_status: bool
+    is_available: bool
     last_donated_date: Optional[datetime]
     number_of_times_donated: int
     last_login_date: Optional[datetime]
@@ -182,6 +181,7 @@ class DonorListResponse(BaseSchema):
     email: str
     blood_group: str
     active_status: bool
+    is_available: bool
     city: Optional[str] = None
     last_donated_date: Optional[datetime]
 
@@ -189,8 +189,13 @@ class DonorListResponse(BaseSchema):
 class DonorLoginRequest(BaseModel):
     """Schema for donor login."""
 
-    email: EmailStr
+    email: EmailStr = Field(..., max_length=100)
     password: str
+
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, v: str) -> str:
+        return check_password_length(v)
 
 
 class DonorLoginResponse(BaseModel):
@@ -207,12 +212,17 @@ class DonorLoginResponse(BaseModel):
 class PasswordResetRequest(BaseModel):
     """Schema for password reset request."""
 
-    email: EmailStr
+    email: EmailStr = Field(..., max_length=100)
 
 
 class PasswordResetConfirm(BaseModel):
     """Schema for password reset confirmation."""
 
-    email: EmailStr
+    email: EmailStr = Field(..., max_length=100)
     otp: str
-    new_password: str = Field(..., min_length=8)
+    new_password: str
+
+    @field_validator("new_password")
+    @classmethod
+    def validate_new_password(cls, v: str) -> str:
+        return check_new_password(v)

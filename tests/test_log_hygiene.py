@@ -43,10 +43,11 @@ async def test_email_logs_mask_recipient(monkeypatch, caplog):
 async def test_login_error_log_omits_exception_text(client: AsyncClient, test_session, monkeypatch, caplog):
     await insert_donor(test_session)
 
-    def boom(*a, **k):
+    async def boom(*a, **k):
         raise RuntimeError("leak: donor1@example.com 9000000001")
 
-    monkeypatch.setattr(sys.modules["app.api.auth.router"], "verify_password", boom)
+    # The router verifies passwords through the async (threadpool) wrapper.
+    monkeypatch.setattr(sys.modules["app.api.auth.router"], "verify_password_async", boom)
     caplog.set_level(logging.INFO)
     r = await client.post("/api/v1/auth/donor/login", json={"email": "donor1@example.com", "password": "x"})
     assert r.status_code == 500

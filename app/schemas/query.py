@@ -12,12 +12,26 @@ class QueryCreate(BaseModel):
     """Schema for creating a new support query."""
     
     user_name: str = Field(..., min_length=1, max_length=55)
-    user_email: EmailStr
+    user_email: EmailStr = Field(..., max_length=55)
     user_query: str = Field(..., min_length=10, max_length=555)
 
 
+class QueryPublicResponse(BaseSchema):
+    """What the person who filed a query sees: no internal admin identifier."""
+
+    id: int
+    user_name: str
+    user_email: str
+    user_query: Optional[str]
+    user_query_date: Optional[date]
+    admin_name: str
+    admin_response: Optional[str]
+    admin_response_date: Optional[date]
+    created_at: datetime
+
+
 class QueryResponse(BaseSchema):
-    """Schema for query response."""
+    """Schema for query response (admin view)."""
     
     id: int
     user_name: str

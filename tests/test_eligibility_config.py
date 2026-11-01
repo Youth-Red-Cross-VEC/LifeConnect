@@ -1,4 +1,4 @@
-"""P2-38: the donor eligibility window comes from settings, not a literal."""
+"""P2-38: the donation cooldown comes from settings, not a literal."""
 
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
@@ -21,17 +21,18 @@ class _FakeDb:
 
 
 def _settings(days: int) -> Settings:
-    return get_settings().model_copy(update={"DONOR_ELIGIBILITY_DAYS": days})
+    return get_settings().model_copy(update={"DONATION_COOLDOWN_DAYS": days})
 
 
-def test_default_is_sixty_days():
-    assert Settings.model_fields["DONOR_ELIGIBILITY_DAYS"].default == 60
+def test_default_is_ninety_days():
+    assert Settings.model_fields["DONATION_COOLDOWN_DAYS"].default == 90
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("window,reactivated", [(30, True), (90, False)])
 async def test_job_uses_configured_window(test_session, monkeypatch, window, reactivated):
-    donor = await insert_donor(test_session, active=False)
+    donor = await insert_donor(test_session, active=True)
+    donor.is_available = False
     donor.last_donated_date = datetime.now() - timedelta(days=45)
     await test_session.commit()
 
@@ -39,4 +40,4 @@ async def test_job_uses_configured_window(test_session, monkeypatch, window, rea
     await scheduled_jobs.activate_donor_status(_FakeDb(test_session))
 
     await test_session.refresh(donor)
-    assert bool(donor.active_status) is reactivated
+    assert bool(donor.is_available) is reactivated

@@ -175,6 +175,7 @@ transitions are defined in `app/core/request_status.py`.
 | id | INTEGER | no | primary key |
 | user_name | VARCHAR(55) | no |  |
 | user_email | VARCHAR(55) | no | indexed |
+| donor_id | VARCHAR(36) | yes | indexed, FK -> `donor_details.id` |
 | admin_id | VARCHAR(55) | no | indexed |
 | admin_name | VARCHAR(55) | no |  |
 | user_query | VARCHAR(555) | yes |  |

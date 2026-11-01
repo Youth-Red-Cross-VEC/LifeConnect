@@ -1,4 +1,13 @@
+# Build context for the frontend image (docker-compose "frontend" service builds from ./frontend).
+#
+# node_modules and dist from the host must never overwrite what the image installs and builds itself
+# (a Windows or macOS node_modules is wrong for the Linux image), and local .env files must not be baked
+# into the bundle: Vite inlines VITE_* values into the JavaScript the browser downloads.
 node_modules
 dist
+.vite
+coverage
 .env
+.env.*
+.git
 *.log

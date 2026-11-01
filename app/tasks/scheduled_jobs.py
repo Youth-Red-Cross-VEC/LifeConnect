@@ -2,6 +2,8 @@ from datetime import date, datetime, timedelta
 import logging
 import zlib
 
+from zoneinfo import ZoneInfo
+
 from sqlalchemy import delete, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -9,9 +11,9 @@ from app.config import get_settings
 from app.core.database import Database
 from app.repositories.blood_request import BloodRequestRepository
 from app.repositories.donor import DonorRepository
-from app.models.donor import PersonalDetails, DonorDetail
 from app.models.otp import OtpCode
 from app.models.refresh_session import RefreshSession
+from app.utils.dates import utcnow
 
 logger = logging.getLogger(__name__)
 
@@ -31,9 +33,20 @@ async def try_job_lock(session: AsyncSession, job_name: str) -> bool:
     return bool(result.scalar())
 
 
+def _scheduler_today() -> date:
+    """Today's date in the scheduler's configured timezone.
+
+    The server (and everything stored) runs in UTC, but "midnight" for the job means midnight where
+    the users are. Around UTC 00:00 the two can be different days, so a UTC date would expire
+    requests a day early or late.
+    """
+
+    return datetime.now(ZoneInfo(get_settings().SCHEDULER_TIMEZONE)).date()
+
+
 async def expire_blood_requests(db: Database) -> None:
     """
-    Mark overdue pending requests as expired.
+    Mark overdue pending and approved requests as expired.
     Runs daily at midnight.
     """
     try:
@@ -42,8 +55,7 @@ async def expire_blood_requests(db: Database) -> None:
                 logger.info("expire_blood_requests already running elsewhere; skipping")
                 return
             repo = BloodRequestRepository(session)
-            current_date = date.today()
-            count = await repo.expire_overdue_requests(current_date)
+            count = await repo.expire_overdue_requests(_scheduler_today())
             logger.info(f"Expired {count} blood request(s)")
     except Exception as e:
         logger.error(f"Error in expire_blood_requests: {e}")
@@ -51,8 +63,11 @@ async def expire_blood_requests(db: Database) -> None:
 
 async def activate_donor_status(db: Database) -> None:
     """
-    Reactivate donors who haven't donated in DONOR_ELIGIBILITY_DAYS days.
+    Make donors available again once DONATION_COOLDOWN_DAYS have passed since their last donation.
     Runs daily at midnight.
+
+    Only ``is_available`` is touched: a donor an admin disabled (``active_status=False``) must stay
+    disabled, whatever their donation history.
     """
     try:
         async with db.session() as session:
@@ -60,47 +75,11 @@ async def activate_donor_status(db: Database) -> None:
                 logger.info("activate_donor_status already running elsewhere; skipping")
                 return
             repo = DonorRepository(session)
-            cutoff_date = date.today() - timedelta(days=get_settings().DONOR_ELIGIBILITY_DAYS)
+            cutoff_date = _scheduler_today() - timedelta(days=get_settings().DONATION_COOLDOWN_DAYS)
             count = await repo.reactivate_eligible_donors(cutoff_date)
             logger.info(f"Reactivated {count} donor(s)")
     except Exception as e:
         logger.error(f"Error in activate_donor_status: {e}")
-
-
-async def increment_donor_ages(db: Database) -> None:
-    """
-    Increment age for donors on their birthday.
-    Runs daily at midnight.
-    """
-    try:
-        from sqlalchemy import select, extract
-
-        async with db.session() as session:
-            if not await try_job_lock(session, "increment_donor_ages"):
-                logger.info("increment_donor_ages already running elsewhere; skipping")
-                return
-            current_date = date.today()
-
-            # Find donors whose birthday is today using SQL extract() — correct approach
-            query = (
-                select(PersonalDetails)
-                .join(DonorDetail, DonorDetail.personal_details_id == PersonalDetails.id)
-                .where(
-                    extract("month", PersonalDetails.date_of_birth) == current_date.month,
-                    extract("day", PersonalDetails.date_of_birth) == current_date.day,
-                )
-            )
-
-            result = await session.execute(query)
-            birthday_donors = result.scalars().all()
-
-            for personal in birthday_donors:
-                personal.age += 1
-
-            await session.commit()
-            logger.info(f"Incremented age for {len(birthday_donors)} donor(s)")
-    except Exception as e:
-        logger.error(f"Error in increment_donor_ages: {e}")
 
 
 async def purge_expired_auth_records(db: Database) -> None:
@@ -113,7 +92,7 @@ async def purge_expired_auth_records(db: Database) -> None:
             if not await try_job_lock(session, "purge_expired_auth_records"):
                 logger.info("purge_expired_auth_records already running elsewhere; skipping")
                 return
-            now = datetime.utcnow()
+            now = utcnow()
             otps = await session.execute(delete(OtpCode).where(OtpCode.expires_at < now))
             sessions = await session.execute(delete(RefreshSession).where(RefreshSession.expires_at < now))
             logger.info(f"Purged {otps.rowcount} expired OTP(s) and {sessions.rowcount} expired refresh session(s)")
@@ -133,21 +112,12 @@ def setup_scheduled_jobs(scheduler, db: Database) -> None:
         db=db,
     )
 
-    # Reactivate donors at midnight
+    # Make donors available again after their cooldown, at midnight
     scheduler.add_cron_job(
         activate_donor_status,
         job_id="activate_donor_status",
         hour=0,
         minute=0,
-        db=db,
-    )
-
-    # Increment ages at midnight
-    scheduler.add_cron_job(
-        increment_donor_ages,
-        job_id="increment_donor_ages",
-        hour=0,
-        minute=1,  # Offset by 1 minute to avoid conflicts
         db=db,
     )
 

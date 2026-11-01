@@ -3,7 +3,6 @@ from sqlalchemy import select, and_, func, update
 from sqlalchemy.orm import selectinload
 from app.core.request_status import BloodRequestStatus, sources_for
 from app.models.blood_request import BloodRequestDetails, ResponseDetails
-from app.models.hospital import HospitalDetails
 from typing import Optional, List
 from datetime import date
 
@@ -127,24 +126,48 @@ class BloodRequestRepository:
         admin_id: Optional[str] = None,
         is_approval: bool = False,
         is_close: bool = False,
-    ) -> None:
-        """Update request status."""
-        values = {"status": BloodRequestStatus(status).value}
+        expected_status: Optional[str] = None,
+    ) -> bool:
+        """
+        Move a request to `status` only if it is still in the state the caller based its decision on.
+
+        The check is part of the UPDATE (WHERE status = expected), so two admins acting on the same request
+        cannot both succeed: the second UPDATE matches no row. Without `expected_status` the guard is "any
+        status the transition table allows to reach `status`". Returns True if this call changed the row;
+        on False the caller must stop before any side effect (emails, donor counters).
+        """
+        target = BloodRequestStatus(status)
+        values = {"status": target.value}
 
         if is_approval and admin_id:
             values["approved_admin_id"] = admin_id
         if is_close and admin_id:
             values["closed_admin_id"] = admin_id
 
+        allowed = [expected_status] if expected_status is not None else [s.value for s in sources_for(target)]
         stmt = (
             update(BloodRequestDetails)
-            .where(BloodRequestDetails.id == request_id)
+            .where(
+                BloodRequestDetails.id == request_id,
+                BloodRequestDetails.status.in_(allowed),
+            )
             .values(**values)
         )
-        await self.session.execute(stmt)
+        result = await self.session.execute(stmt)
+        if result.rowcount != 1:
+            return False
+
+        # PostgreSQL reports matched rows reliably. SQLite (the test database) reports changed rows
+        # and two concurrent UPDATEs can both "succeed", so only there re-read the row and confirm.
+        if self.session.get_bind().dialect.name != "postgresql":
+            current = await self.session.execute(
+                select(BloodRequestDetails.status).where(BloodRequestDetails.id == request_id)
+            )
+            return current.scalar_one_or_none() == target.value
+        return True
 
     async def expire_overdue_requests(self, current_date: date) -> int:
-        """Mark overdue pending requests as expired."""
+        """Mark overdue pending, approved and not-approved requests as expired."""
         stmt = (
             update(BloodRequestDetails)
             .where(

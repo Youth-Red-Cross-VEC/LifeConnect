@@ -5,7 +5,7 @@ FastAPI dependencies that validate JWT tokens and provide current user/donor/adm
 to protected endpoints. These are used as Depends() in route definitions.
 """
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional, Dict, Any
@@ -33,7 +33,7 @@ oauth2_scheme = OAuth2PasswordBearer(
 
 async def get_current_user(
     token: str = Depends(oauth2_scheme),
-    session: AsyncSession = Depends(get_db)
+    session: AsyncSession = Depends(get_db, scope="function")
 ) -> Dict[str, Any]:
     """
     Get current authenticated user from JWT token.
@@ -120,7 +120,7 @@ async def get_current_user(
 
 async def get_current_donor(
     token: str = Depends(oauth2_scheme),
-    session: AsyncSession = Depends(get_db)
+    session: AsyncSession = Depends(get_db, scope="function")
 ) -> DonorDetail:
     """
     Get current authenticated donor.
@@ -168,7 +168,7 @@ async def get_current_donor(
 
 async def get_current_admin(
     token: str = Depends(oauth2_scheme),
-    session: AsyncSession = Depends(get_db)
+    session: AsyncSession = Depends(get_db, scope="function")
 ) -> AdminDetails:
     """
     Get current authenticated admin.
@@ -216,7 +216,7 @@ async def get_current_admin(
 
 async def get_current_donor_or_admin(
     token: str = Depends(oauth2_scheme),
-    session: AsyncSession = Depends(get_db),
+    session: AsyncSession = Depends(get_db, scope="function"),
 ) -> Dict[str, Any]:
     """
     Get current authenticated user — either a donor OR an admin.
@@ -232,3 +232,27 @@ async def get_current_donor_or_admin(
         HTTPException: 401 if not authenticated
     """
     return await get_current_user(token, session)
+
+
+async def get_optional_donor_id(
+    request: Request,
+    session: AsyncSession = Depends(get_db, scope="function"),
+) -> Optional[str]:
+    """The signed-in donor's id, or None for anonymous callers.
+
+    For public endpoints that behave differently when a donor is signed in. A missing, expired or
+    otherwise unusable token is treated as anonymous instead of rejected, so a stale token in the
+    browser can never block a public form.
+
+    Reads the Authorization header directly rather than using the OAuth2 scheme dependency: that would
+    mark the route as secured in the OpenAPI document, but the route stays public.
+    """
+    scheme, _, token = request.headers.get("authorization", "").partition(" ")
+    if scheme.lower() != "bearer" or not token.strip():
+        return None
+    token = token.strip()
+    try:
+        user = await get_current_user(token, session)
+    except HTTPException:
+        return None
+    return user["user_id"] if user["user_type"] == "donor" else None

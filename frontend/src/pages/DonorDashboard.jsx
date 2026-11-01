@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { api, getUserId } from "../services/api";
+import { api, getUserId, logout } from "../services/api";
 
 export default function DonorDashboard({ details = {} }) {
   const [form, setForm] = useState({
@@ -32,6 +32,17 @@ export default function DonorDashboard({ details = {} }) {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const navigate = useNavigate();
+
+  // Revokes the refresh token on the server, then clears the browser session. The access token already
+  // issued stays valid until it expires (ACCESS_TOKEN_EXPIRE_MINUTES), so log out on shared computers.
+  const handleLogout = async () => {
+    try {
+      await logout();
+    } catch {
+      // The local session is cleared even when the server cannot be reached.
+    }
+    navigate("/donor/login");
+  };
 
   // Load the logged-in donor's real record so the form shows (and saves) real data.
   useEffect(() => {
@@ -338,7 +349,10 @@ export default function DonorDashboard({ details = {} }) {
         <a href="/">
           <h1>LifeConnect</h1>
         </a>
-        <button onClick={() => navigate("/")}>Back to Home</button>
+        <div style={{ display: "flex", gap: "0.75rem" }}>
+          <button onClick={() => navigate("/")}>Back to Home</button>
+          <button onClick={handleLogout}>Log out</button>
+        </div>
       </div>
 
       <h1 className="page-title">Donor Dashboard</h1>

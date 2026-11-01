@@ -9,6 +9,7 @@ import asyncio
 from datetime import datetime
 from pathlib import Path
 import re
+import uuid
 from typing import Optional
 import structlog
 
@@ -22,8 +23,16 @@ except ImportError:
 logger = structlog.get_logger(__name__)
 
 
-# Only filenames produced by this service are valid
-_CERT_FILENAME_RE = re.compile(r"^[A-Za-z0-9_\-]{1,120}_\d{8}_\d{6}_certificate\.(png|txt)$")
+# Only filenames produced by this service are valid: <name>_<YYYYMMDD>_<HHMMSS>[_<8 hex>]_certificate.<png|txt>.
+# Matched with fullmatch (a trailing "$" would also accept a trailing newline) and [0-9] (\d matches other
+# scripts' digits). The 8-hex suffix is new; certificates written before it existed still resolve.
+_CERT_FILENAME_RE = re.compile(r"[A-Za-z0-9_\-]{1,120}_[0-9]{8}_[0-9]{6}(?:_[0-9a-f]{8})?_certificate\.(png|txt)")
+
+
+def _new_filename(donor_name: str, extension: str) -> str:
+    """Unique per call: two certificates for one donor in the same second must not overwrite each other."""
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    return f"{_safe_name(donor_name)}_{timestamp}_{uuid.uuid4().hex[:8]}_certificate.{extension}"
 
 
 def _safe_name(donor_name: str) -> str:
@@ -48,9 +57,39 @@ class CertificateService:
         self.template_dir = Path(template_dir)
         self.output_dir = Path(output_dir)
         self.font_path = font_path
-        
-        # Create output directory if it doesn't exist
-        self.output_dir.mkdir(parents=True, exist_ok=True)
+
+    def _ensure_output_dir(self) -> None:
+        """Create the output directory on first use, with an actionable error if that is impossible.
+
+        Creating it in __init__ (at import time, before the process drops privileges) hid a
+        read-only volume until the first donor tried to get a certificate.
+        """
+        try:
+            self.output_dir.mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            raise RuntimeError(
+                f"Cannot create certificate output directory '{self.output_dir}': {e}. "
+                "Create it and give the application user write access, or set the certificate "
+                "output directory to a writable path."
+            ) from e
+        if not os.access(self.output_dir, os.W_OK):
+            raise RuntimeError(
+                f"Certificate output directory '{self.output_dir}' is not writable by the "
+                "application user."
+            )
+
+    def _load_font(self, size: int = 25):
+        """Load the configured TrueType font, falling back to Pillow's bitmap font."""
+        if self.font_path:
+            path = Path(self.font_path)
+            if path.exists():
+                try:
+                    return ImageFont.truetype(str(path), size)
+                except OSError as e:
+                    logger.warning(f"CERT_FONT_PATH '{path}' could not be loaded ({e}); using default font")
+            else:
+                logger.warning(f"CERT_FONT_PATH '{path}' does not exist; using default font")
+        return ImageFont.load_default()
     
     async def generate_certificate(
         self,
@@ -98,6 +137,7 @@ class CertificateService:
         template_name: str,
     ) -> str:
         """Synchronous certificate generation using Pillow."""
+        self._ensure_output_dir()
         template_path = self.template_dir / template_name
         
         # Check if template exists
@@ -112,15 +152,7 @@ class CertificateService:
         template = Image.open(template_path)
         draw = ImageDraw.Draw(template)
         
-        # Load font (use default if custom font not available)
-        try:
-            if self.font_path and Path(self.font_path).exists():
-                font = ImageFont.truetype(self.font_path, 25)
-            else:
-                # Use default font
-                font = ImageFont.load_default()
-        except Exception:
-            font = ImageFont.load_default()
+        font = self._load_font(25)
         
         # Text positions (matching Flask coordinates)
         text_details = [
@@ -135,10 +167,7 @@ class CertificateService:
             draw.text(position, str(text), font=font, fill="black")
         
         # Generate unique filename
-        safe_name = _safe_name(donor_name)
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        file_name = f"{safe_name}_{timestamp}_certificate.png"
-        file_path = self.output_dir / file_name
+        file_path = self.output_dir / _new_filename(donor_name, "png")
         
         # Save certificate
         template.save(file_path)
@@ -163,11 +192,9 @@ class CertificateService:
         width, height = 800, 600
         image = Image.new("RGB", (width, height), "white")
         draw = ImageDraw.Draw(image)
-        
-        try:
-            font = ImageFont.load_default()
-        except Exception:
-            font = None
+        self._ensure_output_dir()
+
+        font = self._load_font(25)
         
         # Draw title
         title = "BLOOD DONATION CERTIFICATE"
@@ -175,15 +202,15 @@ class CertificateService:
         
         # Draw content
         lines = [
-            f"This is to certify that",
-            f"",
+            "This is to certify that",
+            "",
             f"{donor_name}",
-            f"",
+            "",
             f"has donated blood on {donation_date}",
             f"Blood Group: {blood_group}",
             f"Location: {location}",
-            f"",
-            f"Thank you for saving lives!",
+            "",
+            "Thank you for saving lives!",
         ]
         
         y_position = 150
@@ -191,11 +218,7 @@ class CertificateService:
             draw.text((100, y_position), line, font=font, fill="black")
             y_position += 40
         
-        # Generate filename
-        safe_name = _safe_name(donor_name)
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        file_name = f"{safe_name}_{timestamp}_certificate.png"
-        file_path = self.output_dir / file_name
+        file_path = self.output_dir / _new_filename(donor_name, "png")
         
         image.save(file_path)
         
@@ -209,10 +232,8 @@ class CertificateService:
     
     async def _generate_placeholder(self, donor_name: str) -> str:
         """Generate a placeholder text file when Pillow is not available."""
-        safe_name = _safe_name(donor_name)
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        file_name = f"{safe_name}_{timestamp}_certificate.txt"
-        file_path = self.output_dir / file_name
+        self._ensure_output_dir()
+        file_path = self.output_dir / _new_filename(donor_name, "txt")
         
         content = f"""
         BLOOD DONATION CERTIFICATE
@@ -223,14 +244,15 @@ class CertificateService:
         Install with: pip install pillow
         """
         
-        with open(file_path, "w") as f:
+        # Explicit encoding: the platform default (cp1252 on Windows) cannot represent every donor name.
+        with open(file_path, "w", encoding="utf-8") as f:
             f.write(content)
         
         return str(file_path)
     
     def _resolve_safe(self, filename: str) -> Optional[Path]:
         """Validate filename pattern and enforce containment in output_dir."""
-        if not _CERT_FILENAME_RE.match(filename or ""):
+        if not _CERT_FILENAME_RE.fullmatch(filename or ""):
             return None
         base = self.output_dir.resolve()
         candidate = (base / filename).resolve()
@@ -249,7 +271,12 @@ class CertificateService:
         """List all generated certificates."""
         if not self.output_dir.exists():
             return []
-        return [f.name for f in self.output_dir.glob("*.png")]
+        return sorted(
+            f.name
+            for pattern in ("*.png", "*.txt")
+            for f in self.output_dir.glob(pattern)
+            if _CERT_FILENAME_RE.fullmatch(f.name)
+        )
     
     async def delete_certificate(self, filename: str) -> bool:
         """Delete a certificate file."""
@@ -268,5 +295,8 @@ def get_certificate_service() -> CertificateService:
     """Get or create certificate service instance."""
     global _certificate_service
     if _certificate_service is None:
-        _certificate_service = CertificateService()
+        from app.config import get_settings
+
+        settings = get_settings()
+        _certificate_service = CertificateService(font_path=settings.CERT_FONT_PATH)
     return _certificate_service

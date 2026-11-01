@@ -51,13 +51,23 @@ if config.config_file_name is not None:
 # Model metadata for autogenerate
 target_metadata = Base.metadata
 
+# Columns the model no longer has but that are deliberately kept until an operator runs the
+# manual drop script (scripts/drop_aadhaar_column.py); `alembic check` must not flag them.
+_PENDING_MANUAL_DROP = {("personal_details", "aadhar_number")}
+
+
+def include_object(obj, name, type_, reflected, compare_to):
+    if type_ == "column" and reflected and compare_to is None:
+        return (obj.table.name, name) not in _PENDING_MANUAL_DROP
+    return True
+
 
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode."""
     url = config.get_main_option("sqlalchemy.url")
     context.configure(
         url=url,
-        target_metadata=target_metadata,
+        target_metadata=target_metadata, include_object=include_object,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
     )
@@ -67,7 +77,7 @@ def run_migrations_offline() -> None:
 
 
 def do_run_migrations(connection: Connection) -> None:
-    context.configure(connection=connection, target_metadata=target_metadata)
+    context.configure(connection=connection, target_metadata=target_metadata, include_object=include_object)
 
     with context.begin_transaction():
         context.run_migrations()

@@ -2,6 +2,7 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sess
 from sqlalchemy.pool import AsyncAdaptedQueuePool
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
+from starlette.exceptions import HTTPException as StarletteHTTPException
 import logging
 
 logger = logging.getLogger(__name__)
@@ -73,6 +74,11 @@ class Database:
             try:
                 yield session
                 await session.commit()
+            except StarletteHTTPException:
+                # HTTP responses are raised intentionally by route logic; roll them back without
+                # reporting them as database faults.
+                await session.rollback()
+                raise
             except Exception as e:
                 await session.rollback()
                 logger.error(f"Database session error: {type(e).__name__}")
@@ -100,9 +106,14 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """
     FastAPI dependency for database sessions.
     
+    Always declare it as Depends(get_db, scope="function"): the session then commits right
+    after the route returns but BEFORE the response is sent, so a failed commit becomes a 5xx
+    and BackgroundTasks (emails) only run for work that was actually saved. The default
+    "request" scope would commit after the response.
+
     Usage:
         @router.get("/items")
-        async def get_items(session: AsyncSession = Depends(get_db)):
+        async def get_items(session: AsyncSession = Depends(get_db, scope="function")):
             ...
     """
     if db is None:

@@ -1,5 +1,4 @@
 import uuid
-from datetime import datetime
 
 
 def generate_uuid() -> str:

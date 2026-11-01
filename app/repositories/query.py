@@ -3,10 +3,11 @@ Query/Support Ticket Repository.
 """
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, update
+from sqlalchemy import select, func
 from app.models.query import QueryTable
 from typing import Optional, List
-from datetime import date
+
+from app.utils.dates import utcnow
 
 
 class QueryRepository:
@@ -92,20 +93,20 @@ class QueryRepository:
             return None
         
         query.admin_response = admin_response
-        query.admin_response_date = date.today()
+        query.admin_response_date = utcnow().date()
         query.admin_id = admin_id
         query.admin_name = admin_name
         
         await self.session.flush()
         return query
 
-    async def get_by_user_email(
-        self, email: str, limit: int = 100, offset: int = 0
+    async def get_by_donor_id(
+        self, donor_id: str, limit: int = 100, offset: int = 0
     ) -> List[QueryTable]:
-        """Get queries from a specific user, newest first."""
+        """Get the queries a signed-in donor filed, newest first."""
         query = (
             select(QueryTable)
-            .where(QueryTable.user_email == email)
+            .where(QueryTable.donor_id == donor_id)
             .order_by(QueryTable.id.desc())
             .offset(offset)
             .limit(limit)

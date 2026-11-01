@@ -63,7 +63,14 @@ jobs:
       - name: Python dependencies
         run: |
           pip install pip-audit
-          pip-audit -r requirements.txt
+          # PYSEC-2026-1325 (CVE-2024-23342, "Minerva" timing attack on ECDSA P-256 signing in python-ecdsa) has no
+          # fixed release. python-ecdsa is only pulled in by python-jose and is never used here: tokens are signed
+          # with HS256 (an HMAC). Re-check when python-ecdsa or python-jose releases a fix, or if the app ever signs
+          # with an EC key; the right long-term fix is dropping python-jose for PyJWT.
+          # What developers and CI install (floors only):
+          pip-audit -r requirements.txt --ignore-vuln PYSEC-2026-1325
+          # What the API image really installs: fully pinned and hashed, so audit it exactly as locked.
+          pip-audit --no-deps --disable-pip -r requirements-runtime.lock --ignore-vuln PYSEC-2026-1325
       - uses: actions/setup-node@v4
         with:
           node-version: 20

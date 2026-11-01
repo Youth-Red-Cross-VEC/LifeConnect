@@ -1,8 +1,9 @@
 from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 from app.schemas.common import BaseSchema
 from app.core.request_status import BloodRequestStatus  # noqa: F401  (re-exported)
+from app.utils.dates import utcnow
 
 
 VALID_BLOOD_GROUPS = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"]
@@ -34,6 +35,15 @@ class HospitalUpdate(BaseModel):
     state: Optional[str] = Field(None, max_length=45)
     branch: Optional[str] = Field(None, max_length=45)
     landmark: Optional[str] = Field(None, max_length=100)
+
+    @field_validator("hospital_name", "hospital_address", "pincode", "city", "state")
+    @classmethod
+    def required_fields_cannot_be_cleared(cls, value: Optional[str], info) -> Optional[str]:
+        # Omitting a field leaves it alone; sending an explicit null would blank a required column.
+        # (branch and landmark are optional columns and may be cleared.)
+        if value is None:
+            raise ValueError(f"{info.field_name} cannot be null")
+        return value
 
 
 class HospitalResponse(BaseSchema):
@@ -74,6 +84,8 @@ class BloodRequestCreate(BaseModel):
     request_reason: Optional[str] = Field(None, max_length=200)
     units_required: int = Field(..., ge=1, le=20)
     attendant_name: Optional[str] = Field(None, max_length=100)
+    # reCAPTCHA v3 token (action "blood_request"); required only when RECAPTCHA_ENFORCED=true
+    recaptcha_token: Optional[str] = Field(None, max_length=4096)
 
     @field_validator("blood_group")
     @classmethod
@@ -82,6 +94,15 @@ class BloodRequestCreate(BaseModel):
         if v not in VALID_BLOOD_GROUPS:
             raise ValueError(f"Invalid blood group. Must be one of: {VALID_BLOOD_GROUPS}")
         return v
+
+    @field_validator("due_date")
+    @classmethod
+    def validate_due_date(cls, value: datetime) -> datetime:
+        if value.tzinfo is not None:
+            value = value.astimezone(timezone.utc).replace(tzinfo=None)
+        if value < utcnow():
+            raise ValueError("due_date cannot be in the past")
+        return value
 
 
 class BloodRequestApprove(BaseModel):
@@ -101,13 +122,21 @@ class BloodRequestDecline(BaseModel):
 class BloodRequestClose(BaseModel):
     """Schema for closing a blood request."""
 
-    request_id: str
+    # Optional: the path /{request_id}/close is authoritative; kept for older clients.
+    request_id: Optional[str] = Field(default=None, max_length=36)
     status: str = Field(default="Closed")
     report: Optional[str] = Field(None, max_length=255)
     units_donated: int = Field(..., ge=0)
     donation_date: date
     donor_ids: List[str] = Field(default_factory=list)
     send_certificates: bool = True
+
+    @field_validator("donation_date")
+    @classmethod
+    def validate_donation_date(cls, value: date) -> date:
+        if value > utcnow().date():
+            raise ValueError("donation_date cannot be in the future")
+        return value
 
 
 class BloodRequestResponse(BaseSchema):

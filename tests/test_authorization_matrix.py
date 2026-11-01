@@ -122,11 +122,18 @@ async def test_donor_cannot_edit_another_donor(client: AsyncClient, test_session
 async def test_my_queries_only_returns_the_callers_queries(client: AsyncClient, test_session):
     await insert_donor(test_session, 1)
     await insert_donor(test_session, 2)
-    for who in ("donor1", "donor2"):
-        r = await client.post("/api/v1/queries/", json={
-            "user_name": who, "user_email": f"{who}@example.com", "user_query": f"Question from {who} please",
-        })
+    # Each donor files a query while signed in; ownership follows the account (see test_query_ownership).
+    for n, who in ((1, "donor1"), (2, "donor2")):
+        r = await client.post(
+            "/api/v1/queries/",
+            json={"user_name": who, "user_email": f"{who}@example.com", "user_query": f"Question from {who} please"},
+            headers=_bearer(donor_token(f"DON-{n}", f"{who}@example.com")),
+        )
         assert r.status_code == 201
+    # An anonymous query that mentions donor1's address must not show up for donor1.
+    await client.post("/api/v1/queries/", json={
+        "user_name": "anon", "user_email": "donor1@example.com", "user_query": "Anonymous note naming donor1",
+    })
     mine = await client.get("/api/v1/queries/my-queries", headers=_bearer(donor_token()))
     assert mine.status_code == 200
-    assert {q["user_email"] for q in mine.json()} == {"donor1@example.com"}
+    assert {q["user_query"] for q in mine.json()} == {"Question from donor1 please"}

@@ -1,0 +1,16 @@
+# Local debugging only. NEVER use this file on a server.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d postgres
+#
+# Publishes PostgreSQL and the API on this machine's loopback interface (127.0.0.1) only, so a backend run
+# on the host (uvicorn app.main:app --reload) can reach the database at localhost:5432. The base file
+# publishes neither.
+
+services:
+  postgres:
+    ports:
+      - "127.0.0.1:5432:5432"
+
+  api:
+    ports:
+      - "127.0.0.1:8000:8000"

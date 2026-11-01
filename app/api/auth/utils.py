@@ -5,14 +5,17 @@ Handles JWT token creation/validation, password hashing/verification,
 and all cryptographic operations for authentication.
 """
 
+import asyncio
 import hashlib
 import hmac
-from datetime import datetime, timedelta
+import secrets
+from datetime import timedelta
 from typing import Optional, Dict, Any
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 
 from app.config import get_settings
+from app.utils.dates import utcnow
 
 # ============================================================
 # CONFIGURATION - Load from shared settings (single source of truth)
@@ -51,6 +54,11 @@ def hash_password(password: str) -> str:
     return pwd_context.hash(password)
 
 
+async def hash_password_async(password: str) -> str:
+    """hash_password on a worker thread: bcrypt takes ~0.25 s and must not stall the event loop."""
+    return await asyncio.to_thread(hash_password, password)
+
+
 def _verify_legacy_scrypt(plain_password: str, hashed_password: str) -> bool:
     """Verify a legacy werkzeug-style hash: scrypt:N:r:p$salt$hexdigest."""
     try:
@@ -83,6 +91,17 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
         return pwd_context.verify(plain_password, hashed_password)
     except Exception:
         return False
+
+
+async def verify_password_async(plain_password: str, hashed_password: str) -> bool:
+    """verify_password on a worker thread (bcrypt, and the heavier legacy scrypt check)."""
+    return await asyncio.to_thread(verify_password, plain_password, hashed_password)
+
+
+# A real bcrypt hash of a random value nobody knows. Login verifies against it when the email is unknown,
+# so "no such account" costs the same time as "wrong password" and cannot be told apart by timing.
+# Computed once at import (a quarter second) rather than lazily, so no request pays for it.
+DUMMY_PASSWORD_HASH = pwd_context.hash(secrets.token_urlsafe(24))
 
 
 def needs_rehash(hashed_password: str) -> bool:
@@ -120,13 +139,13 @@ def create_access_token(
     to_encode = data.copy()
     
     if expires_delta:
-        expire = datetime.utcnow() + expires_delta
+        expire = utcnow() + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        expire = utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     
     to_encode.update({
         "exp": expire,
-        "iat": datetime.utcnow(),
+        "iat": utcnow(),
         "type": "access"
     })
     
@@ -153,11 +172,11 @@ def create_refresh_token(data: Dict[str, Any]) -> str:
         ... })
     """
     to_encode = data.copy()
-    expire = datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+    expire = utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
     
     to_encode.update({
         "exp": expire,
-        "iat": datetime.utcnow(),
+        "iat": utcnow(),
         "type": "refresh"
     })
     

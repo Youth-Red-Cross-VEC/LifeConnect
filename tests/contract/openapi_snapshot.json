@@ -68,7 +68,7 @@
         "path:admin_id:required"
       ],
       "responses": {
-        "200": "AdminResponse",
+        "200": "AdminResponse|AdminSummaryResponse",
         "422": "HTTPValidationError"
       },
       "secured": true
@@ -341,7 +341,7 @@
         "query:offset:optional"
       ],
       "responses": {
-        "200": "array<QueryResponse>",
+        "200": "array<QueryPublicResponse>",
         "422": "HTTPValidationError"
       },
       "secured": true
@@ -612,7 +612,7 @@
       "body": "QueryCreate",
       "params": [],
       "responses": {
-        "201": "QueryResponse",
+        "201": "QueryPublicResponse",
         "422": "HTTPValidationError"
       },
       "secured": false
@@ -634,7 +634,7 @@
         "path:admin_id:required"
       ],
       "responses": {
-        "200": "AdminResponse",
+        "200": "AdminResponse|AdminSummaryResponse",
         "422": "HTTPValidationError"
       },
       "secured": true
@@ -691,6 +691,18 @@
       "total_closed": "integer"
     },
     "AdminStatus": {},
+    "AdminSummaryResponse": {
+      "active_status": "string",
+      "approved_donation_count": "integer",
+      "closed_requests_count": "integer",
+      "created_at": "string",
+      "department": "null|string",
+      "email": "string",
+      "id": "string",
+      "last_login_date": "null|string",
+      "username": "string",
+      "vec_registration_number": "string"
+    },
     "AdminUpdate": {
       "active_status": "AdminStatus|null?",
       "department": "null|string?",
@@ -714,6 +726,7 @@
       "hospital_id": "string",
       "patient_age": "integer",
       "patient_name": "string",
+      "recaptcha_token": "null|string?",
       "request_reason": "null|string?",
       "units_required": "integer"
     },
@@ -900,6 +913,17 @@
       "pending_count": "integer",
       "resolved_count": "integer",
       "total": "integer"
+    },
+    "QueryPublicResponse": {
+      "admin_name": "string",
+      "admin_response": "null|string",
+      "admin_response_date": "null|string",
+      "created_at": "string",
+      "id": "integer",
+      "user_email": "string",
+      "user_name": "string",
+      "user_query": "null|string",
+      "user_query_date": "null|string"
     },
     "QueryReply": {
       "admin_response": "string"

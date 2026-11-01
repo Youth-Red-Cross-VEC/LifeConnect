@@ -101,9 +101,13 @@ migrations/versions/*.pyc
 # Docker
 .docker/
 
-# Static files (will be served by frontend)
-static/
+# Static files (will be served by frontend). Root-level only: `static/` also matched app/static
+# and silently hid the certificate templates from git.
+/static/
 uploads/
+
+# Generated certificates are runtime data; the templates under app/static are tracked.
+app/static/images/certificates/
 
 # graphify
 graphify-out/

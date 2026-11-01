@@ -78,13 +78,26 @@ def create_app() -> FastAPI:
         title=settings.APP_NAME,
         version=settings.APP_VERSION,
         description="Blood Donation Management System API",
-        docs_url="/docs",
-        redoc_url="/redoc",
-        openapi_url="/openapi.json",
+        # Interactive docs and the schema map every route; off when APP_ENV=production unless DOCS_ENABLED=true.
+        docs_url="/docs" if settings.docs_enabled else None,
+        redoc_url="/redoc" if settings.docs_enabled else None,
+        openapi_url="/openapi.json" if settings.docs_enabled else None,
         lifespan=lifespan,
     )
 
-    # Configure CORS
+    # Middleware add order is inner-to-outer: the LAST added wraps the others. CORS must be the
+    # outermost layer so even a 500 produced by CatchAllMiddleware (or the rate limiter) carries
+    # Access-Control-Allow-Origin and the browser can read the response.
+    from app.core.middleware import CatchAllMiddleware, SecurityHeadersMiddleware
+    app.add_middleware(CatchAllMiddleware)
+
+    # Configure rate limiting
+    setup_rate_limiting(app)
+
+    # Add security headers middleware
+    app.add_middleware(SecurityHeadersMiddleware)
+
+    # Configure CORS (outermost)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.ALLOWED_ORIGINS,
@@ -92,13 +105,6 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
-
-    # Configure rate limiting
-    setup_rate_limiting(app)
-
-    # Add security headers middleware
-    from app.core.middleware import SecurityHeadersMiddleware
-    app.add_middleware(SecurityHeadersMiddleware)
 
     # Exception handlers
     @app.exception_handler(LifeConnectException)

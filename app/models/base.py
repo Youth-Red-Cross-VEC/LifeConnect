@@ -1,7 +1,9 @@
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
-from sqlalchemy import String, DateTime
+from sqlalchemy import DateTime
 from datetime import datetime
 from typing import Optional
+
+from app.utils.dates import utcnow
 
 
 class Base(DeclarativeBase):
@@ -27,12 +29,12 @@ class TimestampMixin:
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
-        default=datetime.utcnow,
+        default=utcnow,
         nullable=False,
     )
     updated_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime,
         default=None,
-        onupdate=datetime.utcnow,
+        onupdate=utcnow,
         nullable=True,
     )

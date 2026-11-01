@@ -7,20 +7,22 @@ Endpoints for users to submit support queries and admins to respond.
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
-from datetime import date
 
 from app.core.database import get_db
+from app.utils.dates import utcnow
+from app.utils.emails import normalize_email
 from app.repositories.query import QueryRepository
 from app.models.query import QueryTable
 from app.schemas.query import (
     QueryCreate,
+    QueryPublicResponse,
     QueryResponse,
     QueryReply,
     QueryListResponse,
 )
-from app.schemas.common import SuccessResponse, PaginatedResponse
+from app.schemas.common import SuccessResponse
 from app.services.audit_service import record_admin_action
-from app.api.auth.deps import get_current_admin, get_current_user
+from app.api.auth.deps import get_current_admin, get_current_user, get_optional_donor_id
 
 router = APIRouter(prefix="/queries", tags=["Support Queries"])
 
@@ -31,27 +33,31 @@ router = APIRouter(prefix="/queries", tags=["Support Queries"])
 
 @router.post(
     "/",
-    response_model=QueryResponse,
+    response_model=QueryPublicResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Submit a support query",
 )
 async def submit_query(
     data: QueryCreate,
-    session: AsyncSession = Depends(get_db),
+    session: AsyncSession = Depends(get_db, scope="function"),
+    donor_id: Optional[str] = Depends(get_optional_donor_id),
 ):
     """
     Submit a new support query.
     
     Users can submit queries without authentication.
     Queries are marked as 'PENDING' until an admin responds.
+    A signed-in donor owns the queries they file (and can read them back via /my-queries);
+    anonymous queries are visible to admins only.
     """
     repo = QueryRepository(session)
     
     query = QueryTable(
         user_name=data.user_name,
-        user_email=data.user_email,
+        user_email=normalize_email(data.user_email),
+        donor_id=donor_id,
         user_query=data.user_query,
-        user_query_date=date.today(),
+        user_query_date=utcnow().date(),
         admin_id="PENDING",
         admin_name="PENDING",
         admin_response=None,
@@ -65,24 +71,27 @@ async def submit_query(
 
 @router.get(
     "/my-queries",
-    response_model=list[QueryResponse],
-    summary="Get queries by user email",
+    response_model=list[QueryPublicResponse],
+    summary="Get the signed-in donor's own queries",
 )
 async def get_my_queries(
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
-    session: AsyncSession = Depends(get_db),
+    session: AsyncSession = Depends(get_db, scope="function"),
     current_user: dict = Depends(get_current_user),
 ):
     """
-    Get all queries submitted by the authenticated user.
+    Get the queries the authenticated donor filed while signed in.
 
-    The email is taken from the verified account, never from the client.
+    Ownership is the donor account, never an email address: emails are not verified, so matching
+    on one would let anyone who registers with a victim's address read the victim's queries.
+    Anonymous and legacy queries have no owner and are visible to admins only. Admin accounts
+    have no donor queries.
     """
+    if current_user["user_type"] != "donor":
+        return []
     repo = QueryRepository(session)
-    queries = await repo.get_by_user_email(current_user["email"], limit=limit, offset=offset)
-    
-    return queries
+    return await repo.get_by_donor_id(current_user["user_id"], limit=limit, offset=offset)
 
 
 # =======================
@@ -103,7 +112,7 @@ async def list_queries(
     status_filter: Optional[str] = Query(
         None, description="Deprecated alias of `status`", deprecated=True
     ),
-    session: AsyncSession = Depends(get_db),
+    session: AsyncSession = Depends(get_db, scope="function"),
     current_admin = Depends(get_current_admin),
 ):
     """
@@ -144,7 +153,7 @@ async def list_queries(
 async def get_pending_queries(
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
-    session: AsyncSession = Depends(get_db),
+    session: AsyncSession = Depends(get_db, scope="function"),
     current_admin = Depends(get_current_admin),
 ):
     """Get all queries awaiting admin response."""
@@ -161,7 +170,7 @@ async def get_pending_queries(
 )
 async def get_query(
     query_id: int,
-    session: AsyncSession = Depends(get_db),
+    session: AsyncSession = Depends(get_db, scope="function"),
     current_admin = Depends(get_current_admin),
 ):
     """Get a specific query by ID (admin only)."""
@@ -185,7 +194,7 @@ async def get_query(
 async def reply_to_query(
     query_id: int,
     data: QueryReply,
-    session: AsyncSession = Depends(get_db),
+    session: AsyncSession = Depends(get_db, scope="function"),
     current_admin = Depends(get_current_admin),
 ):
     """
@@ -220,7 +229,7 @@ async def reply_to_query(
 )
 async def delete_query(
     query_id: int,
-    session: AsyncSession = Depends(get_db),
+    session: AsyncSession = Depends(get_db, scope="function"),
     current_admin = Depends(get_current_admin),
 ):
     """Delete a support query."""
