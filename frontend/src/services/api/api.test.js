@@ -31,3 +31,41 @@ test("api exposes the calls the pages rely on", () => {
     assert.equal(typeof api[name], "function", name);
   }
 });
+
+test("donor reset sends the email first and the complete confirmation payload second", async (t) => {
+  const fetch = t.mock.method(globalThis, "fetch", async () =>
+    Response.json({ message: "Request accepted" }));
+  const email = "donor@example.com";
+  const confirmation = { email, otp: "123456", new_password: "Replacement123" };
+
+  await api.donorForgotPassword({ email });
+  await api.donorNewPassword(confirmation);
+
+  assert.deepEqual(fetch.mock.calls.map(({ arguments: [url, options] }) => ({
+    path: new URL(url).pathname,
+    method: options.method,
+    body: JSON.parse(options.body),
+  })), [
+    { path: "/api/v1/auth/donor/password-reset/request", method: "POST", body: { email } },
+    { path: "/api/v1/auth/donor/password-reset/confirm", method: "POST", body: confirmation },
+  ]);
+});
+
+test("administrator reset uses only administrator endpoints", async (t) => {
+  const fetch = t.mock.method(globalThis, "fetch", async () =>
+    Response.json({ message: "Request accepted" }));
+  const email = "administrator@example.com";
+  const confirmation = { email, otp: "654321", new_password: "Replacement123" };
+
+  await api.adminForgotPassword({ email });
+  await api.adminNewPassword(confirmation);
+
+  assert.deepEqual(fetch.mock.calls.map(({ arguments: [url, options] }) => ({
+    path: new URL(url).pathname,
+    method: options.method,
+    body: JSON.parse(options.body),
+  })), [
+    { path: "/api/v1/auth/admin/password-reset/request", method: "POST", body: { email } },
+    { path: "/api/v1/auth/admin/password-reset/confirm", method: "POST", body: confirmation },
+  ]);
+});

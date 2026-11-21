@@ -6,6 +6,8 @@ FastAPI application factory and main entry point.
 
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import logging
@@ -20,6 +22,29 @@ from app.core.rate_limiter import setup_rate_limiting
 from app.api.v1 import router as v1_router
 
 logger = logging.getLogger(__name__)
+
+
+async def lifeconnect_exception_handler(
+    request: Request, exc: LifeConnectException
+) -> JSONResponse:
+    """Return a client-safe error body while keeping diagnostics server-side.
+
+    ``exc.details`` can embed submitted values (an email, a phone number) or internal
+    identifiers, so it is only included in a local development/test response. Every
+    caller still gets a stable ``error_id`` to quote to support.
+    """
+    error_id = uuid.uuid4().hex
+    settings = get_settings()
+    show_details = settings.DEBUG and settings.APP_ENV.lower() in {"development", "test"}
+
+    logger.warning("Application error error_id=%s type=%s", error_id, type(exc).__name__)
+    if show_details:
+        logger.debug("Application error details error_id=%s details=%r", error_id, exc.details)
+
+    content = {"detail": exc.message, "error_id": error_id}
+    if show_details:
+        content["error_details"] = exc.details
+    return JSONResponse(status_code=400, content=content)
 
 
 @asynccontextmanager
@@ -101,21 +126,28 @@ def create_app() -> FastAPI:
     # Configure CORS (outermost)
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=settings.ALLOWED_ORIGINS,
+        allow_origins=settings.ALLOWED_ORIGINS or [],
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
 
     # Exception handlers
-    @app.exception_handler(LifeConnectException)
-    async def lifeconnect_exception_handler(
-        request: Request, exc: LifeConnectException
-    ):
-        return JSONResponse(
-            status_code=400,
-            content={"detail": exc.message, "error_details": exc.details},
-        )
+    app.add_exception_handler(LifeConnectException, lifeconnect_exception_handler)
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_exception_handler(request: Request, exc: RequestValidationError):
+        if request.url.path.rstrip("/") in {
+            "/api/v1/auth/donor/password-reset/request",
+            "/api/v1/auth/donor/password-reset/confirm",
+            "/api/v1/auth/admin/password-reset/request",
+            "/api/v1/auth/admin/password-reset/confirm",
+            "/api/v1/privacy/erasure-requests",
+        }:
+            # Pydantic includes submitted values in its default errors, including passwords and OTPs.
+            details = [{key: error[key] for key in ("loc", "msg", "type")} for error in exc.errors()]
+            return JSONResponse(status_code=422, content={"detail": details})
+        return await request_validation_exception_handler(request, exc)
 
     @app.exception_handler(Exception)
     async def general_exception_handler(request: Request, exc: Exception):

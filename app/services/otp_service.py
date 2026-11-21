@@ -58,7 +58,9 @@ async def store_otp(session: AsyncSession, email: str, otp: str, purpose: str) -
     await session.commit()  # the code is emailed right after; it must be durable first
 
 
-async def verify_otp(session: AsyncSession, email: str, otp: str, purpose: str) -> bool:
+async def verify_otp(
+    session: AsyncSession, email: str, otp: str, purpose: str, *, commit_success: bool = True,
+) -> bool:
     """Purpose-bound, expiring, attempt-limited, single-use check."""
     email = email.lower()
     record = (await session.execute(
@@ -78,9 +80,10 @@ async def verify_otp(session: AsyncSession, email: str, otp: str, purpose: str) 
     ok = hmac.compare_digest(record.code_hmac, _hash(otp, purpose, email))
     if ok:
         await session.delete(record)
-    # Commit here: callers raise HTTPException on failure, which rolls the request session back
-    # and would otherwise discard the attempt counter.
-    await session.commit()
+    # Failed attempts must survive the caller's HTTP error. On success, a caller can
+    # keep the lock and consume the code in the same transaction as the protected change.
+    if not ok or commit_success:
+        await session.commit()
     return ok
 
 

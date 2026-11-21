@@ -1,7 +1,9 @@
 import { useState, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useGoogleReCaptcha } from "react-google-recaptcha-v3";
 import { api, setToken, setUserType, setUserId, setUsername } from "../services/api";
+
+const recaptchaConfigured = Boolean(import.meta.env.VITE_RECAPTCHA_SITE_KEY);
 
 const AdminLogin = () => {
   const [form, setForm] = useState({
@@ -12,6 +14,7 @@ const AdminLogin = () => {
   const [isLoading, setIsLoading] = useState(false);
   const { executeRecaptcha } = useGoogleReCaptcha();
   const navigate = useNavigate();
+  const { state } = useLocation();
 
   const handleChange = (e) => {
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
@@ -20,13 +23,13 @@ const AdminLogin = () => {
   const handleSubmit = useCallback(async (e) => {
     e.preventDefault();
     setError("");
-    if (!executeRecaptcha) {
+    if (recaptchaConfigured && !executeRecaptcha) {
       setError("reCAPTCHA not ready. Please wait and try again.");
       return;
     }
     setIsLoading(true);
     try {
-      const token = await executeRecaptcha("admin_login");
+      const token = recaptchaConfigured ? await executeRecaptcha("admin_login") : undefined;
       const res = await api.adminLogin({
         email: form.email,
         password: form.password,
@@ -427,6 +430,7 @@ const AdminLogin = () => {
       {/* Form Container */}
       <div className="container">
         {error && <div className="error-alert">{error}</div>}
+        {state?.passwordReset && <p role="status">Password reset successful. Sign in with your new password.</p>}
 
         <h2>Admin Login</h2>
         <form onSubmit={handleSubmit}>

@@ -1,33 +1,26 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { api } from "../services/api";
+import { Link, Navigate, useNavigate, useOutletContext } from "react-router-dom";
 
 const AdminOTPVerificationPage = () => {
   const [otp, setOtp] = useState("");
   const [error, setError] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
+  const { reset, setReset } = useOutletContext();
 
-  const handleSubmit = async (e) => {
+  if (!reset?.email) {
+    return <Navigate to="/admin/forgot-password" replace state={{ restartReset: true }} />;
+  }
+
+  const handleSubmit = (e) => {
     e.preventDefault();
     setError("");
-    if (!otp.trim()) {
-      setError("Please enter the OTP");
+    const code = otp.trim();
+    if (!/^[0-9]{6}$/.test(code)) {
+      setError("Enter the six-digit code from your email.");
       return;
     }
-    setIsLoading(true);
-    try {
-      const res = await api.adminOTPValidation({ otp });
-      if (res && (res.success || res.token)) {
-        navigate("/admin/new-password");
-      } else {
-        setError(res?.message || "Invalid OTP. Please try again.");
-      }
-    } catch {
-      setError("Server error. Try again.");
-    } finally {
-      setIsLoading(false);
-    }
+    setReset({ email: reset.email, otp: code });
+    navigate("/admin/new-password");
   };
 
   return (
@@ -36,14 +29,13 @@ const AdminOTPVerificationPage = () => {
         <h2 className="title">OTP Verification</h2>
         <p className="muted center-text">
           Enter the OTP that has been sent to the email address you provided
-          earlier. Ensure the OTP is entered correctly to proceed with
-          verification.
+          earlier. We’ll verify it when you submit your new password.
         </p>
 
-        {error ? <div className="error">{error}</div> : null}
+        {error ? <div role="alert" className="error">{error}</div> : null}
 
         <form className="stack" onSubmit={handleSubmit}>
-          <div className="field">
+          <label className="field">
             <span>Enter OTP</span>
             <input
               type="text"
@@ -51,15 +43,19 @@ const AdminOTPVerificationPage = () => {
               value={otp}
               onChange={(e) => setOtp(e.target.value)}
               required
-              disabled={isLoading}
+              inputMode="numeric"
+              autoComplete="one-time-code"
               placeholder="Enter the OTP sent to your email"
             />
-          </div>
+          </label>
 
-          <button type="submit" className="primary full" disabled={isLoading}>
-            {isLoading ? "Verifying..." : "Verify OTP"}
+          <button type="submit" className="primary full">
+            Continue
           </button>
         </form>
+        <div className="footer-links">
+          <Link to="/admin/forgot-password" onClick={() => setReset(null)}>Request a new code</Link>
+        </div>
       </div>
     </div>
   );

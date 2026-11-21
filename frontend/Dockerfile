@@ -1,8 +1,9 @@
 # LifeConnect Frontend — Multi-stage Dockerfile
 # Stage 1: Build the React/Vite app
-FROM node:20-alpine AS builder
+FROM node:24-alpine AS builder
 
 WORKDIR /app
+RUN apk upgrade --no-cache && npm install --global --ignore-scripts npm@12.2.3
 
 # Copy package files and install deps
 COPY package.json package-lock.json ./
@@ -10,7 +11,7 @@ RUN npm ci --ignore-scripts
 
 # Copy source and build
 # VITE_API_URL must be set at build time (passed via --build-arg)
-ARG VITE_API_URL=http://localhost:8000
+ARG VITE_API_URL
 ENV VITE_API_URL=${VITE_API_URL}
 
 # reCAPTCHA v3 site key — must be set at build time (passed via --build-arg)
@@ -24,19 +25,23 @@ RUN npm run build
 FROM nginx:stable-alpine AS runtime
 
 # Remove default nginx config
-RUN rm /etc/nginx/conf.d/default.conf
+RUN apk upgrade --no-cache && rm /etc/nginx/conf.d/default.conf
 
 # Copy our custom nginx config
 COPY nginx.conf /etc/nginx/conf.d/default.conf
-# Security headers, included by nginx.conf (kept outside conf.d so nginx does not load it on its own)
+COPY nginx-upstream.conf /etc/nginx/conf.d/upstream.conf
+COPY nginx-site.conf /etc/nginx/snippets/site.conf
 COPY security-headers.conf /etc/nginx/snippets/security-headers.conf
+COPY nginx-production.conf.template /etc/nginx/lifeconnect-templates/default.conf.template
+COPY --chmod=755 nginx-validate-domain.sh /docker-entrypoint.d/19-validate-domain.sh
+RUN sed -i 's/\r$//' /docker-entrypoint.d/19-validate-domain.sh
 
 # Copy built assets from builder stage
 COPY --from=builder /app/dist /usr/share/nginx/html
 
-EXPOSE 80
+EXPOSE 80 443
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
-  CMD wget -qO- http://localhost:80 || exit 1
+  CMD wget -qO- http://127.0.0.1:8081/healthz || exit 1
 
 CMD ["nginx", "-g", "daemon off;"]

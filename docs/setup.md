@@ -102,38 +102,76 @@ The backend uses `uv` for dependency management.
 | `BLOOD_REQUEST_RATE_LIMIT` | `5/minute;30/hour` | Dedicated per-IP limit on the public blood-request form (it emails the admins) |
 | `ADMIN_NOTIFY_MAX_RECIPIENTS` | `20` | A new request sends ONE email, BCC'd to at most this many active admins |
 | `OTP_TTL_SECONDS` / `OTP_MAX_ATTEMPTS` | `600` / `5` | The attempt budget belongs to the window: requesting a new code does not reset it, so after the allowed wrong guesses a user waits for the window to end |
-| `RATE_LIMIT_STORAGE_URI` | `memory://` | `memory://` counts per process; with more than one worker or replica use a shared store such as `redis://host:6379/0` (install `pip install -r requirements-redis.txt` first; startup refuses to run without it; in Docker add it to the Dockerfile's install list) |
+| `RATE_LIMIT_STORAGE_URI` | `memory://` | `memory://` counts per process. The production overlay uses private Redis. For a host install with Redis, install `pip install -r requirements-redis.txt` first. **`APP_ENV=production` refuses to start with `memory://`.** |
 | `DONOR_ELIGIBILITY_DAYS` | `60` | Days a donor stays inactive after donating |
 
 ### Docker deployment
 
-`docker-compose.yml` publishes **only the frontend (nginx, port 80)**. PostgreSQL and the API are reachable on the
-compose network only. Before the first `docker compose up`:
+For local Docker use, set the generated `SECRET_KEY` and `POSTGRES_PASSWORD` in `.env`, then run
+`docker compose up --build`. The base file serves the frontend at `http://127.0.0.1` and requires no TLS files.
+Leave the frontend site key empty if local reCAPTCHA enforcement is off. Add `docker-compose.dev.yml`
+only for local debugging when you need the API or PostgreSQL published on loopback.
 
-- Put `POSTGRES_PASSWORD` in `.env` (long and random). It has no default; compose refuses to start without it.
-- Put a real `SECRET_KEY` in `.env` (see step 2). `APP_ENV=production` also needs `RECAPTCHA_SECRET_KEY` and
-  `RECAPTCHA_ENFORCED=true`.
-- For debugging from your machine, add the loopback-only override. It publishes PostgreSQL and the API on
-  `127.0.0.1` and nothing else: `docker compose -f docker-compose.yml -f docker-compose.dev.yml up`. Never use it
-  on a server.
+On the production host, use Docker Compose 2.24.4 or later and combine the base and production files.
+Allow public access to TCP 80 and 443 and point the approved DNS name at the host. The production overlay
+enforces production mode, reCAPTCHA, private Redis rate limiting and disabled debug mode and API docs.
+The frontend and API share an origin. If a separate HTTPS client requires CORS, set
+`PRODUCTION_ALLOWED_ORIGINS` to a JSON array of exact HTTPS origins. Its default is `[]`.
 
-**Client IP behind nginx.** The API sits behind the nginx container, so rate limits only work per client if uvicorn
-reads the real address from `X-Forwarded-For`, and only from nginx. Uvicorn runs with `--proxy-headers`, and
-`FORWARDED_ALLOW_IPS` is the single trusted address: the frontend container, pinned to `172.28.0.10` in
-`docker-compose.yml`. Any other peer's `X-Forwarded-For` is ignored. Never set it to `*`. If your host already uses
-`172.28.0.0/24`, change the subnet and the frontend address together and set `FORWARDED_ALLOW_IPS` to match. A
-different reverse proxy or a load balancer in front of nginx changes this: trust exactly the address that connects
-to the API.
+Set these in the host's protected `.env` file, using values issued for this deployment:
 
-**SPA security headers.** `frontend/security-headers.conf` adds a Content-Security-Policy, `X-Frame-Options`,
-`X-Content-Type-Options`, `Referrer-Policy` and `Permissions-Policy` to every SPA response. HSTS is only enabled
-in the commented TLS nginx configuration, never on plain HTTP. The CSP allows exactly
-the origins the frontend uses (reCAPTCHA, Google Fonts, Font Awesome from cdnjs). If you add a third-party script,
-font or API origin, extend it, and check the browser console for CSP violations on the login, landing and signup
-pages.
+| Setting | Value |
+| --- | --- |
+| `LIFECONNECT_DOMAIN` | Lowercase public DNS hostname, without a scheme, path or port |
+| `LIFECONNECT_TLS_DIR` | Absolute path to the dedicated host certificate directory |
+| `VITE_RECAPTCHA_SITE_KEY` | Public reCAPTCHA v3 site key registered for the production hostname |
+| `RECAPTCHA_SECRET_KEY` | Matching server key, supplied as a secret at runtime |
+| `SECRET_KEY`, `POSTGRES_PASSWORD` | Independently generated secrets. Use URL-safe characters in the database password because Compose builds a database URL. |
 
-**Dependencies in the image.** The API image installs the exact pinned runtime set in `requirements.txt`.
-Test and development tools live in `requirements-dev.txt`; see `docs/supply-chain.md` for the update process.
+Provision the existing mail and Maps configuration as well. Rebuild the frontend when the public site
+key changes. Only variables named in the frontend build arguments are needed for the browser bundle.
+
+**Certificate installation and renewal.** Obtain a CA-issued certificate for the configured hostname.
+Use DNS validation for initial issuance so certificate setup does not depend on an already running HTTPS
+server. For unattended renewal, configure an ACME client with the supported plugin for your DNS provider
+and a restricted DNS credential. Copy the certificate chain and matching key into the dedicated directory
+as `fullchain.pem` and `privkey.pem`. On a Linux host, restrict the directory and private key to the
+deployment administrator and Nginx master. Compose mounts this directory read-only in the frontend.
+
+```sh
+docker compose -f docker-compose.yml -f docker-compose.prod.yml config --quiet
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T frontend nginx -t
+```
+
+For Certbot, configure a deploy hook to run after successful renewal of this certificate. Copy the new
+pair from `$RENEWED_LINEAGE` into temporary files in the mounted host directory, set restrictive
+permissions, then rename them to the installed filenames. Keep a protected copy of the previous
+matching pair until the reload succeeds. From the deployment directory, run:
+
+```sh
+docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T frontend nginx -t &&
+docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T frontend nginx -s reload
+```
+
+Test renewal with `certbot renew --dry-run` and exercise the deployment hook in staging. Monitor
+certificate expiry and renewal and reload failures. If validation fails, restore the previous pair before
+retrying. Verify the public hostname presents a valid chain, HTTP redirects to HTTPS, TLS 1.2 and 1.3
+work, HTTPS sends HSTS, and the login and blood request forms complete reCAPTCHA. For a code rollback,
+redeploy the previous verified HTTPS images and configuration. Keep the PostgreSQL and Redis volumes.
+See the [Certbot renewal and hooks guide](https://eff-certbot.readthedocs.io/en/stable/using.html#renewing-certificates).
+
+**Proxy boundary.** Nginx replaces the incoming forwarding headers with its own connection values.
+Uvicorn trusts only the pinned Nginx address, `172.28.0.10`. PostgreSQL and Redis join an isolated
+data network, and the API has no published ports in production. If you put a load balancer or CDN in
+front of Nginx, restrict direct ingress and configure Nginx to trust only that provider's verified addresses
+before using its client IP metadata. Keep Uvicorn's trust limited to Nginx.
+
+The CSP allows the required reCAPTCHA, font and icon hosts. Google documents the required paths in its
+[reCAPTCHA CSP guidance](https://developers.google.com/recaptcha/docs/faq#im_using_content-security-policy_csp_on_my_website._how_can_i_configure_it_to_work_with_recaptcha).
+HSTS is sent on HTTPS responses, including
+API and static asset responses. Production refresh cookies are Secure, HttpOnly and SameSite=Strict.
+The API image installs the pinned runtime sets in `requirements.txt` and `requirements-redis.txt`.
 
 ### Sessions, passwords and accounts
 

@@ -120,3 +120,19 @@ source_db.sql
 # Database dumps may contain personal data - never commit
 *.dump
 *.sql.gz
+
+# Sensitive local exports, environment variants and key stores
+.env.*
+!.env.example
+*.sqlite
+*.sql
+!docs/initial_data.sql
+!docs/SyntheticData.sql
+!tests/fixtures/legacy_dump_sample.sql
+*.sql.*
+*.dump.*
+*.backup.*
+*.bak.*
+*.p12
+*.pfx
+*.crt

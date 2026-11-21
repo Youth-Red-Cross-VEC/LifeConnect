@@ -1,6 +1,7 @@
 """Runtime dependencies are exactly pinned and the image installs the runtime file only."""
 
 import re
+import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -13,6 +14,17 @@ def test_every_runtime_requirement_is_exactly_pinned():
     requirements = [line.strip() for line in RUNTIME.splitlines() if line.strip() and not line.startswith("#")]
     assert requirements
     assert all(re.fullmatch(r"[A-Za-z0-9_.-]+(?:\[[^]]+\])?==[0-9][A-Za-z0-9.!+_-]*", line) for line in requirements)
+
+
+def test_runtime_dependencies_match_project_metadata_and_uv_lock():
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    lock = tomllib.loads((ROOT / "uv.lock").read_text(encoding="utf-8"))
+    pins = {line.strip().lower() for line in RUNTIME.splitlines() if line.strip() and not line.startswith("#")}
+    assert pins == {dependency.lower() for dependency in project["project"]["dependencies"]}
+    resolved = {(package["name"], package["version"]) for package in lock["package"]}
+    for pin in pins:
+        name, version = pin.split("==")
+        assert (name.partition("[")[0], version) in resolved
 
 
 def test_auth_libraries_are_replaced_and_bcrypt_is_supported():

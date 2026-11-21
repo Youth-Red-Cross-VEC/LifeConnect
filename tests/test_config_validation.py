@@ -5,7 +5,7 @@ from pydantic import ValidationError
 
 from app.config import Settings
 
-GOOD_KEY = "0123456789abcdef0123456789abcdef"  # 32 chars, no placeholder words
+GOOD_KEY = "".join(format(i, "x") for i in range(16)) * 2
 
 BASE = dict(
     DATABASE_URL="sqlite+aiosqlite://", GOOGLE_MAPS_API_KEY="x", MAIL_SERVER="x", MAIL_USERNAME="x",
@@ -62,7 +62,12 @@ def test_production_requires_recaptcha_secret_and_enforcement():
         build(APP_ENV="production", RECAPTCHA_SECRET_KEY="r", RECAPTCHA_ENFORCED=False)
     with pytest.raises(ValidationError, match="RECAPTCHA_ENFORCED"):
         build(APP_ENV="production", RECAPTCHA_SECRET_KEY="r")  # the default (false) is not enough
-    ok = build(APP_ENV="Production", RECAPTCHA_SECRET_KEY="r", RECAPTCHA_ENFORCED=True)
+    ok = build(
+        APP_ENV="Production",
+        RECAPTCHA_SECRET_KEY="r",
+        RECAPTCHA_ENFORCED=True,
+        RATE_LIMIT_STORAGE_URI="redis://localhost:6379/0",
+    )
     assert ok.RECAPTCHA_ENFORCED is True
 
 
@@ -88,7 +93,11 @@ def test_the_shipped_env_example_fails_loudly_instead_of_running_with_a_placehol
 
 def test_docs_follow_the_environment_unless_set_explicitly():
     assert build(APP_ENV="development").docs_enabled is True
-    prod = dict(RECAPTCHA_SECRET_KEY="r", RECAPTCHA_ENFORCED=True)
+    prod = dict(
+        RECAPTCHA_SECRET_KEY="r",
+        RECAPTCHA_ENFORCED=True,
+        RATE_LIMIT_STORAGE_URI="redis://localhost:6379/0",
+    )
     assert build(APP_ENV="production", **prod).docs_enabled is False
     assert build(APP_ENV="production", ENABLE_DOCS=True, **prod).docs_enabled is True
     assert build(APP_ENV="development", ENABLE_DOCS=False).docs_enabled is False

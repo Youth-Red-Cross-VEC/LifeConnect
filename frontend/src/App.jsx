@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Outlet, Routes, Route } from "react-router-dom";
 import { useEffect, useState } from "react";
 import "./App.css";
 import ProtectedRoute from "./components/ProtectedRoute";
@@ -46,6 +46,13 @@ import OngoingRequestsUpdationConfirmation from "./pages/OngoingRequestsUpdation
 import AdminDashboard from "./pages/AdminDashboard";
 import AboutUs from "./pages/AboutUs";
 import NotFound from "./pages/NotFound";
+import { AdminErasure, DonorErasure } from "./pages/PrivacyErasure";
+
+function PasswordResetFlow() {
+  // Keep the code off disk, out of URLs and out of browser history state.
+  const [reset, setReset] = useState(null);
+  return <Outlet context={{ reset, setReset }} />;
+}
 
 function App() {
   const [sessionReady, setSessionReady] = useState(false);
@@ -69,13 +76,16 @@ function App() {
           {/* Donor Auth Routes (public) */}
           <Route path="/donor/login" element={<DonorLogin />} />
           <Route path="/donor/register" element={<RegisterDonor />} />
-          <Route path="/donor/new-password" element={<DonorNewPassword />} />
-          <Route path="/donor/forgot-password" element={<DonorForgetPassword />} />
-          <Route path="/donor/otp-validation" element={<DonorOTPValidationPage />} />
+          <Route element={<PasswordResetFlow key="donor" />}>
+            <Route path="/donor/new-password" element={<DonorNewPassword />} />
+            <Route path="/donor/forgot-password" element={<DonorForgetPassword />} />
+            <Route path="/donor/otp-validation" element={<DonorOTPValidationPage />} />
+          </Route>
           <Route path="/donor/registration-confirmation" element={<NewDonorRegistrationConfirmation />} />
 
           {/* Donor Protected Routes */}
           <Route path="/donor/dashboard" element={<ProtectedRoute type="donor"><DonorDashboard /></ProtectedRoute>} />
+          <Route path="/donor/privacy" element={<ProtectedRoute type="donor"><DonorErasure /></ProtectedRoute>} />
           <Route path="/donor/update-confirmation" element={<ProtectedRoute type="donor"><DonorDetailsUpdateConfirmation /></ProtectedRoute>} />
           <Route path="/donor/query" element={<ProtectedRoute type="donor"><QueryPageDonor /></ProtectedRoute>} />
           <Route path="/donor/generate-request" element={<ProtectedRoute type="donor"><GenerateRequests /></ProtectedRoute>} />
@@ -83,12 +93,15 @@ function App() {
           {/* Admin Auth Routes (public) */}
           <Route path="/admin/login" element={<AdminLogin />} />
           <Route path="/admin/signup" element={<AdminSignup />} />
-          <Route path="/admin/forgot-password" element={<AdminForgetPassword />} />
-          <Route path="/admin/otp-verification" element={<AdminOTPVerificationPage />} />
-          <Route path="/admin/new-password" element={<AdminNewPassword />} />
+          <Route element={<PasswordResetFlow key="admin" />}>
+            <Route path="/admin/forgot-password" element={<AdminForgetPassword />} />
+            <Route path="/admin/otp-verification" element={<AdminOTPVerificationPage />} />
+            <Route path="/admin/new-password" element={<AdminNewPassword />} />
+          </Route>
 
           {/* Admin Protected Dashboard Routes */}
           <Route path="/admin/dashboard" element={<ProtectedRoute type="admin"><AdminDashboard /></ProtectedRoute>} />
+          <Route path="/admin/privacy" element={<ProtectedRoute type="admin"><AdminErasure /></ProtectedRoute>} />
           <Route path="/admin/requests/expired" element={<ProtectedRoute type="admin"><ExpiredRequestsAdmin /></ProtectedRoute>} />
           <Route path="/admin/requests/expired/confirmation" element={<ProtectedRoute type="admin"><ExpiredRequestsUpdationConfirmation /></ProtectedRoute>} />
           <Route path="/admin/analytics" element={<ProtectedRoute type="admin"><AnalyticsAdmin /></ProtectedRoute>} />

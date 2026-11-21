@@ -5,7 +5,6 @@ reproduce the loser deterministically: the second call is handed the stale snaps
 (exactly what a concurrent request would have read), while the database already holds the new status.
 """
 
-from datetime import date
 from types import SimpleNamespace
 
 import pytest
@@ -17,6 +16,7 @@ from app.models.blood_request import BloodRequestDetails
 from app.models.donor import DonorDetail
 from app.repositories.blood_request import BloodRequestRepository
 from app.services.email_service import EmailService
+from app.utils.dates import utcnow
 from tests.helpers import insert_donor, insert_request
 
 
@@ -112,7 +112,7 @@ async def test_approve_racing_a_decline_leaves_the_first_decision(admin_client: 
 
 def _close_body(donor_id: str = "DON-1") -> dict:
     return {
-        "request_id": "REQ-1", "units_donated": 1, "donation_date": date.today().isoformat(),
+        "request_id": "REQ-1", "units_donated": 1, "donation_date": utcnow().date().isoformat(),
         "donor_ids": [donor_id], "send_certificates": False,
     }
 

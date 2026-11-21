@@ -18,6 +18,7 @@ from app.core.recaptcha import verify_recaptcha
 from app.models.donor import DonorDetail
 from app.models.admin import AdminDetails
 from app.services.email_service import get_email_service
+from app.services.erasure_service import lock_donor
 from app.services.refresh_session_service import (
     claim_session,
     issue_refresh_token,
@@ -95,7 +96,7 @@ class TokenResponse(BaseModel):
     class Config:
         json_schema_extra = {
             "example": {
-                "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+                "access_token": "<access-token>",
                 "token_type": "bearer",
                 "user_id": "DON-123456",
                 "user_type": "donor",
@@ -203,6 +204,7 @@ async def donor_login(
         # Get donor by email
         result = await session.execute(
             select(DonorDetail).where(func.lower(DonorDetail.email) == normalize_email(credentials.email))
+            .with_for_update(of=DonorDetail)
         )
         donor = result.scalar_one_or_none()
         
@@ -438,7 +440,7 @@ async def refresh_token(
         
         # Fetch updated user from database
         if user_type == "donor":
-            user = await session.get(DonorDetail, user_id)
+            user = await lock_donor(session, user_id)
             if not user:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
@@ -566,22 +568,12 @@ async def request_donor_password_reset(
     background_tasks: BackgroundTasks,
     session: AsyncSession = Depends(get_db, scope="function")
 ):
-    """
-    Request password reset for a donor.
-    
-    In production, integrate with email service to send OTP.
-    
-    Args:
-        data: Donor email
-        session: Database session
-        
-    Returns:
-        MessageResponse: Confirmation message
-    """
+    """Request a donor reset without disclosing whether the account exists."""
     try:
         # Check if donor exists
         result = await session.execute(
             select(DonorDetail).where(func.lower(DonorDetail.email) == normalize_email(data.email))
+            .with_for_update(of=DonorDetail)
         )
         donor = result.scalar_one_or_none()
         
@@ -592,10 +584,6 @@ async def request_donor_password_reset(
                 message="If this email exists, you will receive a reset link"
             )
          
-        # TODO: Generate OTP and send email
-        # otp = generate_otp()
-        # await send_password_reset_email(donor.email, otp)
-        # Store OTP in database with expiry
         otp = generate_otp()
         await store_otp(session, donor.email, otp, PURPOSE_DONOR_RESET)
         # Send after the response: awaiting SMTP here would make known emails answer slower than unknown ones.
@@ -639,16 +627,21 @@ async def confirm_donor_password_reset(
         # Find donor
         result = await session.execute(
             select(DonorDetail).where(func.lower(DonorDetail.email) == normalize_email(data.email))
+            .with_for_update(of=DonorDetail)
         )
         donor = result.scalar_one_or_none()
 
         if await failed_confirmation_count(session, data.email, PURPOSE_DONOR_RESET) >= 10:
             raise HTTPException(status_code=429, detail="Too many failed code attempts; try again later")
 
-        # One answer for "no such account" and "wrong or expired code", and the same work for both
-        # (verify_otp runs either way), so this endpoint cannot be used to discover registered emails.
-        otp_ok = await verify_otp(session, data.email, data.otp, PURPOSE_DONOR_RESET)
+        # Use the same public error for unknown accounts and unusable codes.
+        otp_ok = await verify_otp(
+            session, data.email, data.otp, PURPOSE_DONOR_RESET, commit_success=False,
+        )
         if donor is None or not otp_ok:
+            if otp_ok:
+                # An orphaned code must not authorize an update or be committed by the failure counter.
+                await session.rollback()
             await record_failed_confirmation(session, data.email, PURPOSE_DONOR_RESET)
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired code")
         await clear_failed_confirmations(session, data.email, PURPOSE_DONOR_RESET)
@@ -722,9 +715,13 @@ async def confirm_admin_password_reset(
         if await failed_confirmation_count(session, data.email, PURPOSE_ADMIN_RESET) >= 10:
             raise HTTPException(status_code=429, detail="Too many failed code attempts; try again later")
 
-        # Same single answer and same work as the donor flow (no account enumeration).
-        otp_ok = await verify_otp(session, data.email, data.otp, PURPOSE_ADMIN_RESET)
+        # Consume the code in the same transaction as the credential and session changes.
+        otp_ok = await verify_otp(
+            session, data.email, data.otp, PURPOSE_ADMIN_RESET, commit_success=False,
+        )
         if admin is None or not otp_ok:
+            if otp_ok:
+                await session.rollback()
             await record_failed_confirmation(session, data.email, PURPOSE_ADMIN_RESET)
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired code")
         await clear_failed_confirmations(session, data.email, PURPOSE_ADMIN_RESET)

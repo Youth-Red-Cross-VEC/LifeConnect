@@ -7,6 +7,7 @@ import { certificateApi } from "./certificates.js";
 import { donorApi } from "./donors.js";
 import { hospitalApi } from "./hospitals.js";
 import { queryApi } from "./queries.js";
+import { privacyApi } from "./privacy.js";
 
 export * from "./client.js";
 export { saveBlob } from "../download.js";
@@ -19,4 +20,5 @@ export const api = {
   ...queryApi,
   ...adminApi,
   ...certificateApi,
+  ...privacyApi,
 };

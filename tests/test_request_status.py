@@ -9,6 +9,7 @@ from sqlalchemy import select
 from app.core.request_status import TRANSITIONS, BloodRequestStatus as S, can_transition, sources_for
 from app.models.blood_request import BloodRequestDetails
 from app.repositories.blood_request import BloodRequestRepository
+from app.utils.dates import utcnow
 from tests.helpers import insert_request
 
 P = "/api/v1/blood-requests"
@@ -43,7 +44,8 @@ async def test_declined_request_cannot_be_approved_or_closed(admin_client: Async
     await insert_request(test_session, 1, status="Declined")
     assert (await admin_client.post(f"{P}/REQ-1/approve")).status_code == 409
     assert (await admin_client.post(
-        f"{P}/REQ-1/close", json={"request_id": "REQ-1", "units_donated": 0, "donation_date": date.today().isoformat()}
+        f"{P}/REQ-1/close",
+        json={"request_id": "REQ-1", "units_donated": 0, "donation_date": utcnow().date().isoformat()},
     )).status_code == 409
 
 

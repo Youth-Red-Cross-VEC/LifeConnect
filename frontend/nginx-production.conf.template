@@ -1,0 +1,33 @@
+server_names_hash_bucket_size 512;
+
+server {
+    listen 80 default_server;
+    server_name ${LIFECONNECT_DOMAIN};
+    server_tokens off;
+    return 308 https://${LIFECONNECT_DOMAIN}$request_uri;
+}
+
+server {
+    listen 443 ssl default_server;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_reject_handshake on;
+    server_tokens off;
+    return 421;
+}
+
+server {
+    listen 443 ssl;
+    server_name ${LIFECONNECT_DOMAIN};
+    server_tokens off;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_certificate /etc/nginx/tls/fullchain.pem;
+    ssl_certificate_key /etc/nginx/tls/privkey.pem;
+    ssl_session_cache shared:LifeConnectTLS:10m;
+    ssl_session_tickets off;
+
+    if ($host != ${LIFECONNECT_DOMAIN}) {
+        return 421;
+    }
+
+    include snippets/site.conf;
+}

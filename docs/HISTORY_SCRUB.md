@@ -1,63 +1,21 @@
-# Scrubbing personal data from git history
+# Historical exposure and coordinated history cleanup
 
-`source_db.sql` (a MySQL dump with real donor/admin names, emails, phone numbers, addresses,
-dates of birth, Aadhaar numbers and password hashes) was committed in the past. Older versions of
-`docs/initial_data.sql` and `docs/SyntheticData.sql` also contained a real admin email and password hash.
-Removing the files from the current tree does **not** remove them from history, forks or clones.
+Historical Git objects include a database dump containing personal information, identity numbers and password hashes, and older SQL seed revisions contained account details. Removing a file from the current tree does not remove historical objects, forks, pull request refs, caches or copies. Do not reproduce real values in tickets, documentation, commands, logs or screenshots. Restrict access to incident evidence and involve the college data owner and security lead promptly. Assess notification obligations with qualified counsel; do not assume compliance.
 
-The repo-side fix (synthetic seed data, `.gitignore` entries) is already committed. The steps below
-rewrite history and must be run **manually, by you**, because they are destructive and force-push.
+## Containment and credential response (owner authorization required)
 
-## 0. Before you start
-- Tell all teammates to push or stash their work; everything they have locally will diverge.
-- Make a backup: `git clone --mirror <remote-url> lifeconnect-backup.git`
-- Install git-filter-repo: `pip install git-filter-repo`
+1. Inventory affected environments, accounts, providers, users, data categories and exposure dates using restricted evidence. Treat all exposed hashes as compromised; reset affected passwords through a verified channel. Do not email passwords or hashes.
+2. Inventory every credential potentially present in accessible history, logs and dumps, including JWT signing keys, database credentials, SMTP credentials and service API keys. Determine actual exposure before rotating; also restrict and rotate any affected provider keys. Coordinate replacement and rollback with service owners, provision replacements in the secret manager, update all services and revoke old credentials after cutover. Verify application health without printing secret values.
+3. With explicit authorization, revoke refresh sessions in every affected environment and invalidate access tokens. Rotating `SECRET_KEY` across all instances invalidates tokens signed with the old key; coordinate deployment to avoid mixed keys. Verify both old access and refresh tokens fail, and that a newly authenticated user works. Revoking refresh rows alone does not guarantee immediate access-token invalidation. Record time, owner, evidence and completion in the restricted incident record.
+4. Ask the authorized data owner to decide user notification, preservation of evidence, backup handling and any reporting. Secure the local dump and backups; do not delete evidence without an approved retention decision.
 
-## 1. Fresh mirror clone (filter-repo refuses to run on a used clone)
-```bash
-git clone --mirror https://github.com/Youth-Red-Cross-VEC/LifeConnect.git lifeconnect-scrub.git
-cd lifeconnect-scrub.git
-```
+## Prepare a rewrite (do not execute without explicit authorization)
 
-## 2. Remove the dump from every commit
-```bash
-git filter-repo --path source_db.sql --invert-paths
-```
+1. Freeze writes and coordinate a maintenance window with all contributors. Inventory **all** remote branches, tags, protected refs, pull requests, forks, releases, Git LFS objects, CI artifacts, caches and external clones. Capture ref names and object IDs before work; protect the backup as sensitive data with restricted access and an owner-approved expiry.
+2. In an isolated environment make and validate a restricted mirror backup and a separate fresh mirror clone. Install and verify `git-filter-repo` using the official instructions. Inspect every affected path and revision, including renamed files, SQL seeds and documentation. Build a confidential removal inventory outside the repository; avoid passing sensitive literals on command lines or committing replacement lists.
+3. In the disposable mirror, perform a **single** planned `git filter-repo` invocation that removes all confirmed dump paths (including renames) and applies a carefully reviewed replacement file where required. Use literal placeholders such as `literal:EXAMPLE_VALUE==>REDACTED` only to illustrate the format. Do not assume filename removal alone catches copied data. Follow the tool documentation for replacement syntax and binary data limitations.
+4. Verify all rewritten refs, tags and object contents using independent secret scanners and targeted PII/dump searches, including renamed paths and binary artifacts. Check commit counts, branch tips, signatures, application builds and restore procedures. A clean scanner result is not proof that personal information is absent. Have a second authorized reviewer approve the exact ref mapping and push plan.
+5. Only after explicit approval, coordinate branch protection changes and force-update the approved branches and tags. Do not push mirror internals or pull request refs blindly. Request GitHub Support purge cached objects and inaccessible refs; address releases, Actions artifacts, LFS, forks and third-party copies separately. GitHub and fork owners control those copies.
+6. Instruct contributors to replace old clones and migrate work by reviewed patches, never merge old history back. Re-scan the remote and monitor for reintroduction. Restore branch protections and document remaining copies and owner actions.
 
-## 3. Redact real values that appear in older revisions of the docs SQL files
-Build `replacements.txt` from the OLD dump / old docs files (one literal per line, then `==>REDACTED`).
-Include every real email, phone number and password hash that was ever committed. Example format:
-```
-siddharthmagesh007@gmail.com==>redacted@example.com
-siddha2234@gmail.com==>redacted2@example.com
-regex:scrypt:32768:8:1\$[A-Za-z0-9]+\$[0-9a-f]+==>REDACTED_HASH
-```
-Then:
-```bash
-git filter-repo --replace-text replacements.txt
-```
-(Do not commit `replacements.txt`; it contains the real values.)
-
-## 4. Verify
-```bash
-git log --all --oneline -- source_db.sql        # must print nothing
-git grep -I -n -E "scrypt:32768|siddharthmagesh007|siddha2234" $(git rev-list --all) | head   # must print nothing
-```
-
-## 5. Push the rewritten history (this is the force-push; only you should run it)
-```bash
-git remote add origin https://github.com/Youth-Red-Cross-VEC/LifeConnect.git
-git push --force --all
-git push --force --tags
-```
-Branches affected: `main`, `development`, `fullstack-merge`, `old-copy` and any others.
-
-## 6. After the force-push - checklist
-- [ ] Ask GitHub Support to purge cached views / dangling commits and PR refs (`refs/pull/*`) that still hold the old blobs.
-- [ ] **Rotate the exposed admin password** and any account whose password hash was in the dump (the legacy scrypt hashes can be brute-forced offline). Reset the affected users' passwords.
-- [ ] **Invalidate all sessions**: change `SECRET_KEY` in every environment (all issued JWTs become invalid), and once refresh sessions exist (P1-13) revoke them all.
-- [ ] Rotate any other secret that ever appeared in history (SMTP password, Google Maps key, reCAPTCHA secret). Check with `gitleaks detect` or `trufflehog git file://.`.
-- [ ] Tell every teammate to **delete their old clones and re-clone**. Do not merge or rebase old branches into the new history (that reintroduces the data).
-- [ ] Anyone who forked the repo still has the old history; ask them to delete the fork or treat the data as public.
-- [ ] Decide whether affected donors must be notified (privacy/legal obligation: personal data, Aadhaar numbers, health data).
-- [ ] Delete the local `source_db.sql` copy and any backups on shared drives.
+Reference: https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/removing-sensitive-data-from-a-repository

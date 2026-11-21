@@ -42,10 +42,16 @@ PUBLIC = {
 DONOR_ALLOWED = {
     ("PATCH", "/api/v1/donors/{donor_id}"),  # own profile only, see test_donor_cannot_edit_another_donor
     ("GET", "/api/v1/queries/my-queries"),
+    ("POST", "/api/v1/privacy/erasure-requests"),
+    ("GET", "/api/v1/privacy/erasure-requests/mine"),
     ("POST", "/api/v1/auth/logout-all"),  # every account may revoke its own sessions
 }
 # Secured operations that need a donor token: admins are refused.
-DONOR_ONLY = {("PATCH", "/api/v1/donors/{donor_id}")}
+DONOR_ONLY = {
+    ("PATCH", "/api/v1/donors/{donor_id}"),
+    ("POST", "/api/v1/privacy/erasure-requests"),
+    ("GET", "/api/v1/privacy/erasure-requests/mine"),
+}
 
 HTTP_METHODS = {"get", "post", "put", "patch", "delete"}
 

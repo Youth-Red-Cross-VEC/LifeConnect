@@ -320,6 +320,26 @@
       },
       "secured": false
     },
+    "GET /api/v1/privacy/erasure-requests": {
+      "body": null,
+      "params": [
+        "query:limit:optional",
+        "query:offset:optional"
+      ],
+      "responses": {
+        "200": "array<ErasureReviewItem>",
+        "422": "HTTPValidationError"
+      },
+      "secured": true
+    },
+    "GET /api/v1/privacy/erasure-requests/mine": {
+      "body": null,
+      "params": [],
+      "responses": {
+        "200": "ErasureReceipt|null"
+      },
+      "secured": true
+    },
     "GET /api/v1/queries/": {
       "body": null,
       "params": [
@@ -409,6 +429,17 @@
       ],
       "responses": {
         "200": "HospitalResponse",
+        "422": "HTTPValidationError"
+      },
+      "secured": true
+    },
+    "PATCH /api/v1/privacy/erasure-requests/{request_id}": {
+      "body": "ErasureDecision",
+      "params": [
+        "path:request_id:required"
+      ],
+      "responses": {
+        "200": "ErasureReceipt",
         "422": "HTTPValidationError"
       },
       "secured": true
@@ -610,6 +641,15 @@
       "params": [],
       "responses": {
         "201": "HospitalResponse",
+        "422": "HTTPValidationError"
+      },
+      "secured": true
+    },
+    "POST /api/v1/privacy/erasure-requests": {
+      "body": "ErasureSubmission",
+      "params": [],
+      "responses": {
+        "202": "ErasureReceipt",
         "422": "HTTPValidationError"
       },
       "secured": true
@@ -830,6 +870,25 @@
       "name": "null|string?",
       "pincode": "null|string?",
       "state": "null|string?"
+    },
+    "ErasureDecision": {
+      "decision": "string"
+    },
+    "ErasureReceipt": {
+      "created_at": "string",
+      "id": "string",
+      "reviewed_at": "null|string",
+      "status": "string"
+    },
+    "ErasureReviewItem": {
+      "created_at": "string",
+      "donor_id": "string",
+      "id": "string",
+      "reviewed_at": "null|string",
+      "status": "string"
+    },
+    "ErasureSubmission": {
+      "current_password": "string"
     },
     "HTTPValidationError": {
       "detail": "array<ValidationError>?"

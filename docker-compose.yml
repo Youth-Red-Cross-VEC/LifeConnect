@@ -1,7 +1,7 @@
 # LifeConnect Docker Configuration
 #
 # Exposure model
-#   - Only the frontend (nginx, port 80) is published. It serves the SPA and proxies /api/ to the API.
+#   - This base file serves local HTTP on loopback. Add docker-compose.prod.yml for public HTTPS.
 #   - PostgreSQL and the API are reachable only on the compose network. To debug them from the host use
 #     the loopback-only override:  docker compose -f docker-compose.yml -f docker-compose.dev.yml up
 #   - POSTGRES_PASSWORD has no default: compose refuses to start without it.
@@ -45,7 +45,7 @@ services:
       # Web workers never run scheduled jobs; the `scheduler` service below does.
       - SCHEDULER_ENABLED=false
       # The nginx container (pinned address below) is the only peer whose X-Forwarded-For is believed.
-      - FORWARDED_ALLOW_IPS=${FORWARDED_ALLOW_IPS:-172.28.0.10}
+      - FORWARDED_ALLOW_IPS=172.28.0.10
     volumes:
       - ./app/static:/code/app/static
     depends_on:
@@ -84,10 +84,10 @@ services:
         # So VITE_API_URL should be empty string (same origin) — nginx handles the proxy.
         VITE_API_URL: ""
         # reCAPTCHA v3 site key — baked into the JS bundle at build time
-        VITE_RECAPTCHA_SITE_KEY: "6LcaqHstAAAAADlXBhXn_zh-JC6WVY7L_fPm98TP"
+        VITE_RECAPTCHA_SITE_KEY: ${VITE_RECAPTCHA_SITE_KEY:-}
     container_name: lifeconnect-frontend
     ports:
-      - "80:80"
+      - "127.0.0.1:80:80"
     networks:
       default:
         # Pinned so the API can trust exactly this address as the reverse proxy (see FORWARDED_ALLOW_IPS).

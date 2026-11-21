@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate, useOutletContext } from "react-router-dom";
 import { api } from "../services/api";
 
 const AdminForgetPassword = () => {
@@ -7,17 +7,23 @@ const AdminForgetPassword = () => {
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
+  const { state } = useLocation();
+  const { setReset } = useOutletContext();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
+    setReset(null);
     setIsLoading(true);
     try {
-      const res = await api.adminForgotPassword({ email });
-      if (res && (res.success || res.token || res.message === "OTP sent")) {
+      const address = email.trim();
+      const res = await api.adminForgotPassword({ email: address });
+      if (res?.message) {
+        setReset({ email: address });
         navigate("/admin/otp-verification");
       } else {
-        setError(res?.message || "Failed to send OTP. Please try again.");
+        const detail = res?.detail ?? res?.error;
+        setError(typeof detail === "string" ? detail : "Unable to request a code. Check your email address and try again.");
       }
     } catch {
       setError("Server error. Try again.");
@@ -37,8 +43,10 @@ const AdminForgetPassword = () => {
           for resetting your password.
         </p>
 
-        {error ? (
-          <div className="error" style={{ marginBottom: "16px" }}>{error}</div>
+        {error || state?.restartReset ? (
+          <div role="alert" className="error" style={{ marginBottom: "16px" }}>
+            {error || "Request a new code to continue resetting your password."}
+          </div>
         ) : null}
 
         <form className="stack" onSubmit={handleSubmit}>
@@ -62,7 +70,7 @@ const AdminForgetPassword = () => {
         </form>
 
         <p className="muted" style={{ textAlign: "center", marginTop: "16px", fontSize: "0.9rem" }}>
-          We will send the OTP to the email you provide. Please check your inbox.
+          If the address is registered, check your inbox for a code.
         </p>
 
         <div className="footer-links" style={{ textAlign: "center", marginTop: "12px" }}>

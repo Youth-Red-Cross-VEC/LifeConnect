@@ -11,3 +11,22 @@ coverage
 .env.*
 .git
 *.log
+
+# Credentials, databases and backups at any depth
+**/.env
+**/.env.*
+**/*.sql
+**/*.sql.*
+**/*.dump
+**/*.dump.*
+**/*.db
+**/*.sqlite
+**/*.sqlite3
+**/*.bak
+**/*.bak.*
+**/*.backup
+**/*.backup.*
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx

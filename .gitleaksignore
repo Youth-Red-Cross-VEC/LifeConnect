@@ -1,0 +1,8 @@
+# Exact historical false positives. These exceptions do not apply to new commits or the worktree.
+# Synthetic signing-key fixture in a test.
+aca5291d9a4f3ce3bf0dd59a4206770a85534bd9:tests/test_config_validation.py:generic-api-key:8
+# Public browser-side reCAPTCHA site key, distinct from the private verification key.
+c751185ed3c49599675727674b765a35179860ab:docker-compose.yml:generic-api-key:54
+# The access and refresh token examples were truncated and cannot be used as credentials.
+9a0ad781579d18cac7ed93ee1521e84f1b266c21:app/api/auth/router.py:generic-api-key:59
+9a0ad781579d18cac7ed93ee1521e84f1b266c21:app/api/auth/router.py:generic-api-key:60

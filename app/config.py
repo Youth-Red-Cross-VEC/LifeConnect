@@ -4,6 +4,7 @@ from pydantic import model_validator
 from pydantic_settings import BaseSettings
 from functools import lru_cache
 from typing import Optional
+from urllib.parse import urlsplit
 
 
 MIN_SECRET_KEY_LENGTH = 32
@@ -55,7 +56,7 @@ class Settings(BaseSettings):
     DEBUG: bool = False
 
     # CORS Settings
-    ALLOWED_ORIGINS: list[str] = ["http://localhost:3000", "http://localhost:5173"]
+    ALLOWED_ORIGINS: list[str] | None = None
 
     # Rate Limiting
     RATE_LIMIT_PER_MINUTE: int = 60
@@ -112,11 +113,37 @@ class Settings(BaseSettings):
             raise ValueError(
                 f"SECRET_KEY must be at least {MIN_SECRET_KEY_LENGTH} characters. Generate one with: {_GENERATE_HINT}"
             )
-        if self.APP_ENV.lower() == "production":
+        production = self.APP_ENV.lower() == "production"
+        if self.ALLOWED_ORIGINS is None:
+            self.ALLOWED_ORIGINS = [] if production else ["http://localhost:3000", "http://localhost:5173"]
+        if production:
+            if self.DEBUG:
+                raise ValueError("DEBUG must be false when APP_ENV=production")
+            for origin in self.ALLOWED_ORIGINS:
+                try:
+                    url = urlsplit(origin)
+                    valid_port = url.port is None or 0 < url.port <= 65535
+                except ValueError:
+                    valid_port = False
+                if (not valid_port or not url.hostname or url.username is not None
+                        or origin != f"https://{url.netloc}" or "*" in origin
+                        or any(char.isspace() for char in origin)):
+                    raise ValueError("ALLOWED_ORIGINS must contain exact HTTPS origins in production")
             if not self.RECAPTCHA_SECRET_KEY:
                 raise ValueError("RECAPTCHA_SECRET_KEY must be set when APP_ENV=production")
             if not self.RECAPTCHA_ENFORCED:
                 raise ValueError("RECAPTCHA_ENFORCED must be true when APP_ENV=production")
+            # memory:// keeps one counter per process, so with N workers/replicas the effective
+            # limit is N times the configured one. Refuse it in production instead of silently
+            # weakening brute-force protection.
+            storage_uri = self.RATE_LIMIT_STORAGE_URI.strip().lower()
+            if not storage_uri or storage_uri.startswith("memory://"):
+                raise ValueError(
+                    "RATE_LIMIT_STORAGE_URI must be a shared store (e.g. redis://redis:6379/0) when "
+                    "APP_ENV=production: memory:// counts per process, so the effective limit is "
+                    "multiplied by the number of web workers/replicas. Install the optional client "
+                    "with: pip install -r requirements-redis.txt"
+                )
         return self
 
     class Config:

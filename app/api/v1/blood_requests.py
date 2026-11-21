@@ -33,6 +33,7 @@ from app.utils import generate_request_id, generate_response_id
 from app.core.exceptions import not_found_exception, bad_request_exception
 from app.core.request_status import BloodRequestStatus, can_transition
 from app.services.audit_service import record_admin_action
+from app.services.erasure_service import lock_donor
 from app.api.auth.deps import get_current_admin
 from app.api.auth.router import enforce_recaptcha
 from app.core.rate_limiter import limiter
@@ -42,40 +43,49 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/blood-requests", tags=["Blood Requests"])
 
 
-async def _send_donation_certificates(donor_details, donation_date: str, location: str, response_id: str) -> None:
+async def _send_donation_certificates(
+    donor_ids: list[str], donation_date: str, location: str, response_id: str, admin_id: str,
+) -> None:
     """Generate and email one certificate per donor after a close (best effort)."""
+    from app.core import database as database_module
+
+    db = database_module.db
+    if db is None:
+        return
     cert_service = get_certificate_service()
     email_service = EmailService(get_settings())
     all_sent = True
-    for donor in donor_details:
+    for donor_id in donor_ids:
         try:
-            path = await cert_service.generate_certificate(
-                donor_name=donor["name"],
-                donation_date=donation_date,
-                blood_group=donor["blood_group"],
-                location=location,
-            )
-            sent = await email_service.send_certificate(
-                donor_name=donor["name"],
-                donor_email=donor["email"],
-                certificate_path=path,
-            )
-            all_sent = all_sent and bool(sent)
-            if sent:
-                await cert_service.delete_certificate(Path(path).name)
+            async with db.session() as session:
+                donor = await lock_donor(session, donor_id)
+                if donor is None:
+                    all_sent = False
+                    continue
+                path = await cert_service.generate_certificate(
+                    donor_name=donor.name, donation_date=donation_date,
+                    blood_group=donor.blood_group, location=location,
+                )
+                filename = Path(path).name
+                record_admin_action(session, admin_id, "certificate.generate", "certificate",
+                                    filename, detail=f"donor_id={donor_id}")
+                try:
+                    sent = await email_service.send_certificate(
+                        donor_name=donor.name, donor_email=donor.email, certificate_path=path,
+                    )
+                    all_sent = all_sent and bool(sent)
+                    if sent:
+                        await cert_service.delete_certificate(filename)
+                except Exception as e:
+                    all_sent = False
+                    logger.error("Donation certificate delivery failed: %s", type(e).__name__)
         except Exception as e:
             all_sent = False
-            logger.error(
-                f"Certificate for donor {donor.get('id', '?')} failed: {type(e).__name__}"
-            )
-    # Background tasks run after the request transaction commits; open a fresh session to persist
-    # the final delivery outcome.
-    from app.core import database as database_module
-    if database_module.db is not None:
-        async with database_module.db.session() as session:
-            await BloodRequestRepository(session).update_response(
-                response_id, certificate_status="Sent" if all_sent else "Failed"
-            )
+            logger.error("Donation certificate delivery failed: %s", type(e).__name__)
+    async with db.session() as session:
+        await BloodRequestRepository(session).update_response(
+            response_id, certificate_status="Sent" if all_sent else "Failed"
+        )
 
 
 def _status_changed() -> HTTPException:
@@ -399,9 +409,9 @@ async def close_blood_request(
         )
     if len(donor_ids) > data.units_donated:
         raise bad_request_exception("More donors listed than units donated")
-    certificate_donors = []
-    for donor_id in donor_ids:
-        donor = await donor_repo.get_by_id(donor_id)
+    # Close and erasure must agree on whether this donor still exists.
+    for donor_id in sorted(donor_ids):
+        donor = await lock_donor(session, donor_id)
         if not donor:
             raise bad_request_exception(f"Donor '{donor_id}' does not exist")
         if donor.blood_group != blood_request.blood_group:
@@ -410,12 +420,6 @@ async def close_blood_request(
             raise bad_request_exception(
                 f"Donor '{donor_id}' blood group does not match the request"
             )
-        certificate_donors.append({
-            "id": donor.id,
-            "name": donor.name,
-            "email": donor.email,
-            "blood_group": donor.blood_group,
-        })
 
     # Update request and response. Atomic: a concurrent close must not record the donation twice.
     if not await request_repo.update_status(
@@ -446,13 +450,14 @@ async def close_blood_request(
         detail=f"units_donated={data.units_donated}; donors={len(donor_ids)}",
     )
 
-    if data.send_certificates and certificate_donors:
+    if data.send_certificates and donor_ids:
         background_tasks.add_task(
             _send_donation_certificates,
-            donor_details=certificate_donors,
+            donor_ids=donor_ids,
             donation_date=data.donation_date.isoformat(),
             location=blood_request.hospital_name,
             response_id=blood_request.response_id,
+            admin_id=admin_id,
         )
     elif data.send_certificates:
         # No donors were recorded, so no certificate delivery was required.

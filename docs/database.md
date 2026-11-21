@@ -129,6 +129,24 @@ transitions are defined in `app/core/request_status.py`.
 | created_at | DATETIME | no |  |
 | updated_at | DATETIME | yes |  |
 
+## `erasure_files`
+
+| Column | Type | Nullable | Notes |
+| ------ | ---- | -------- | ----- |
+| filename | VARCHAR(255) | no | primary key |
+
+## `erasure_requests`
+
+| Column | Type | Nullable | Notes |
+| ------ | ---- | -------- | ----- |
+| id | VARCHAR(36) | no | primary key |
+| donor_id | VARCHAR(36) | yes | unique, FK -> `donor_details.id` |
+| status | VARCHAR(12) | no |  |
+| created_at | DATETIME | no |  |
+| reviewed_at | DATETIME | yes |  |
+
+Check constraints: `ck_erasure_request_status`
+
 ## `hospital_details`
 
 | Column | Type | Nullable | Notes |

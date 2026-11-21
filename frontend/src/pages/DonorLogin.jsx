@@ -1,7 +1,9 @@
 import { useState, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useGoogleReCaptcha } from "react-google-recaptcha-v3";
 import { api, setToken, setUserType, setUserId, setUsername } from "../services/api";
+
+const recaptchaConfigured = Boolean(import.meta.env.VITE_RECAPTCHA_SITE_KEY);
 
 export default function DonorLogin() {
   const [form, setForm] = useState({
@@ -12,6 +14,7 @@ export default function DonorLogin() {
   const [isLoading, setIsLoading] = useState(false);
   const { executeRecaptcha } = useGoogleReCaptcha();
   const navigate = useNavigate();
+  const { state } = useLocation();
 
   const handleChange = (e) => {
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
@@ -20,13 +23,13 @@ export default function DonorLogin() {
   const handleSubmit = useCallback(async (e) => {
     e.preventDefault();
     setError("");
-    if (!executeRecaptcha) {
+    if (recaptchaConfigured && !executeRecaptcha) {
       setError("reCAPTCHA not ready. Please wait and try again.");
       return;
     }
     setIsLoading(true);
     try {
-      const token = await executeRecaptcha("donor_login");
+      const token = recaptchaConfigured ? await executeRecaptcha("donor_login") : undefined;
       const res = await api.donorLogin({
         email: form.email,
         password: form.password,
@@ -484,6 +487,7 @@ export default function DonorLogin() {
       {/* Login form container */}
       <div className="container">
         {error && <div className="error-alert">{error}</div>}
+        {state?.passwordReset && <p role="status">Password reset successful. Sign in with your new password.</p>}
 
         <h2>Donor Login</h2>
         <form onSubmit={handleSubmit}>

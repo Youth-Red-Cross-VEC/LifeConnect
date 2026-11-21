@@ -9,10 +9,6 @@ authors = [
     { name = "LifeConnect Team" }
 ]
 
-# Tell hatch where the package is (since it's "app" not "lifeconnect_api")
-[tool.hatch.build.targets.wheel]
-packages = ["app"]
-
 dependencies = [
     "fastapi==0.141.1",
     "uvicorn[standard]==0.52.1",
@@ -23,7 +19,7 @@ dependencies = [
     "asyncpg==0.31.0",
     "alembic==1.18.5",
     "PyJWT==2.15.0",
-    "bcrypt>=4.2,<6",
+    "bcrypt==4.2.1",
     "python-multipart==0.0.32",
     "APScheduler==3.11.3",
     "httpx==0.28.1",
@@ -33,6 +29,10 @@ dependencies = [
     "slowapi==0.1.10",
     "python-dotenv==1.2.2",
 ]
+
+# Tell hatch where the package is (since it's "app" not "lifeconnect_api")
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
 
 [build-system]
 requires = ["hatchling"]

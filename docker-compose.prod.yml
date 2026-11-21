@@ -1,0 +1,77 @@
+# Use together with docker-compose.yml (Compose 2.24.4 or newer).
+services:
+  postgres:
+    networks: [data]
+    restart: unless-stopped
+
+  redis:
+    image: redis:7.4-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    networks: [data]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  api:
+    environment: &production
+      APP_ENV: production
+      DEBUG: "false"
+      ENABLE_DOCS: "false"
+      RECAPTCHA_ENFORCED: "true"
+      RECAPTCHA_SECRET_KEY: ${RECAPTCHA_SECRET_KEY:?set the production reCAPTCHA secret}
+      RATE_LIMIT_STORAGE_URI: redis://redis:6379/0
+      ALLOWED_ORIGINS: ${PRODUCTION_ALLOWED_ORIGINS:-[]}
+    networks: [default, data]
+    volumes: !override
+      - generated_certificates:/code/app/static/images/certificates
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  scheduler:
+    environment: *production
+    networks: [default, data]
+    volumes:
+      - generated_certificates:/code/app/static/images/certificates
+    depends_on:
+      api:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  frontend:
+    build:
+      args:
+        VITE_RECAPTCHA_SITE_KEY: ${VITE_RECAPTCHA_SITE_KEY:?set the production reCAPTCHA site key}
+    environment:
+      LIFECONNECT_DOMAIN: ${LIFECONNECT_DOMAIN:?set the production DNS hostname}
+      NGINX_ENVSUBST_TEMPLATE_DIR: /etc/nginx/lifeconnect-templates
+      NGINX_ENVSUBST_FILTER: '^LIFECONNECT_DOMAIN$'
+    volumes:
+      - type: bind
+        source: ${LIFECONNECT_TLS_DIR:?set the absolute host TLS directory}
+        target: /etc/nginx/tls
+        read_only: true
+        bind:
+          create_host_path: false
+    ports: !override
+      - "80:80"
+      - "443:443"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+networks:
+  data:
+    internal: true
+
+volumes:
+  redis_data:
+  generated_certificates:

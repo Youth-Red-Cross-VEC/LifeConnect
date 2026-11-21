@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { api, getUserId, logout } from "../services/api";
 
 export default function DonorDashboard({ details = {} }) {
@@ -351,6 +351,7 @@ export default function DonorDashboard({ details = {} }) {
         </a>
         <div style={{ display: "flex", gap: "0.75rem" }}>
           <button onClick={() => navigate("/")}>Back to Home</button>
+          <Link to="/donor/privacy">Account privacy</Link>
           <button onClick={handleLogout}>Log out</button>
         </div>
       </div>

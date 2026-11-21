@@ -1,4 +1,5 @@
 import AdminBase from "./AdminBase";
+import { Link } from "react-router-dom";
 import AsyncState from "../components/AsyncState";
 import { useApiData } from "../hooks/useApiData";
 import { api } from "../services/api";
@@ -171,6 +172,7 @@ export default function AdminDashboard() {
       <main className="dashboard">
         {/* GREETING */}
         <div className="greeting">
+          <Link to="/admin/privacy">Review erasure requests</Link>
           <h1>Welcome, {data.admin_name}</h1>
           <p>LifeConnect Admin Dashboard</p>
         </div>

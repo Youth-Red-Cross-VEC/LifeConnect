@@ -1,33 +1,26 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { api } from "../services/api";
+import { Link, Navigate, useNavigate, useOutletContext } from "react-router-dom";
 
 export default function DonorOTPValidationPage() {
   const [otp, setOtp] = useState("");
   const [error, setError] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
+  const { reset, setReset } = useOutletContext();
 
-  const handleSubmit = async (e) => {
+  if (!reset?.email) {
+    return <Navigate to="/donor/forgot-password" replace state={{ restartReset: true }} />;
+  }
+
+  const handleSubmit = (e) => {
     e.preventDefault();
     setError("");
-    if (!otp.trim()) {
-      setError("Please enter the OTP");
+    const code = otp.trim();
+    if (!/^[0-9]{6}$/.test(code)) {
+      setError("Enter the six-digit code from your email.");
       return;
     }
-    setIsLoading(true);
-    try {
-      const res = await api.donorOTPValidation({ otp });
-      if (res && (res.success || res.token)) {
-        navigate("/donor/new-password");
-      } else {
-        setError(res?.message || "Invalid OTP. Please try again.");
-      }
-    } catch {
-      setError("Server error. Try again.");
-    } finally {
-      setIsLoading(false);
-    }
+    setReset({ email: reset.email, otp: code });
+    navigate("/donor/new-password");
   };
 
   return (
@@ -38,11 +31,11 @@ export default function DonorOTPValidationPage() {
         </h2>
         <p className="muted" style={{ textAlign: "center", marginBottom: "20px" }}>
           Enter the OTP that has been sent to your registered email address.
-          Ensure the OTP is entered correctly to proceed with verification.
+          We’ll verify it when you submit your new password.
         </p>
 
         {error ? (
-          <div className="error" style={{ marginBottom: "16px" }}>{error}</div>
+          <div role="alert" className="error" style={{ marginBottom: "16px" }}>{error}</div>
         ) : null}
 
         <form className="stack" onSubmit={handleSubmit}>
@@ -55,19 +48,20 @@ export default function DonorOTPValidationPage() {
               value={otp}
               onChange={(e) => setOtp(e.target.value)}
               required
-              disabled={isLoading}
+              inputMode="numeric"
+              autoComplete="one-time-code"
               placeholder="Enter the OTP sent to your email"
               style={{ letterSpacing: "4px", textAlign: "center", fontSize: "1.2rem" }}
             />
           </label>
 
-          <button className="primary full" type="submit" disabled={isLoading}>
-            {isLoading ? "Verifying..." : "Verify OTP"}
+          <button className="primary full" type="submit">
+            Continue
           </button>
         </form>
 
         <div className="footer-links" style={{ textAlign: "center", marginTop: "12px" }}>
-          <a href="/donor/forgot-password">Resend OTP</a>
+          <Link to="/donor/forgot-password" onClick={() => setReset(null)}>Request a new code</Link>
         </div>
       </div>
     </div>

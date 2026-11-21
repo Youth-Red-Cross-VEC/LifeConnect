@@ -5,7 +5,7 @@ from datetime import timezone
 
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import delete, text, or_
+from sqlalchemy import delete, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
@@ -16,6 +16,7 @@ from app.models.otp import OtpCode, OtpFailureWindow
 from app.models.refresh_session import RefreshSession
 from app.utils.dates import utcnow
 from app.services.certificate_service import get_certificate_service
+from app.models.privacy import ErasureFile
 
 logger = logging.getLogger(__name__)
 
@@ -118,6 +119,14 @@ async def purge_old_certificates(db: Database) -> None:
                 logger.info("purge_old_certificates already running elsewhere; skipping")
                 return
             service = get_certificate_service()
+            pending = await session.scalars(select(ErasureFile).order_by(ErasureFile.filename))
+            for entry in pending:
+                try:
+                    await service.delete_certificate(entry.filename)
+                except OSError as exc:
+                    logger.warning("Erasure file cleanup will retry: %s", type(exc).__name__)
+                else:
+                    await session.delete(entry)
             cutoff = utcnow().replace(tzinfo=timezone.utc).timestamp() - get_settings().CERT_RETENTION_DAYS * 86400
             deleted = 0
             if service.output_dir.exists():

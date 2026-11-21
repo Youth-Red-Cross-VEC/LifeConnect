@@ -1,3 +1,3 @@
-# Optional: only needed when RATE_LIMIT_STORAGE_URI is a redis:// URI (multi-worker deployments).
+# Installed by Docker. For host development, only needed with a redis:// rate-limit store.
 # The app refuses to start with a redis:// URI if this package is missing.
-redis>=5.0.0
+redis==7.4.0

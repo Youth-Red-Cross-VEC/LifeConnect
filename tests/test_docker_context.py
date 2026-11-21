@@ -132,3 +132,13 @@ def test_the_frontend_build_inputs_are_in_the_context():
     assert {"package.json", "package-lock.json", "nginx.conf", "security-headers.conf"} <= set(
         _copy_sources(FRONTEND / "Dockerfile")
     ) | {"."}
+
+
+@pytest.mark.parametrize("path", [
+    "nested/.env.staging", "nested/export.sql.gz", "nested/archive.dump.gz",
+    "nested/records.sqlite", "nested/records.db", "nested/credentials.p12",
+    "nested/private.pem", "nested/archive.backup.gz",
+])
+@pytest.mark.parametrize("patterns", [API_PATTERNS, FRONTEND_PATTERNS])
+def test_sensitive_files_are_excluded_from_both_build_contexts(path, patterns):
+    assert excluded(path, patterns)

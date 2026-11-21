@@ -10,7 +10,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /build
 
 # Install build dependencies (will not be in final image)
-RUN apk add --no-cache \
+RUN apk upgrade --no-cache && apk add --no-cache \
     gcc \
     musl-dev \
     libffi-dev \
@@ -24,6 +24,8 @@ RUN apk add --no-cache \
 # isolated in requirements-dev.txt and are not copied into the image.
 COPY requirements.txt ./
 RUN python -m pip install --no-cache-dir --prefix=/install -r requirements.txt
+COPY requirements-redis.txt ./
+RUN python -m pip install --no-cache-dir --prefix=/install -r requirements-redis.txt
 
 # Remove unnecessary files from deps to reduce size
 RUN find /install -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true && \
@@ -43,11 +45,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /code
 
 # Install ONLY runtime dependencies (minimal)
-RUN apk add --no-cache \
+RUN apk upgrade --no-cache && apk add --no-cache \
     libpq \
     libjpeg \
     zlib \
-    && adduser -D -u 1000 appuser
+    && adduser -D -u 1000 appuser \
+    && python -m pip uninstall -y setuptools wheel pip
 
 # Copy dependencies from builder
 COPY --from=builder /install /install

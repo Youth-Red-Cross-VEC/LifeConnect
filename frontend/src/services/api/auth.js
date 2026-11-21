@@ -26,12 +26,6 @@ export const authApi = {
       body: data,
     }, "/admin/login"),
 
-  adminOTPValidation: (data) =>
-    request("/api/v1/auth/admin/password-reset/confirm", {
-      method: "POST",
-      body: data,
-    }, "/admin/login"),
-
   adminNewPassword: (data) =>
     request("/api/v1/auth/admin/password-reset/confirm", {
       method: "POST",
@@ -47,12 +41,6 @@ export const authApi = {
 
   donorRegister: (data) =>
     request("/api/v1/donors/register", {
-      method: "POST",
-      body: data,
-    }),
-
-  donorOTPValidation: (data) =>
-    request("/api/v1/auth/donor/password-reset/confirm", {
       method: "POST",
       body: data,
     }),

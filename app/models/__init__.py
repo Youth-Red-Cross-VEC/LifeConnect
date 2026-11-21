@@ -16,6 +16,7 @@ from app.models.query import QueryTable
 from app.models.otp import OtpCode
 from app.models.refresh_session import RefreshSession
 from app.models.audit import AdminAuditLog
+from app.models.privacy import ErasureFile, ErasureRequest
 
 __all__ = [
     # Base
@@ -42,4 +43,6 @@ __all__ = [
     "OtpCode",
     "RefreshSession",
     "AdminAuditLog",
+    "ErasureRequest",
+    "ErasureFile",
 ]

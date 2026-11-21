@@ -188,3 +188,64 @@ NOT run / not possible here:
 - **TLS/HSTS** and **real SMTP**: neither exists locally; mail was captured with a spy.
 - `mypy`, and the project's own ruff style rules (pre-existing noise); only the bug-finding checks were run.
 - The `lc-test-pg` throwaway container is removed at the end of the session. `lc-migrate-pg` was already there and was not touched.
+
+## Follow-up pass: C1 error details and P2-43 production guard
+
+Two items previously left as "observed" / configurable-only are now enforced in code.
+
+- **C1 (error responses):** `LifeConnectException.details` is no longer returned to clients. The handler
+  (`app/main.py:lifeconnect_exception_handler`) returns `{detail, error_id}` in every environment and adds
+  `error_details` only when `DEBUG=true` **and** `APP_ENV` is `development`/`test`; details are logged at
+  debug level under the same `error_id`. Covered by `tests/test_error_responses.py` (3 tests).
+- **P2-43 (rate limiter):** `APP_ENV=production` now refuses to start with `RATE_LIMIT_STORAGE_URI` empty or
+  `memory://…`; a shared store (e.g. `redis://redis:6379/0`) is required so the worker/replica count cannot
+  multiply the effective limit. Covered by `tests/test_rate_limit_config.py` (4 new cases). `.env.example`
+  and `docs/setup.md` updated.
+
+Still open from the same review: FastAPI's default 422 body echoes the submitted `input` (including a
+password on validation failure), so a custom `RequestValidationError` handler is the remaining half of the
+error-response fix. Backend suite after this pass: 502 passed, 9 skipped (SQLite; the skips are Postgres-only
+and one Windows-only filename test).
+
+
+## Phase 1 Task 1: exposure containment preparation
+
+- Removed personal identifiers from the history-cleanup guide and replaced the procedure with an owner-controlled incident, credential rotation, session revocation, verification and coordinated rewrite checklist. Historical objects and the ignored local dump still contain sensitive data. No history rewrite, credential rotation, production revocation or remote operation was performed.
+- Expanded Git and Docker exclusions for nested environment files, databases, backups and key stores; retained explicit tracked synthetic SQL fixtures. Added Docker-context regression cases.
+- Added a redacted full-history and working-tree Gitleaks CI job. The job is not locally verified because Docker is unavailable; existing historical findings may block it and require owner-led remediation, not an allowlist.
+- Local detect-secrets 1.5.0 scan of tracked files (excluding lockfiles) returned candidate findings requiring review. The attempted history patch scan was inconclusive; no clean-history claim is made. See PHASE_1_COMPLETION_REPORT.md for limitations and baseline results.
+- Full backend rerun with a writable workspace temporary directory: 518 passed, 9 skipped; frontend: 31 tests passed, lint passed, build passed. Ruff baseline has 702 findings.
+
+## Phase 1 Task 2 — Donor password reset
+
+- The donor pages now send one confirmation with the email, code and new password. Reset state lives in memory while the donor moves through the existing screens. Direct visits and page reloads restart the flow.
+- The backend now saves OTP consumption, the new password and session revocation in the same transaction. Donor reset validation errors omit submitted values.
+- Added backend and frontend regressions and an opt-in Edge/Chromium test of the built application with synthetic mail. The focused backend suite passed 39 tests. Frontend unit tests (32), ESLint, the production build and the browser test passed.
+- Full backend suite with a writable temporary directory: 523 passed, 9 skipped.
+
+## Phase 1 Task 3 — Administrator password reset
+
+- Administrator reset now submits the registered email, OTP and new password through the existing confirmation endpoint. Donor and administrator reset state use separate route groups and stay in memory.
+- Successful confirmation saves OTP consumption, the password update and session revocation together. Tests cover role separation at the same email, privilege preservation, expiry, replay, generic errors and preservation of an OTP after a failed update.
+- Administrator reset validation errors omit submitted fields. Added an API regression and extended the opt-in browser check to exercise both role flows.
+- Verification passed with 530 backend tests (9 skipped), 33 frontend tests, ESLint, the production build and two Edge end-to-end tests.
+
+## Phase 1 Task 4 - Production HTTPS and deployment
+
+- Added the production Compose overlay with a configurable hostname and reCAPTCHA site key, read-only TLS mount, private PostgreSQL and Redis, and production application defaults. The base file keeps local HTTP on loopback.
+- Nginx now redirects to the configured HTTPS hostname, enables TLS 1.2 and 1.3, sets HSTS on HTTPS responses, replaces untrusted forwarding metadata and permits reCAPTCHA connections in CSP. FastAPI validates production CORS and debug settings.
+- Added deployment tests and certificate installation and renewal instructions. Compose models and native Nginx TLS checks passed. Docker Desktop returned HTTP 500 before it could build either image.
+- Corrected three UTC-sensitive request test fixtures without changing their assertions. The final backend suite finished with 541 passed and 9 skipped. Frontend checks and both Edge password reset tests passed.
+
+## Phase 1 Task 5 - CI security scans
+
+- Retrieved the original container job log. Setup could not resolve the legacy Trivy action tag, so neither the image build nor scan ran.
+- Added independent API and frontend scans with SHA-256-verified scanner binaries, full action commit pins, read-only repository permissions, and audits for Python runtime, Redis and all npm dependencies. Both package audits reported no known findings.
+- Registry-base scans found high-severity packages in Python, Nginx and Node. Dockerfiles now upgrade Alpine packages, omit unused Python packaging tools from the runtime and use a patched npm version. Final image scans remain blocked by the unavailable Docker Linux engine.
+- Repaired the Python project dependency table and regenerated `uv.lock`. The frontend lockfile installed successfully with npm 12.2.3. Current and local-history Gitleaks scans passed after reviewing four exact historical false positives. Historical personal data still requires the owner's cleanup.
+
+## Phase 1 Task 6 - Donor data erasure
+
+- Added password-confirmed donor submissions, super administrator review, transactional removal of linked records and sessions, and a retry queue for identified certificate files. Donation unit totals and unrelated records are preserved.
+- Added migration `0012`, the privacy screens, API authorization and regression tests, and a browser test. Drafted the privacy notice, retention and backup procedures for owner approval.
+- Final verification: 560 backend tests passed with PostgreSQL cases enabled, 1 skipped. The frontend passed 33 tests, ESLint and production build. Three Edge regressions, the focused migration suite and a donor erasure API check against PostgreSQL passed.

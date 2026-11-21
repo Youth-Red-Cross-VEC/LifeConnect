@@ -7,12 +7,13 @@ Endpoints for generating and managing blood donation certificates.
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.models.blood_request import ResponseDetails
+from app.models.privacy import ErasureFile
 from app.repositories.blood_request import BloodRequestRepository
-from app.repositories.donor import DonorRepository
 from typing import Optional
 from pathlib import Path
 
@@ -20,19 +21,31 @@ from app.services.certificate_service import get_certificate_service, Certificat
 from app.services.email_service import get_email_service, EmailService
 from app.schemas.common import SuccessResponse
 from app.services.audit_service import record_admin_action
+from app.services.erasure_service import lock_donor
 from app.api.auth.deps import get_current_admin
 
 router = APIRouter(prefix="/certificates", tags=["Certificates"])
 
 
 async def _email_then_delete(email_service: EmailService, cert_service: CertificateService,
-                             donor_name: str, donor_email: str, path: str) -> bool:
-    sent = await email_service.send_certificate(
-        donor_name=donor_name, donor_email=donor_email, certificate_path=path
-    )
-    if sent:
-        await cert_service.delete_certificate(Path(path).name)
-    return sent
+                             donor_id: str, donor_name: str, donor_email: str, path: str) -> bool:
+    from app.core import database
+
+    async def send(name: str, email: str) -> bool:
+        sent = await email_service.send_certificate(
+            donor_name=name, donor_email=email, certificate_path=path
+        )
+        if sent:
+            await cert_service.delete_certificate(Path(path).name)
+        return sent
+
+    if database.db is None:
+        return await send(donor_name, donor_email)
+    async with database.db.session() as session:
+        donor = await lock_donor(session, donor_id)
+        if donor is None or await session.get(ErasureFile, Path(path).name):
+            return False
+        return await send(donor.name, donor.email)
 
 
 # =======================
@@ -101,7 +114,7 @@ async def generate_certificate(
     Name, email and blood group come from the donor record, never from the client.
     Optionally sends the certificate to the donor's registered email.
     """
-    donor = await DonorRepository(session).get_by_id(data.donor_id)
+    donor = await lock_donor(session, data.donor_id)
     if not donor:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Donor not found")
 
@@ -140,7 +153,7 @@ async def generate_certificate(
 
     if data.send_email:
         background_tasks.add_task(
-            _email_then_delete, email_service, cert_service, donor.name, donor.email, file_path
+            _email_then_delete, email_service, cert_service, donor.id, donor.name, donor.email, file_path
         )
         email_sent = True
 
@@ -160,9 +173,10 @@ async def download_certificate(
     filename: str,
     cert_service: CertificateService = Depends(get_certificate_service),
     current_admin = Depends(get_current_admin),
+    session: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Download a generated certificate by filename (admin only)."""
-    file_path = await cert_service.get_certificate(filename)
+    file_path = None if await session.get(ErasureFile, filename) else await cert_service.get_certificate(filename)
     
     if not file_path:
         raise HTTPException(
@@ -185,9 +199,12 @@ async def download_certificate(
 async def list_certificates(
     cert_service: CertificateService = Depends(get_certificate_service),
     current_admin = Depends(get_current_admin),
+    session: AsyncSession = Depends(get_db, scope="function"),
 ):
     """List all generated certificates."""
     certificates = await cert_service.list_certificates()
+    pending = set(await session.scalars(select(ErasureFile.filename)))
+    certificates = [name for name in certificates if name not in pending]
     
     return CertificateListResponse(
         certificates=certificates,
@@ -238,14 +255,14 @@ async def send_certificate_email(
 
     Recipient name and email are read from the donor record, never from the client.
     """
-    donor = await DonorRepository(session).get_by_id(donor_id)
+    donor = await lock_donor(session, donor_id)
     if not donor:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Donor not found",
         )
 
-    file_path = await cert_service.get_certificate(filename)
+    file_path = None if await session.get(ErasureFile, filename) else await cert_service.get_certificate(filename)
     
     if not file_path:
         raise HTTPException(
@@ -254,7 +271,7 @@ async def send_certificate_email(
         )
     
     background_tasks.add_task(
-        _email_then_delete, email_service, cert_service, donor.name, donor.email, str(file_path)
+        _email_then_delete, email_service, cert_service, donor.id, donor.name, donor.email, str(file_path)
     )
 
     record_admin_action(
