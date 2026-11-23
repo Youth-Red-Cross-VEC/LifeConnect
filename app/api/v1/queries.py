@@ -4,10 +4,14 @@ Query/Support Ticket API Routes.
 Endpoints for users to submit support queries and admins to respond.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import Path as ApiPath
+from typing import Annotated
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
 
+from app.config import get_settings
+from app.core.rate_limiter import limiter
 from app.core.database import get_db
 from app.utils.dates import utcnow
 from app.utils.emails import normalize_email
@@ -37,7 +41,9 @@ router = APIRouter(prefix="/queries", tags=["Support Queries"])
     status_code=status.HTTP_201_CREATED,
     summary="Submit a support query",
 )
+@limiter.limit(get_settings().SUPPORT_QUERY_RATE_LIMIT)
 async def submit_query(
+    request: Request,
     data: QueryCreate,
     session: AsyncSession = Depends(get_db, scope="function"),
     donor_id: Optional[str] = Depends(get_optional_donor_id),
@@ -76,15 +82,15 @@ async def submit_query(
 )
 async def get_my_queries(
     limit: int = Query(default=100, ge=1, le=500),
-    offset: int = Query(default=0, ge=0),
+    offset: int = Query(default=0, ge=0, le=1000000),
     session: AsyncSession = Depends(get_db, scope="function"),
     current_user: dict = Depends(get_current_user),
 ):
     """
     Get the queries the authenticated donor filed while signed in.
 
-    Ownership is the donor account, never an email address: emails are not verified, so matching
-    on one would let anyone who registers with a victim's address read the victim's queries.
+    Ownership follows the donor ID recorded at submission. A later verified registration
+    does not establish ownership of an earlier anonymous query.
     Anonymous and legacy queries have no owner and are visible to admins only. Admin accounts
     have no donor queries.
     """
@@ -104,13 +110,13 @@ async def get_my_queries(
     summary="List all queries (Admin)",
 )
 async def list_queries(
-    page: int = Query(1, ge=1),
+    page: int = Query(1, ge=1, le=100000),
     page_size: int = Query(20, ge=1, le=100),
     status_value: Optional[str] = Query(
-        None, alias="status", description="Filter by status: 'pending' or 'resolved'"
+        None, pattern="^(pending|resolved)$", alias="status", description="Filter by status: 'pending' or 'resolved'"
     ),
     status_filter: Optional[str] = Query(
-        None, description="Deprecated alias of `status`", deprecated=True
+        None, pattern="^(pending|resolved)$", description="Deprecated alias of `status`", deprecated=True
     ),
     session: AsyncSession = Depends(get_db, scope="function"),
     current_admin = Depends(get_current_admin),
@@ -152,7 +158,7 @@ async def list_queries(
 )
 async def get_pending_queries(
     limit: int = Query(default=100, ge=1, le=500),
-    offset: int = Query(default=0, ge=0),
+    offset: int = Query(default=0, ge=0, le=1000000),
     session: AsyncSession = Depends(get_db, scope="function"),
     current_admin = Depends(get_current_admin),
 ):
@@ -169,7 +175,7 @@ async def get_pending_queries(
     summary="Get query by ID (Admin)",
 )
 async def get_query(
-    query_id: int,
+    query_id: Annotated[int, ApiPath(ge=1, le=2147483647)],
     session: AsyncSession = Depends(get_db, scope="function"),
     current_admin = Depends(get_current_admin),
 ):
@@ -192,7 +198,7 @@ async def get_query(
     summary="Reply to a query (Admin)",
 )
 async def reply_to_query(
-    query_id: int,
+    query_id: Annotated[int, ApiPath(ge=1, le=2147483647)],
     data: QueryReply,
     session: AsyncSession = Depends(get_db, scope="function"),
     current_admin = Depends(get_current_admin),
@@ -228,7 +234,7 @@ async def reply_to_query(
     summary="Delete a query (Admin)",
 )
 async def delete_query(
-    query_id: int,
+    query_id: Annotated[int, ApiPath(ge=1, le=2147483647)],
     session: AsyncSession = Depends(get_db, scope="function"),
     current_admin = Depends(get_current_admin),
 ):

@@ -1,3 +1,4 @@
+import { errorText } from "../services/requests";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import AdminBase from "./AdminBase";
@@ -32,11 +33,11 @@ export default function AddNewHospital() {
         setSubmitting(true);
         try {
             const res = await api.addHospital(formData);
-            if (res && (res.success || res.hospital_id)) {
+            if (res?.id) {
                 setSuccess("Hospital added successfully!");
                 setTimeout(() => navigate("/admin/hospitals/all"), 1500);
             } else {
-                setError(res?.message || "Failed to add hospital. Please try again.");
+                setError(errorText(res, "Failed to add hospital. Please try again."));
             }
         } catch {
             setError("Server error. Please try again.");

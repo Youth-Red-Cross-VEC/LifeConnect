@@ -35,7 +35,7 @@ async def revoke_chain(session: AsyncSession, jti: Optional[str]) -> None:
     while jti and jti not in seen:
         seen.add(jti)
         # populate_existing: walk the chain as stored, not a stale in-memory copy of a row another request just rotated.
-        row = await session.get(RefreshSession, jti, populate_existing=True)
+        row = await session.get(RefreshSession, jti, with_for_update=True, populate_existing=True)
         if row is None:
             return
         if row.revoked_at is None:

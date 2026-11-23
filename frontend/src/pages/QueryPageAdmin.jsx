@@ -1,8 +1,9 @@
+import { errorText } from "../services/requests";
 import { useState } from "react";
 import AdminBase from "./AdminBase";
 import AsyncState from "../components/AsyncState";
 import { useApiData } from "../hooks/useApiData";
-import { api, getUserId, getUsername } from "../services/api";
+import { api } from "../services/api";
 import { unwrapList } from "../services/unwrap";
 
 const loadQueries = async () => {
@@ -39,8 +40,6 @@ export default function QueryPageAdmin() {
     try {
       const res = await api.replyToQuery(queryId, {
         admin_response: responseText,
-        admin_id: getUserId() || "ADMIN",
-        admin_name: getUsername() || "Admin",
       });
       if (res && res.id) {
         setActionMsg(`✅ Response submitted for query #${queryId}.`);
@@ -49,7 +48,7 @@ export default function QueryPageAdmin() {
         );
         setResponses((prev) => ({ ...prev, [queryId]: "" }));
       } else {
-        setActionMsg(`❌ ${res?.detail || "Failed to submit response."}`);
+        setActionMsg(`❌ ${errorText(res, "Failed to submit response.")}`);
       }
     } catch {
       setActionMsg("❌ Server error submitting response.");

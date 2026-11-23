@@ -41,7 +41,9 @@ async def test_admin_reset_revokes_sessions_without_changing_role(client, test_s
     [(address, code)] = sent
     assert address == EMAIL
 
-    payload = {**BODY, "email": EMAIL.upper(), "otp": code, "role": "super_admin", "active_status": "Inactive"}
+    payload = {**BODY, "email": EMAIL.upper(), "otp": code}
+    unexpected = {**payload, "role": "super_admin", "active_status": "Inactive"}
+    assert (await client.post(f"{RESET}/confirm", json=unexpected)).status_code == 422
     confirmed = await client.post(f"{RESET}/confirm", json=payload)
     assert confirmed.status_code == 200
     assert set(confirmed.json()) == {"message"}

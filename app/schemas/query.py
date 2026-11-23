@@ -5,15 +5,16 @@ Query/Support Ticket Pydantic Schemas.
 from pydantic import BaseModel, EmailStr, Field
 from typing import Optional
 from datetime import date, datetime
+from app.schemas.validation import Paragraph, SingleLine
 from app.schemas.common import BaseSchema
 
 
-class QueryCreate(BaseModel):
+class QueryCreate(BaseModel, extra="forbid"):
     """Schema for creating a new support query."""
     
-    user_name: str = Field(..., min_length=1, max_length=55)
+    user_name: SingleLine = Field(..., min_length=1, max_length=55)
     user_email: EmailStr = Field(..., max_length=55)
-    user_query: str = Field(..., min_length=10, max_length=555)
+    user_query: Paragraph = Field(..., min_length=10, max_length=555)
 
 
 class QueryPublicResponse(BaseSchema):
@@ -45,10 +46,10 @@ class QueryResponse(BaseSchema):
     created_at: datetime
 
 
-class QueryReply(BaseModel):
+class QueryReply(BaseModel, extra="forbid"):
     """Schema for admin replying to a query."""
     
-    admin_response: str = Field(..., min_length=1, max_length=555)
+    admin_response: Paragraph = Field(..., min_length=1, max_length=555)
     # admin_id and admin_name are taken from the JWT token, not user input
 
 

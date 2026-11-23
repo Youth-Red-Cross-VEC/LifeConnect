@@ -231,7 +231,10 @@ def test_refresh_cookie_matches_transport_and_is_http_only(monkeypatch, environm
     response = Response()
     _set_refresh_cookie(response, "synthetic-test-token")
     attributes = {v.strip().lower() for v in response.headers["set-cookie"].split(";")[1:]}
-    assert {"httponly", "samesite=strict", "path=/api/v1/auth"} <= attributes
+    expected_path = "path=/" if secure else "path=/api/v1/auth"
+    assert {"httponly", "samesite=strict", expected_path} <= attributes
+    assert response.headers["set-cookie"].startswith("__Host-") is secure
+    assert not any(value.startswith("domain=") for value in attributes)
     assert ("secure" in attributes) is secure
 
 

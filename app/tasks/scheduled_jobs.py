@@ -61,7 +61,7 @@ async def expire_blood_requests(db: Database) -> None:
             count = await repo.expire_overdue_requests(_scheduler_today())
             logger.info(f"Expired {count} blood request(s)")
     except Exception as e:
-        logger.error(f"Error in expire_blood_requests: {e}")
+        logger.error(f"Error in expire_blood_requests: {type(e).__name__}")
 
 
 async def activate_donor_status(db: Database) -> None:
@@ -82,7 +82,7 @@ async def activate_donor_status(db: Database) -> None:
             count = await repo.reactivate_eligible_donors(cutoff_date)
             logger.info(f"Reactivated {count} donor(s)")
     except Exception as e:
-        logger.error(f"Error in activate_donor_status: {e}")
+        logger.error(f"Error in activate_donor_status: {type(e).__name__}")
 
 
 async def purge_expired_auth_records(db: Database) -> None:
@@ -108,7 +108,7 @@ async def purge_expired_auth_records(db: Database) -> None:
                 otps.rowcount, sessions.rowcount, failures.rowcount,
             )
     except Exception as e:
-        logger.error(f"Error in purge_expired_auth_records: {e}")
+        logger.error(f"Error in purge_expired_auth_records: {type(e).__name__}")
 
 
 async def purge_old_certificates(db: Database) -> None:
@@ -122,18 +122,14 @@ async def purge_old_certificates(db: Database) -> None:
             pending = await session.scalars(select(ErasureFile).order_by(ErasureFile.filename))
             for entry in pending:
                 try:
-                    await service.delete_certificate(entry.filename)
+                    if not await service.delete_certificate(entry.filename) and service.entry_remains(entry.filename):
+                        continue
                 except OSError as exc:
                     logger.warning("Erasure file cleanup will retry: %s", type(exc).__name__)
                 else:
                     await session.delete(entry)
             cutoff = utcnow().replace(tzinfo=timezone.utc).timestamp() - get_settings().CERT_RETENTION_DAYS * 86400
-            deleted = 0
-            if service.output_dir.exists():
-                for path in service.output_dir.iterdir():
-                    if path.is_file() and path.stat().st_mtime < cutoff:
-                        path.unlink()
-                        deleted += 1
+            deleted = service.purge_expired_files(cutoff)
             logger.info("Purged %s expired certificate file(s)", deleted)
     except Exception as e:
         logger.error("Error in purge_old_certificates: %s", type(e).__name__)

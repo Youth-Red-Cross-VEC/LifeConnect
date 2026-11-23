@@ -18,6 +18,41 @@ DIST = Path(__file__).resolve().parents[1] / "frontend" / "dist"
 ORIGIN = "http://lifeconnect.test"
 
 
+def browser_route(client, tracked_path, posts):
+    async def serve(route):
+        request = route.request
+        path = urlsplit(request.url).path
+        if path.startswith("/api/"):
+            headers = {
+                "access-control-allow-origin": ORIGIN,
+                "access-control-allow-credentials": "true",
+                "access-control-allow-methods": "POST, OPTIONS",
+                "access-control-allow-headers": "content-type, authorization",
+            }
+            if request.method == "OPTIONS":
+                await route.fulfill(status=204, headers=headers)
+                return
+            if path.startswith(tracked_path):
+                posts.append(path)
+            target = urlsplit(request.url)
+            api_url = path + (f"?{target.query}" if target.query else "")
+            api_headers = {"content-type": "application/json"}
+            if "authorization" in request.headers:
+                api_headers["authorization"] = request.headers["authorization"]
+            response = await client.request(request.method, api_url, content=request.post_data, headers=api_headers)
+            await route.fulfill(status=response.status_code, headers=headers,
+                                body=response.content, content_type="application/json")
+        elif request.url.startswith(f"{ORIGIN}/"):
+            asset = (DIST / path.lstrip("/")).resolve()
+            if not asset.is_relative_to(DIST) or not asset.is_file():
+                asset = DIST / "index.html"
+            await route.fulfill(path=asset, content_type=mimetypes.guess_type(asset)[0])
+        else:
+            await route.abort()
+
+    return serve
+
+
 @pytest.mark.parametrize(
     "role,email,make_account,otp_stage,new_password_label,confirm_password_label",
     [
@@ -43,32 +78,7 @@ async def test_password_reset_in_browser(
     assert (DIST / "index.html").is_file(), "Run npm run build in frontend first"
     posts = []
 
-    async def serve(route):
-        request = route.request
-        path = urlsplit(request.url).path
-        if path.startswith("/api/"):
-            headers = {
-                "access-control-allow-origin": ORIGIN,
-                "access-control-allow-credentials": "true",
-                "access-control-allow-methods": "POST, OPTIONS",
-                "access-control-allow-headers": "content-type",
-            }
-            if request.method == "OPTIONS":
-                await route.fulfill(status=204, headers=headers)
-                return
-            if path.startswith(reset):
-                posts.append(path)
-            response = await client.request(request.method, path, content=request.post_data,
-                                            headers={"content-type": "application/json"})
-            await route.fulfill(status=response.status_code, headers=headers,
-                                body=response.content, content_type="application/json")
-        elif request.url.startswith(f"{ORIGIN}/"):
-            asset = (DIST / path.lstrip("/")).resolve()
-            if not asset.is_relative_to(DIST) or not asset.is_file():
-                asset = DIST / "index.html"
-            await route.fulfill(path=asset, content_type=mimetypes.guess_type(asset)[0])
-        else:
-            await route.abort()
+    serve = browser_route(client, reset, posts)
 
     async with async_playwright() as playwright:
         chromium = await playwright.chromium.launch(executable_path=os.getenv("LIFECONNECT_TEST_CHROMIUM"))

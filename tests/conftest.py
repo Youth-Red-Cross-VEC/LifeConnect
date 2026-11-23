@@ -172,3 +172,41 @@ def _reset_rate_limits():
 
     limiter.reset()
     yield
+
+
+@pytest.fixture
+def verified_registration(test_session):
+    """Supply a fresh mailbox proof to tests focused on the post-verification workflow."""
+    from app.services.otp_service import PURPOSE_DONOR_ENROLLMENT, generate_otp, store_otp
+
+    async def submit(client, body):
+        code = generate_otp()
+        await store_otp(test_session, body["email"], code, PURPOSE_DONOR_ENROLLMENT)
+        return await client.post("/api/v1/donors/register", json={**body, "enrollment_code": code})
+
+    return submit
+
+
+@pytest.fixture
+async def postgres_security_engine():
+    from app.models.refresh_session import RefreshSession
+    import uuid
+    from sqlalchemy.schema import CreateSchema, DropSchema
+
+    url = os.getenv("LC_AUTH_TEST_POSTGRES_URL")
+    if not url:
+        pytest.skip("Set LC_AUTH_TEST_POSTGRES_URL to a disposable PostgreSQL database")
+    schema = "security_test_" + uuid.uuid4().hex
+    engine = create_async_engine(url, connect_args={"server_settings": {"search_path": schema}})
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(CreateSchema(schema))
+            await conn.run_sync(RefreshSession.__table__.create)
+            await conn.run_sync(AdminDetails.__table__.create)
+        try:
+            yield engine
+        finally:
+            async with engine.begin() as conn:
+                await conn.execute(DropSchema(schema, cascade=True))
+    finally:
+        await engine.dispose()

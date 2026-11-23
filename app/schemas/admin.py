@@ -2,21 +2,22 @@ from pydantic import BaseModel, EmailStr, Field, field_validator
 from app.core.request_status import AdminStatus, AdminRole
 from typing import Optional
 from datetime import datetime, date
+from app.schemas.validation import OtpCode, BirthDate, Phone, SingleLine
 from app.schemas.common import BaseSchema
 from app.schemas.passwords import check_new_password, check_password_length
 
 
-class AdminCreate(BaseModel):
+class AdminCreate(BaseModel, extra="forbid"):
     """Schema for admin registration."""
 
     email: EmailStr = Field(..., max_length=100)
     password: str = Field(..., min_length=8, max_length=100)
-    username: str = Field(..., min_length=2, max_length=45)
-    vec_registration_number: str = Field(..., max_length=36)
-    date_of_birth: date
-    mobile_number: str = Field(..., min_length=10, max_length=36)
-    department: Optional[str] = Field(None, max_length=50)
-    invite_otp: str = Field(..., min_length=6, max_length=6, description="6-digit OTP sent to this email by an existing admin via POST /admins/invite")
+    username: SingleLine = Field(..., min_length=2, max_length=45)
+    vec_registration_number: SingleLine = Field(..., min_length=1, max_length=36)
+    date_of_birth: BirthDate
+    mobile_number: Phone = Field(..., min_length=10, max_length=36)
+    department: Optional[SingleLine] = Field(None, max_length=50)
+    invite_otp: OtpCode = Field(..., description="6-digit OTP sent to this email by an existing admin via POST /admins/invite")
 
     @field_validator("password")
     @classmethod
@@ -24,17 +25,17 @@ class AdminCreate(BaseModel):
         return check_new_password(v)
 
 
-class AdminInviteRequest(BaseModel):
+class AdminInviteRequest(BaseModel, extra="forbid"):
     """Schema for requesting an admin invite OTP."""
     email: EmailStr = Field(..., max_length=100, description="Email address of the person to invite as admin")
 
 
-class AdminUpdate(BaseModel):
+class AdminUpdate(BaseModel, extra="forbid"):
     """Schema for updating admin details."""
 
-    username: Optional[str] = Field(None, min_length=2, max_length=45)
-    mobile_number: Optional[str] = Field(None, max_length=36)
-    department: Optional[str] = Field(None, max_length=50)
+    username: Optional[SingleLine] = Field(None, min_length=2, max_length=45)
+    mobile_number: Optional[Phone] = Field(None, max_length=36)
+    department: Optional[SingleLine] = Field(None, max_length=50)
     active_status: Optional[AdminStatus] = None
     role: Optional[AdminRole] = None
 
@@ -62,7 +63,7 @@ class AdminResponse(AdminSummaryResponse):
     mobile_number: str
 
 
-class AdminLoginRequest(BaseModel):
+class AdminLoginRequest(BaseModel, extra="forbid"):
     """Schema for admin login."""
 
     email: EmailStr = Field(..., max_length=100)

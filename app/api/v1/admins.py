@@ -5,11 +5,14 @@ Endpoints for admin registration, profile management, and administration.
 Note: Authentication (login/logout) is handled by the auth module (partner's responsibility).
 """
 
+from fastapi import Path as ApiPath
+from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Union
 
+from app.config import get_settings
 from app.core.database import get_db
 from app.core.request_status import AdminStatus, AdminRole, BloodRequestStatus
 
@@ -34,7 +37,7 @@ from app.services.otp_service import (
     PURPOSE_ADMIN_INVITE, generate_otp, store_otp, verify_otp,
     failed_confirmation_count, record_failed_confirmation, clear_failed_confirmations,
 )
-from app.core.rate_limiter import limiter
+from app.core.rate_limiter import check_account_limit, limiter
 from app.services.refresh_session_service import revoke_all_for_user
 
 router = APIRouter(prefix="/admins", tags=["Admins"])
@@ -44,6 +47,19 @@ def _admin_view(admin: AdminDetails, viewer: AdminDetails) -> Union[AdminRespons
     """The full record for the viewer's own row; everyone else's without date of birth and phone number."""
     model = AdminResponse if admin.id == viewer.id else AdminSummaryResponse
     return model.model_validate(admin)
+
+
+async def _management_target(repo: AdminRepository, actor: AdminDetails, target_id: str, *, super_only: bool = False) -> AdminDetails | None:
+    authenticated_version = actor.token_version
+    accounts = await repo.lock_management_accounts(actor.id, target_id)
+    current = accounts.get(actor.id)
+    if current is None or current.active_status != AdminStatus.ACTIVE:
+        raise HTTPException(status_code=401, detail="Account is inactive or no longer exists")
+    if current.token_version != authenticated_version:
+        raise HTTPException(status_code=401, detail="Session has been revoked")
+    if super_only and current.role != AdminRole.SUPER_ADMIN:
+        raise HTTPException(status_code=403, detail="Super admin privileges required")
+    return accounts.get(target_id)
 
 
 async def _guard_deactivation(repo: AdminRepository, target: AdminDetails, actor: AdminDetails) -> None:
@@ -83,7 +99,9 @@ async def _guard_role_change(repo: AdminRepository, target: AdminDetails, new_ro
     summary="Send admin invite OTP",
     status_code=status.HTTP_200_OK,
 )
+@limiter.limit(get_settings().PASSWORD_RESET_RATE_LIMIT)
 async def invite_admin(
+    request: Request,
     data: AdminInviteRequest,
     session: AsyncSession = Depends(get_db, scope="function"),
     current_admin: AdminDetails = Depends(require_super_admin),
@@ -94,6 +112,7 @@ async def invite_admin(
     Only existing admins can send invites. The OTP is valid for 10 minutes
     and must be supplied in the subsequent `POST /admins/register` call.
     """
+    check_account_limit(request, data.email, get_settings().ACCOUNT_CODE_SEND_RATE_LIMIT)
     from app.services.email_service import get_email_service
     otp = generate_otp()
     await store_otp(session, data.email, otp, PURPOSE_ADMIN_INVITE)
@@ -113,7 +132,7 @@ async def invite_admin(
             detail="Could not send the invite email; please try again later",
         )
     record_admin_action(session, current_admin.id, "admin.invite", "admin_invite")
-    return {"message": f"Invite OTP sent to {data.email}. Valid for 10 minutes."}
+    return {"message": f"Invite OTP sent to {data.email}."}
 
 
 # =======================
@@ -126,7 +145,7 @@ async def invite_admin(
     status_code=status.HTTP_201_CREATED,
     summary="Register a new admin",
 )
-@limiter.limit("5/minute")
+@limiter.limit(get_settings().AUTH_RATE_LIMIT)
 async def register_admin(
     request: Request,
     data: AdminCreate,
@@ -139,11 +158,12 @@ async def register_admin(
     The OTP is sent to the registrant's email and is valid for 10 minutes.
     This prevents self-registration without an existing admin's approval.
     """
+    check_account_limit(request, data.email, get_settings().ACCOUNT_AUTH_RATE_LIMIT)
     if await failed_confirmation_count(session, data.email, PURPOSE_ADMIN_INVITE) >= 10:
         raise HTTPException(status_code=429, detail="Too many failed code attempts; try again later")
 
     # Verify invite OTP
-    if not await verify_otp(session, data.email, data.invite_otp, PURPOSE_ADMIN_INVITE):
+    if not await verify_otp(session, data.email, data.invite_otp, PURPOSE_ADMIN_INVITE, commit_success=False):
         await record_failed_confirmation(session, data.email, PURPOSE_ADMIN_INVITE)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -215,7 +235,7 @@ async def register_admin(
     summary="List all admins",
 )
 async def list_admins(
-    page: int = Query(1, ge=1),
+    page: int = Query(1, ge=1, le=100000),
     page_size: int = Query(20, ge=1, le=100),
     active_only: bool = Query(False),
     session: AsyncSession = Depends(get_db, scope="function"),
@@ -246,7 +266,7 @@ async def list_admins(
     summary="Get admin by ID",
 )
 async def get_admin(
-    admin_id: str,
+    admin_id: Annotated[str, ApiPath(min_length=1, max_length=36)],
     session: AsyncSession = Depends(get_db, scope="function"),
     current_admin: AdminDetails = Depends(get_current_admin),
 ):
@@ -287,14 +307,14 @@ async def get_my_profile(
     summary="Update admin details",
 )
 async def update_admin(
-    admin_id: str,
+    admin_id: Annotated[str, ApiPath(min_length=1, max_length=36)],
     data: AdminUpdate,
     session: AsyncSession = Depends(get_db, scope="function"),
     current_admin: AdminDetails = Depends(get_current_admin),
 ):
     """Update admin details."""
     repo = AdminRepository(session)
-    admin = await repo.get_by_id(admin_id)
+    admin = await _management_target(repo, current_admin, admin_id)
     
     if not admin:
         raise HTTPException(
@@ -309,12 +329,11 @@ async def update_admin(
         if fields - {"username", "mobile_number"}:
             raise HTTPException(status_code=403, detail="You may only edit your own name and mobile number")
 
-    if data.role is not None:
-        if admin.id == current_admin.id and data.role != admin.role:
-            await _guard_role_change(repo, admin, data.role)
-        elif data.role != admin.role:
-            await _guard_role_change(repo, admin, data.role)
+    if data.role is not None and data.role != admin.role:
+        await _guard_role_change(repo, admin, data.role)
         admin.role = data.role
+        admin.token_version += 1
+        await revoke_all_for_user(session, admin.id, "admin")
 
     # Update fields if provided
     if data.username is not None:
@@ -351,13 +370,13 @@ async def update_admin(
     summary="Deactivate an admin",
 )
 async def deactivate_admin(
-    admin_id: str,
+    admin_id: Annotated[str, ApiPath(min_length=1, max_length=36)],
     session: AsyncSession = Depends(get_db, scope="function"),
     current_admin: AdminDetails = Depends(require_super_admin),
 ):
     """Deactivate an admin account."""
     repo = AdminRepository(session)
-    admin = await repo.get_by_id(admin_id)
+    admin = await _management_target(repo, current_admin, admin_id, super_only=True)
     
     if not admin:
         raise HTTPException(
@@ -381,13 +400,13 @@ async def deactivate_admin(
     summary="Activate an admin",
 )
 async def activate_admin(
-    admin_id: str,
+    admin_id: Annotated[str, ApiPath(min_length=1, max_length=36)],
     session: AsyncSession = Depends(get_db, scope="function"),
     current_admin: AdminDetails = Depends(require_super_admin),
 ):
     """Activate an admin account."""
     repo = AdminRepository(session)
-    admin = await repo.get_by_id(admin_id)
+    admin = await _management_target(repo, current_admin, admin_id, super_only=True)
     
     if not admin:
         raise HTTPException(
@@ -413,7 +432,7 @@ async def activate_admin(
     summary="Get admin performance stats",
 )
 async def get_admin_stats(
-    admin_id: str,
+    admin_id: Annotated[str, ApiPath(min_length=1, max_length=36)],
     session: AsyncSession = Depends(get_db, scope="function"),
     current_admin: AdminDetails = Depends(get_current_admin),
 ):

@@ -39,6 +39,9 @@ export const authApi = {
       body: data,
     }),
 
+  donorRegistrationCode: (email) =>
+    request("/api/v1/donors/register/code", { method: "POST", body: { email } }),
+
   donorRegister: (data) =>
     request("/api/v1/donors/register", {
       method: "POST",

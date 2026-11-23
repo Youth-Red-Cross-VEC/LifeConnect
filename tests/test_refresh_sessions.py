@@ -44,6 +44,8 @@ async def test_reuse_revokes_every_token_for_the_user(client: AsyncClient, test_
 
     replay = await client.post(REFRESH, headers=cookie_headers(first))
     assert replay.status_code == 401
+    assert 'Max-Age=0' in replay.headers['set-cookie']
+    assert 'Path=/api/v1/auth' in replay.headers['set-cookie']
     after = await client.post(REFRESH, headers=cookie_headers(second))
     assert after.status_code == 401
 

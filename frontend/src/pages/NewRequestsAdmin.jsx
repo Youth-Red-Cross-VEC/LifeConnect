@@ -1,3 +1,4 @@
+import { errorText } from "../services/requests";
 import { useState } from "react";
 import AdminBase from "./AdminBase";
 import AsyncState from "../components/AsyncState";
@@ -33,7 +34,7 @@ export default function NewRequestsAdmin() {
                 setActionMsg(`✅ Request ${requestId} approved. Donors notified.`);
                 setRequests((prev) => removeRequestById(prev, requestId));
             } else {
-                setActionMsg(`❌ ${res?.detail || "Failed to approve request."}`);
+                setActionMsg(`❌ ${errorText(res, "Failed to approve request.")}`);
             }
         } catch {
             setActionMsg("❌ Server error during approval.");
@@ -48,7 +49,7 @@ export default function NewRequestsAdmin() {
                 setActionMsg(`Request ${requestId} declined.`);
                 setRequests((prev) => removeRequestById(prev, requestId));
             } else {
-                setActionMsg(`❌ ${res?.detail || "Failed to decline request."}`);
+                setActionMsg(`❌ ${errorText(res, "Failed to decline request.")}`);
             }
         } catch {
             setActionMsg("❌ Server error during decline.");

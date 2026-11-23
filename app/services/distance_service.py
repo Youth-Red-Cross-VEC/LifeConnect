@@ -71,7 +71,7 @@ class DistanceService:
                 return None
 
         except Exception as e:
-            logger.error(f"Error calculating distance: {e}")
+            logger.error(f"Error calculating distance: {type(e).__name__}")
             return None
 
     async def sort_donors_by_distance(

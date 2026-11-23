@@ -5,17 +5,23 @@ Public endpoints for donor registration and information.
 Protected endpoints require authentication (handled by partner's auth module).
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import Path as ApiPath
+from typing import Annotated
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
 import logging
 
+from app.config import get_settings
+from app.core.rate_limiter import check_account_limit, limiter
+from app.services.email_service import get_email_service
+from app.services.otp_service import PURPOSE_DONOR_ENROLLMENT, generate_otp, store_otp, verify_otp
 from app.core.database import get_db
 from app.repositories.admin import AdminRepository
 from app.repositories.donor import DonorRepository
 from app.schemas.donor import (
-    DonorCreate,
+    DonorEnrollment, EnrollmentCodeRequest,
     DonorUpdate,
     DonorResponse,
     DonorListResponse,
@@ -37,7 +43,6 @@ from app.utils import (
     generate_auth_id,
 )
 from app.core.exceptions import not_found_exception
-from app.core.logging import mask_email
 from app.utils.emails import normalize_email
 from app.utils.dates import age_on, utcnow
 from app.services.audit_service import record_admin_action
@@ -48,9 +53,26 @@ router = APIRouter(prefix="/donors", tags=["Donors"])
 logger = logging.getLogger(__name__)
 
 
+@router.post("/register/code", response_model=MessageResponse)
+@limiter.limit(get_settings().PASSWORD_RESET_RATE_LIMIT)
+async def request_enrollment_code(
+    request: Request, data: EnrollmentCodeRequest,
+    session: AsyncSession = Depends(get_db, scope="function"),
+) -> MessageResponse:
+    check_account_limit(request, data.email, get_settings().ACCOUNT_CODE_SEND_RATE_LIMIT)
+    email = normalize_email(data.email)
+    code = generate_otp()
+    await store_otp(session, email, code, PURPOSE_DONOR_ENROLLMENT)
+    if not await get_email_service().send_otp_email(email, code, "Donor", purpose=PURPOSE_DONOR_ENROLLMENT):
+        raise HTTPException(status_code=502, detail="Could not send the verification email. Please retry.")
+    return MessageResponse(message="Check your email for the registration code.")
+
+
 @router.post("/register", response_model=DonorResponse, status_code=status.HTTP_201_CREATED)
+@limiter.limit(get_settings().AUTH_RATE_LIMIT)
 async def register_donor(
-    data: DonorCreate,
+    request: Request,
+    data: DonorEnrollment,
     session: AsyncSession = Depends(get_db, scope="function"),
 ):
     """
@@ -59,13 +81,16 @@ async def register_donor(
     This is a public endpoint - no authentication required.
     Password will be hashed before storage.
     """
+    check_account_limit(request, data.email, get_settings().ACCOUNT_AUTH_RATE_LIMIT)
     repo = DonorRepository(session)
 
     # One identity per address, whatever the letter case, and never an address an admin already uses.
     # Both refusals read the same, so the answer does not reveal which kind of account holds the address.
     email = normalize_email(data.email)
+    if not await verify_otp(session, email, data.enrollment_code, PURPOSE_DONOR_ENROLLMENT, commit_success=False):
+        raise HTTPException(status_code=400, detail="Invalid or expired registration code")
     if await repo.exists_by_email(email) or await AdminRepository(session).exists_by_email(email):
-        logger.info("Donor registration rejected: duplicate account address=%s", mask_email(email))
+        logger.info("Donor registration rejected: duplicate account")
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Unable to register with these details",
@@ -138,7 +163,7 @@ async def register_donor(
         await repo.create(donor, personal_details, address_details, disease_details, terms)
     except IntegrityError:
         # Lost a race with a concurrent registration of the same address: the unique index caught it.
-        logger.info("Donor registration rejected after uniqueness conflict address=%s", mask_email(email))
+        logger.info("Donor registration rejected after uniqueness conflict")
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Unable to register with these details",
@@ -149,12 +174,12 @@ async def register_donor(
 
 @router.get("/", response_model=PaginatedResponse)
 async def list_donors(
-    page: int = Query(default=1, ge=1),
+    page: int = Query(default=1, ge=1, le=100000),
     page_size: int = Query(default=20, ge=1, le=100),
-    blood_group: Optional[str] = Query(default=None),
+    blood_group: Optional[str] = Query(default=None, pattern=r"(?i)^(AB|A|B|O)[+-]$"),
     active_only: bool = Query(default=False),
-    search: Optional[str] = Query(default=None, description="Match on donor name"),
-    name_search: Optional[str] = Query(default=None, description="Deprecated alias of `search`", deprecated=True),
+    search: Optional[str] = Query(max_length=100, default=None, description="Match on donor name"),
+    name_search: Optional[str] = Query(max_length=100, default=None, description="Deprecated alias of `search`", deprecated=True),
     session: AsyncSession = Depends(get_db, scope="function"),
     current_admin = Depends(get_current_admin),
 ):
@@ -169,7 +194,7 @@ async def list_donors(
     donors, total = await repo.get_all(
         offset=offset,
         limit=page_size,
-        blood_group=blood_group,
+        blood_group=blood_group.upper() if blood_group else None,
         active_only=active_only,
         name_search=search or name_search,
     )
@@ -184,7 +209,7 @@ async def list_donors(
 
 @router.get("/{donor_id}", response_model=DonorResponse)
 async def get_donor(
-    donor_id: str,
+    donor_id: Annotated[str, ApiPath(min_length=1, max_length=36)],
     session: AsyncSession = Depends(get_db, scope="function"),
     current_user = Depends(get_current_donor_or_admin),
 ):
@@ -214,7 +239,7 @@ async def get_donor(
 
 @router.patch("/{donor_id}", response_model=DonorResponse)
 async def update_donor(
-    donor_id: str,
+    donor_id: Annotated[str, ApiPath(min_length=1, max_length=36)],
     data: DonorUpdate,
     session: AsyncSession = Depends(get_db, scope="function"),
     current_donor = Depends(get_current_donor),
@@ -257,7 +282,9 @@ async def update_donor(
 
 @router.get("/blood-group/{blood_group}", response_model=list[DonorListResponse])
 async def get_donors_by_blood_group(
-    blood_group: str,
+    blood_group: Annotated[str, ApiPath(pattern=r"(?i)^(AB|A|B|O)[+-]$")],
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0, le=1000000),
     active_only: bool = Query(default=True),
     session: AsyncSession = Depends(get_db, scope="function"),
     current_admin = Depends(get_current_admin),
@@ -270,16 +297,16 @@ async def get_donors_by_blood_group(
     repo = DonorRepository(session)
 
     if active_only:
-        donors = await repo.get_active_by_blood_group(blood_group.upper())
+        donors = await repo.get_active_by_blood_group(blood_group.upper(), limit=limit, offset=offset)
     else:
-        donors, _ = await repo.get_all(blood_group=blood_group.upper(), limit=1000)
+        donors, _ = await repo.get_all(blood_group=blood_group.upper(), limit=limit, offset=offset)
 
     return [DonorListResponse.model_validate(d) for d in donors]
 
 
 @router.post("/{donor_id}/deactivate", response_model=MessageResponse)
 async def deactivate_donor(
-    donor_id: str,
+    donor_id: Annotated[str, ApiPath(min_length=1, max_length=36)],
     session: AsyncSession = Depends(get_db, scope="function"),
     current_admin = Depends(get_current_admin),
 ):
@@ -302,7 +329,7 @@ async def deactivate_donor(
 
 @router.post("/{donor_id}/activate", response_model=MessageResponse)
 async def activate_donor(
-    donor_id: str,
+    donor_id: Annotated[str, ApiPath(min_length=1, max_length=36)],
     session: AsyncSession = Depends(get_db, scope="function"),
     current_admin = Depends(get_current_admin),
 ):

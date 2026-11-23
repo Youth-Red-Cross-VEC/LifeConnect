@@ -26,9 +26,9 @@ class CatchAllMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         try:
             return await call_next(request)
-        except Exception:
+        except Exception as exc:
             error_id = uuid.uuid4().hex
-            logger.error("Unhandled request failure error_id=%s", error_id)
+            logger.error("Unhandled request failure error_id=%s type=%s", error_id, type(exc).__name__)
             return JSONResponse(
                 status_code=500,
                 content={"detail": "Internal server error", "error_id": error_id},
@@ -36,20 +36,8 @@ class CatchAllMiddleware(BaseHTTPMiddleware):
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
-    """
-    Middleware that adds security headers to all responses.
-    
-    Headers added:
-    - X-Content-Type-Options: Prevents MIME sniffing
-    - X-Frame-Options: Prevents clickjacking
-    - X-XSS-Protection: Legacy XSS protection (still useful for older browsers)
-    - Strict-Transport-Security: Forces HTTPS
-    - Content-Security-Policy: Controls resource loading
-    - Referrer-Policy: Controls referrer information
-    - Permissions-Policy: Controls browser features
-    - Cache-Control: Prevents caching of sensitive data
-    """
-    
+    """Apply browser isolation and cache controls, including preflights and API errors."""
+
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         response = await call_next(request)
         
@@ -59,27 +47,20 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         # Prevent clickjacking - page cannot be embedded in iframes
         response.headers["X-Frame-Options"] = "DENY"
         
-        # Legacy XSS protection for older browsers
-        response.headers["X-XSS-Protection"] = "1; mode=block"
-        
         # Browsers only honor HSTS over TLS. Never advertise it on plain HTTP responses.
         if request.url.scheme == "https":
             response.headers["Strict-Transport-Security"] = "max-age=31536000"
         
-        # Content Security Policy - relaxed for docs pages
-        if request.url.path in ["/docs", "/redoc", "/openapi.json"]:
-            response.headers["Content-Security-Policy"] = ("default-src 'self'; ""script-src 'self' 'unsafe-inline' 'unsafe-eval' cdn.jsdelivr.net; "
-        "style-src 'self' 'unsafe-inline' cdn.jsdelivr.net; "
-        "img-src 'self' data: fastapi.tiangolo.com; "
-        "font-src 'self' cdn.jsdelivr.net")
-        else:
-            response.headers["Content-Security-Policy"] = ("default-src 'self'; "
-        "script-src 'self'; "
-        "style-src 'self' 'unsafe-inline'; "
-        "img-src 'self' data:; "
-        "font-src 'self'; "
-        "frame-ancestors 'none'")
-        
+        policy = "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+        if (response.headers.get("content-type", "").startswith("text/html")
+                and request.url.path in {"/docs", "/docs/oauth2-redirect", "/redoc"}):
+            # FastAPI's optional documentation pages use inline bootstrapping and CDN assets.
+            policy += ("; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+                       "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; "
+                       "connect-src 'self'; img-src 'self' data: https://fastapi.tiangolo.com; "
+                       "font-src 'self' https://fonts.gstatic.com")
+        response.headers["Content-Security-Policy"] = policy
+
         # Control what referrer info is sent
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         

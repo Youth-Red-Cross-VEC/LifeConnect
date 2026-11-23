@@ -1,13 +1,13 @@
 -- LifeConnect development data. FULLY SYNTHETIC: no real people, emails or phone numbers.
 -- Schema: current ORM tables (apply `alembic upgrade head` first).
--- Every account password is the documented DEV-ONLY password: DevOnly#2026
+-- Password login is disabled unless the guarded loader receives DEV_SEED_PASSWORD.
 -- NEVER load this into a production database. Load it with `python scripts/load_dev_data.py` (add --full for
 -- SyntheticData.sql): that refuses APP_ENV=production and any database that already has admins or donors.
 -- Do not pipe this file into psql by hand.
 
 INSERT INTO admin_details (id, email, password, username, authentication_id, vec_registration_number, date_of_birth, mobile_number, department, active_status, last_login_date, approved_donation_count, closed_requests_count, created_at) VALUES
-('ADM-DEV001', 'admin1@example.com', '$2b$12$rmqkEn1uq9q49EzESySvo.FC0mMOk.oE5nweRGb0M9uxJiRNucn0S', 'Dev Admin 1', 'AUTHADM-DEV001', 'VEC-DEV-0001', '1990-01-01', '9000000001', 'Operations', 'Active', NULL, 0, 0, '2026-01-01 00:00:00'),
-('ADM-DEV002', 'admin2@example.com', '$2b$12$rmqkEn1uq9q49EzESySvo.FC0mMOk.oE5nweRGb0M9uxJiRNucn0S', 'Dev Admin 2', 'AUTHADM-DEV002', 'VEC-DEV-0002', '1990-01-02', '9000000002', 'Operations', 'Active', NULL, 0, 0, '2026-01-01 00:00:00');
+('ADM-DEV001', 'admin1@example.com', '!disabled-dev-seed!', 'Dev Admin 1', 'AUTHADM-DEV001', 'VEC-DEV-0001', '1990-01-01', '9000000001', 'Operations', 'Active', NULL, 0, 0, '2026-01-01 00:00:00'),
+('ADM-DEV002', 'admin2@example.com', '!disabled-dev-seed!', 'Dev Admin 2', 'AUTHADM-DEV002', 'VEC-DEV-0002', '1990-01-02', '9000000002', 'Operations', 'Active', NULL, 0, 0, '2026-01-01 00:00:00');
 
 INSERT INTO terms_and_conditions (id, version, effective_date) VALUES
 ('TC-DEV001', '1.0', '2026-01-01');
@@ -49,16 +49,16 @@ INSERT INTO disease_details (id, name, description) VALUES
 ('DS-DEV010', 'None', NULL);
 
 INSERT INTO donor_details (id, name, email, password, blood_group, active_status, authentication_id, last_donated_date, number_of_times_donated, last_login_date, personal_details_id, address_id, disease_id, terms_and_conditions_id, created_at) VALUES
-('DON-DEV001', 'Asha Rao', 'donor1@example.com', '$2b$12$rmqkEn1uq9q49EzESySvo.FC0mMOk.oE5nweRGb0M9uxJiRNucn0S', 'A+', true, 'AUTH-DEV001', NULL, 0, NULL, 'PD-DEV001', 'AD-DEV001', 'DS-DEV001', 'TC-DEV001', '2026-01-01 00:00:00'),
-('DON-DEV002', 'Ravi Kumar', 'donor2@example.com', '$2b$12$rmqkEn1uq9q49EzESySvo.FC0mMOk.oE5nweRGb0M9uxJiRNucn0S', 'B+', true, 'AUTH-DEV002', NULL, 0, NULL, 'PD-DEV002', 'AD-DEV002', 'DS-DEV002', 'TC-DEV001', '2026-01-01 00:00:00'),
-('DON-DEV003', 'Meena Iyer', 'donor3@example.com', '$2b$12$rmqkEn1uq9q49EzESySvo.FC0mMOk.oE5nweRGb0M9uxJiRNucn0S', 'O+', true, 'AUTH-DEV003', NULL, 0, NULL, 'PD-DEV003', 'AD-DEV003', 'DS-DEV003', 'TC-DEV001', '2026-01-01 00:00:00'),
-('DON-DEV004', 'Karthik Nair', 'donor4@example.com', '$2b$12$rmqkEn1uq9q49EzESySvo.FC0mMOk.oE5nweRGb0M9uxJiRNucn0S', 'AB+', true, 'AUTH-DEV004', NULL, 0, NULL, 'PD-DEV004', 'AD-DEV004', 'DS-DEV004', 'TC-DEV001', '2026-01-01 00:00:00'),
-('DON-DEV005', 'Divya Menon', 'donor5@example.com', '$2b$12$rmqkEn1uq9q49EzESySvo.FC0mMOk.oE5nweRGb0M9uxJiRNucn0S', 'O-', true, 'AUTH-DEV005', NULL, 0, NULL, 'PD-DEV005', 'AD-DEV005', 'DS-DEV005', 'TC-DEV001', '2026-01-01 00:00:00'),
-('DON-DEV006', 'Arun Das', 'donor6@example.com', '$2b$12$rmqkEn1uq9q49EzESySvo.FC0mMOk.oE5nweRGb0M9uxJiRNucn0S', 'A-', true, 'AUTH-DEV006', NULL, 0, NULL, 'PD-DEV006', 'AD-DEV006', 'DS-DEV006', 'TC-DEV001', '2026-01-01 00:00:00'),
-('DON-DEV007', 'Priya Sharma', 'donor7@example.com', '$2b$12$rmqkEn1uq9q49EzESySvo.FC0mMOk.oE5nweRGb0M9uxJiRNucn0S', 'B-', true, 'AUTH-DEV007', NULL, 0, NULL, 'PD-DEV007', 'AD-DEV007', 'DS-DEV007', 'TC-DEV001', '2026-01-01 00:00:00'),
-('DON-DEV008', 'Vikram Singh', 'donor8@example.com', '$2b$12$rmqkEn1uq9q49EzESySvo.FC0mMOk.oE5nweRGb0M9uxJiRNucn0S', 'AB-', true, 'AUTH-DEV008', NULL, 0, NULL, 'PD-DEV008', 'AD-DEV008', 'DS-DEV008', 'TC-DEV001', '2026-01-01 00:00:00'),
-('DON-DEV009', 'Sana Khan', 'donor9@example.com', '$2b$12$rmqkEn1uq9q49EzESySvo.FC0mMOk.oE5nweRGb0M9uxJiRNucn0S', 'O+', true, 'AUTH-DEV009', NULL, 0, NULL, 'PD-DEV009', 'AD-DEV009', 'DS-DEV009', 'TC-DEV001', '2026-01-01 00:00:00'),
-('DON-DEV010', 'Tom Joseph', 'donor10@example.com', '$2b$12$rmqkEn1uq9q49EzESySvo.FC0mMOk.oE5nweRGb0M9uxJiRNucn0S', 'A+', false, 'AUTH-DEV010', NULL, 0, NULL, 'PD-DEV010', 'AD-DEV010', 'DS-DEV010', 'TC-DEV001', '2026-01-01 00:00:00');
+('DON-DEV001', 'Asha Rao', 'donor1@example.com', '!disabled-dev-seed!', 'A+', true, 'AUTH-DEV001', NULL, 0, NULL, 'PD-DEV001', 'AD-DEV001', 'DS-DEV001', 'TC-DEV001', '2026-01-01 00:00:00'),
+('DON-DEV002', 'Ravi Kumar', 'donor2@example.com', '!disabled-dev-seed!', 'B+', true, 'AUTH-DEV002', NULL, 0, NULL, 'PD-DEV002', 'AD-DEV002', 'DS-DEV002', 'TC-DEV001', '2026-01-01 00:00:00'),
+('DON-DEV003', 'Meena Iyer', 'donor3@example.com', '!disabled-dev-seed!', 'O+', true, 'AUTH-DEV003', NULL, 0, NULL, 'PD-DEV003', 'AD-DEV003', 'DS-DEV003', 'TC-DEV001', '2026-01-01 00:00:00'),
+('DON-DEV004', 'Karthik Nair', 'donor4@example.com', '!disabled-dev-seed!', 'AB+', true, 'AUTH-DEV004', NULL, 0, NULL, 'PD-DEV004', 'AD-DEV004', 'DS-DEV004', 'TC-DEV001', '2026-01-01 00:00:00'),
+('DON-DEV005', 'Divya Menon', 'donor5@example.com', '!disabled-dev-seed!', 'O-', true, 'AUTH-DEV005', NULL, 0, NULL, 'PD-DEV005', 'AD-DEV005', 'DS-DEV005', 'TC-DEV001', '2026-01-01 00:00:00'),
+('DON-DEV006', 'Arun Das', 'donor6@example.com', '!disabled-dev-seed!', 'A-', true, 'AUTH-DEV006', NULL, 0, NULL, 'PD-DEV006', 'AD-DEV006', 'DS-DEV006', 'TC-DEV001', '2026-01-01 00:00:00'),
+('DON-DEV007', 'Priya Sharma', 'donor7@example.com', '!disabled-dev-seed!', 'B-', true, 'AUTH-DEV007', NULL, 0, NULL, 'PD-DEV007', 'AD-DEV007', 'DS-DEV007', 'TC-DEV001', '2026-01-01 00:00:00'),
+('DON-DEV008', 'Vikram Singh', 'donor8@example.com', '!disabled-dev-seed!', 'AB-', true, 'AUTH-DEV008', NULL, 0, NULL, 'PD-DEV008', 'AD-DEV008', 'DS-DEV008', 'TC-DEV001', '2026-01-01 00:00:00'),
+('DON-DEV009', 'Sana Khan', 'donor9@example.com', '!disabled-dev-seed!', 'O+', true, 'AUTH-DEV009', NULL, 0, NULL, 'PD-DEV009', 'AD-DEV009', 'DS-DEV009', 'TC-DEV001', '2026-01-01 00:00:00'),
+('DON-DEV010', 'Tom Joseph', 'donor10@example.com', '!disabled-dev-seed!', 'A+', false, 'AUTH-DEV010', NULL, 0, NULL, 'PD-DEV010', 'AD-DEV010', 'DS-DEV010', 'TC-DEV001', '2026-01-01 00:00:00');
 
 INSERT INTO hospital_details (id, hospital_name, hospital_address, pincode, city, state, country, branch, landmark, created_at) VALUES
 ('HOSP-DEV001', 'Example General Hospital 1', '1 Hospital Road', '600101', 'Chennai', 'Tamil Nadu', 'India', 'Main', 'Near Example Park', '2026-01-01 00:00:00'),

@@ -14,6 +14,7 @@ from app.utils.dates import utcnow
 
 # Each flow gets its own purpose so a code issued for one can never satisfy another.
 PURPOSE_ADMIN_INVITE = "admin_invite"  # issued by POST /admins/invite, consumed by POST /admins/register
+PURPOSE_DONOR_ENROLLMENT = "donor_enrollment"
 PURPOSE_DONOR_RESET = "donor_password_reset"
 PURPOSE_ADMIN_RESET = "admin_password_reset"
 

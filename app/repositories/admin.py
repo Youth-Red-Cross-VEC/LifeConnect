@@ -52,6 +52,15 @@ class AdminRepository:
             query = query.where(AdminDetails.id != exclude_id)
         return (await self.session.execute(query)).scalar() or 0
 
+    async def lock_management_accounts(self, actor_id: str, target_id: str) -> dict[str, AdminDetails]:
+        # Serialize changes to the active super-admin set. Stable order also handles
+        # two administrators modifying each other in independent transactions.
+        query = (select(AdminDetails).where(
+            AdminDetails.id.in_([actor_id, target_id]) |
+            ((AdminDetails.role == AdminRole.SUPER_ADMIN) & (AdminDetails.active_status == AdminStatus.ACTIVE))
+        ).order_by(AdminDetails.id).with_for_update().execution_options(populate_existing=True))
+        return {account.id: account for account in (await self.session.scalars(query)).all()}
+
     async def count_active_super_admins(self, exclude_id: Optional[str] = None) -> int:
         query = select(func.count()).select_from(AdminDetails).where(
             AdminDetails.active_status == AdminStatus.ACTIVE,

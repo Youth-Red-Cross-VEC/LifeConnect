@@ -1,3 +1,4 @@
+import { errorText } from "../services/requests";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../services/api";
@@ -25,13 +26,13 @@ export default function QueryPageDonor() {
     setIsLoading(true);
     try {
       const res = await api.submitQuery(form);
-      if (res && res.success === true) {
+      if (res?.id) {
         setSuccess(res.message || "Your query has been submitted successfully. We will get back to you soon.");
         setForm({ user_name: "", user_email: "", user_query: "" });
         // Refresh query list if backend returns updated list
         if (res.queries) setQueries(res.queries);
       } else {
-        setError(res?.message || "Failed to submit query. Please try again.");
+        setError(errorText(res, "Failed to submit query. Please try again."));
       }
     } catch {
       setError("Server error. Try again.");

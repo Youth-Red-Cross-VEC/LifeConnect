@@ -76,9 +76,9 @@ The backend uses `uv` for dependency management.
    (it prints how many rows hold a value and refuses without both the env flag and the backup flag).
 
 4. (Optional) Load synthetic development data with `python scripts/load_dev_data.py` (bootstrap admin only) or
-   `python scripts/load_dev_data.py --full` (2 admins, 10 donors, hospitals and requests). Every account uses the
-   published dev-only password `DevOnly#2026`, so the loader refuses `APP_ENV=production` and refuses any database
-   that already holds an admin or a donor. Do not pipe `docs/*.sql` into `psql` by hand: that has no guard.
+   `python scripts/load_dev_data.py --full` (2 admins, 10 donors, hospitals and requests). Password login is disabled for these accounts by default.
+   Set a private `DEV_SEED_PASSWORD` in the loader process environment if local login is needed.
+   The loader refuses production and any database that already holds an admin or donor.
 
 5. Start the FastAPI server:
    ```bash
@@ -99,11 +99,18 @@ The backend uses `uv` for dependency management.
 | `SCHEDULER_ENABLED` | `false` | `false` on every web worker; `true` on exactly **one** dedicated scheduler process (`docker compose` runs it as the `scheduler` service) |
 | `RECAPTCHA_ENFORCED` | `false` | `true`: login **and the public blood-request form** require a valid `recaptcha_token` and fail closed with 400 |
 | `RATE_LIMIT_PER_MINUTE` | `60` | Default per-IP limit for routes without their own limit |
+| `AUTH_RATE_LIMIT` | `5/minute` | Per IP and operation for login, registration and reset confirmation |
+| `PASSWORD_RESET_RATE_LIMIT` | `3/minute` | Per IP and operation for reset, enrollment and invitation code delivery |
+| `ACCOUNT_AUTH_RATE_LIMIT` | `10/10 minutes` | Across IPs for the same canonical email and login, registration or reset-confirmation operation |
+| `ACCOUNT_CODE_SEND_RATE_LIMIT` | `3/10 minutes` | Across IPs for a recipient and code-delivery operation |
+| `SUPPORT_QUERY_RATE_LIMIT` | `5/minute;30/hour` | Per IP for support query submission |
 | `BLOOD_REQUEST_RATE_LIMIT` | `5/minute;30/hour` | Dedicated per-IP limit on the public blood-request form (it emails the admins) |
 | `ADMIN_NOTIFY_MAX_RECIPIENTS` | `20` | A new request sends ONE email, BCC'd to at most this many active admins |
 | `OTP_TTL_SECONDS` / `OTP_MAX_ATTEMPTS` | `600` / `5` | The attempt budget belongs to the window: requesting a new code does not reset it, so after the allowed wrong guesses a user waits for the window to end |
 | `RATE_LIMIT_STORAGE_URI` | `memory://` | `memory://` counts per process. The production overlay uses private Redis. For a host install with Redis, install `pip install -r requirements-redis.txt` first. **`APP_ENV=production` refuses to start with `memory://`.** |
 | `DONOR_ELIGIBILITY_DAYS` | `60` | Days a donor stays inactive after donating |
+
+Each operation has its own budget. Account counters use a keyed digest of the normalized address. IP counters use the ASGI peer after Uvicorn applies its trusted-proxy rules. IPv4-mapped addresses share their IPv4 bucket, and IPv6 clients share a bucket within a /64. Keep Nginx as the only trusted forwarding peer. A quota rejection from the IP or account limiter includes a Retry-After duration in seconds. Keep the same signing secret and Redis configuration across replicas. Each worker uses the same Redis database in the production Compose overlay.
 
 ### Docker deployment
 
@@ -173,11 +180,17 @@ HSTS is sent on HTTPS responses, including
 API and static asset responses. Production refresh cookies are Secure, HttpOnly and SameSite=Strict.
 The API image installs the pinned runtime sets in `requirements.txt` and `requirements-redis.txt`.
 
+Staging and production require SMTP TLS, a configured mail credential, enforced reCAPTCHA and Redis rate-limit storage. Configure the signing key using a secret manager. The supported signing algorithm is HS256. Access-token lifetimes are bounded to 1?1,440 minutes and refresh-token lifetimes to 1?30 days. Unrecognized environment names fail startup.
+
+The Nginx access log records method, status, response bytes and elapsed time. The API container disables the duplicate Uvicorn access log. Use the error ID returned on an application failure to correlate it with the server event.
+
 ### Sessions, passwords and accounts
 
 - **Logout and access tokens.** Logging out revokes the refresh token on the server (`POST /auth/logout` works
-  without a valid access token). Refresh tokens are carried in an HttpOnly, SameSite=Strict cookie scoped to
-  `/api/v1/auth`; only access tokens are held in browser memory. An access token stays valid until it expires
+  without a valid access token). HTTPS deployments use the host-only `__Host-lc_refresh_token` cookie
+  with Path=/, Secure, HttpOnly and SameSite=Strict. Development uses the auth-path cookie. On rollout,
+  HTTPS users must sign in once to obtain the new cookie. Non-browser clients without an Origin must send
+  `Content-Type: application/json` on cookie-bearing refresh and logout. Access tokens are held in browser memory. An access token stays valid until it expires
   (`ACCESS_TOKEN_EXPIRE_MINUTES`, 15 by default), so log out on shared computers. The
   donor dashboard has a **Log out** button.
 - **Revocation.** A successful password reset, and deactivating an admin or donor, revoke **all** of that account's

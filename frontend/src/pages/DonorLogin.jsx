@@ -1,3 +1,4 @@
+import { errorText } from "../services/requests";
 import { useState, useCallback } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useGoogleReCaptcha } from "react-google-recaptcha-v3";
@@ -42,7 +43,7 @@ export default function DonorLogin() {
         setUsername(res.username || "");
         navigate("/donor/dashboard");
       } else {
-        setError(res?.detail || res?.message || "Invalid credentials");
+        setError(errorText(res, "Invalid credentials"));
       }
     } catch {
       setError("Server error. Try again.");

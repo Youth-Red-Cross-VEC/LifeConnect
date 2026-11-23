@@ -1,4 +1,4 @@
-"""B15: the dev seed (known admin password) can only be loaded into an empty, non-production database."""
+"""B15: the synthetic dev seed can only be loaded into an empty, non-production database."""
 
 import importlib.util
 import sqlite3
@@ -69,8 +69,15 @@ def test_split_statements_respects_quotes_and_comments():
 def test_loads_the_bootstrap_admin_into_an_empty_database(empty_db, monkeypatch):
     path, url = empty_db
     monkeypatch.setattr(get_settings(), "APP_ENV", "development")
+    from app.api.auth.utils import verify_password
+    secret = "PrivateLocal123"
+    monkeypatch.setenv("DEV_SEED_PASSWORD", secret)
     assert loader.main(["--database-url", url]) == 0
     assert _counts(path, "admin_details", "donor_details") == [1, 0]
+    with sqlite3.connect(path) as conn:
+        stored = conn.execute("SELECT password FROM admin_details").fetchone()[0]
+    assert stored != secret and verify_password(secret, stored)
+
 
 
 def test_full_flag_loads_the_synthetic_donors(empty_db, monkeypatch):

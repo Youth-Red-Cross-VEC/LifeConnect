@@ -116,3 +116,42 @@ async def test_wrong_password_does_not_change_hash(client: AsyncClient, test_ses
     assert response.status_code == 401
     await test_session.refresh(donor)
     assert donor.password == legacy
+
+async def test_legacy_admin_password_is_locked_during_upgrade(postgres_security_engine, monkeypatch, client):
+    """Recovery must wait until verification and migration of the old password commit."""
+    import importlib
+    from sqlalchemy import select
+    from sqlalchemy.exc import DBAPIError
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+    from app.core.database import get_db
+    from app.main import app
+    from tests.helpers import insert_admin
+
+    router = importlib.import_module("app.api.auth.router")
+    sessions = async_sessionmaker(postgres_security_engine, expire_on_commit=False)
+    async with sessions.begin() as setup:
+        admin = await insert_admin(setup, 1)
+    async with sessions.begin() as setup:
+        row = await setup.get(AdminDetails, admin.id)
+        row.password = make_scrypt_hash("OldPassword123")
+
+    async def database():
+        async with sessions.begin() as session:
+            yield session
+
+    original_hash = router.hash_password_async
+    async def check_lock(password):
+        async with sessions.begin() as concurrent:
+            query = select(AdminDetails).where(AdminDetails.id == admin.id).with_for_update(nowait=True)
+            with pytest.raises(DBAPIError) as blocked:
+                await concurrent.execute(query)
+            assert blocked.value.orig.sqlstate == "55P03"
+        return await original_hash(password)
+
+    monkeypatch.setitem(app.dependency_overrides, get_db, database)
+    monkeypatch.setattr(router, "hash_password_async", check_lock)
+    response = await client.post("/api/v1/auth/admin/login", json={"email": admin.email, "password": "OldPassword123"})
+    assert response.status_code == 200
+    async with sessions() as check:
+        upgraded = await check.get(AdminDetails, admin.id)
+        assert not needs_rehash(upgraded.password)

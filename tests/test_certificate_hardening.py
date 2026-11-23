@@ -112,7 +112,9 @@ def _disposition(filename: str) -> str:
 def _file(filename: str) -> Path:
     path = Path(__file__).parent / "_attach_tmp" / filename
     path.parent.mkdir(exist_ok=True)
-    path.write_bytes(b"x")
+    from PIL import Image
+    with Image.new("RGB", (1, 1)) as image:
+        image.save(path, format="PNG")
     return path
 
 
@@ -139,3 +141,57 @@ def test_attachment_filename_cannot_break_out_of_the_header():
 def test_attachment_filename_with_a_space_stays_one_parameter():
     header = _disposition("two words.png")
     assert header == 'attachment; filename="two words.png"'
+async def test_email_with_unusable_attachment_is_not_sent(tmp_path, monkeypatch):
+    from unittest.mock import AsyncMock
+    from app.services import email_service
+
+    deliver = AsyncMock()
+    monkeypatch.setattr(email_service.aiosmtplib, "send", deliver)
+    service = EmailService(get_settings())
+    missing = tmp_path / "missing.png"
+    invalid = tmp_path / "invalid.png"
+    invalid.write_text("invalid image", encoding="utf8")
+    for path in (missing, invalid):
+        assert not await service.send_certificate_email("recipient@example.com", "Recipient", path)
+    deliver.assert_not_awaited()
+
+
+async def test_file_alias_is_never_resolved_for_deletion(service):
+    name = "older_20261101_012345_certificate.txt"
+    original = service.output_dir / name
+    original.write_text("original", encoding="utf8")
+    alias = service.output_dir / "alias_20261101_012345_certificate.txt"
+    try:
+        alias.symlink_to(original)
+    except OSError as err:
+        if getattr(err, "winerror", None) == 1314:
+            pytest.skip("Windows account lacks symlink privilege")
+        raise
+    assert await service.get_certificate(alias.name) is None
+    assert await service.list_certificates() == [name]
+    assert not await service.delete_certificate(alias.name)
+    assert original.read_text(encoding="utf8") == "original"
+
+def test_retention_removes_only_managed_regular_files(service):
+    import os
+    expired = service.output_dir / "old_20260101_000001_certificate.txt"
+    unfinished = service.output_dir / ".lc-cert-example.tmp"
+    unrelated = service.output_dir / "volume-marker"
+    fresh = service.output_dir / "new_20260101_000002_certificate.txt"
+    for path in (expired, unfinished, unrelated, fresh):
+        path.write_text("synthetic", encoding="utf8")
+    for path in (expired, unfinished, unrelated):
+        os.utime(path, (1, 1))
+    assert service.purge_expired_files(2) == 2
+    assert {file.name for file in service.output_dir.iterdir()} == {fresh.name, unrelated.name}
+
+def test_retention_can_finish_interrupted_publication(service):
+    import os
+    published = service.output_dir / "old_20260101_000001_certificate.txt"
+    temporary = service.output_dir / ".lc-cert-interrupted.tmp"
+    temporary.write_text("synthetic", encoding="utf8")
+    os.link(temporary, published)
+    os.utime(temporary, (1, 1))
+    service.purge_expired_files(2)
+    service.purge_expired_files(2)
+    assert not published.exists() and not temporary.exists()

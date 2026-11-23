@@ -2,6 +2,8 @@
 Hospital API Routes.
 """
 
+from fastapi import Path as ApiPath
+from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -66,10 +68,10 @@ async def create_hospital(
 
 @router.get("/", response_model=PaginatedResponse)
 async def list_hospitals(
-    page: int = Query(default=1, ge=1),
+    page: int = Query(default=1, ge=1, le=100000),
     page_size: int = Query(default=20, ge=1, le=100),
-    city: Optional[str] = Query(default=None),
-    search: Optional[str] = Query(default=None),
+    city: Optional[str] = Query(default=None, max_length=45),
+    search: Optional[str] = Query(max_length=100, default=None),
     session: AsyncSession = Depends(get_db, scope="function"),
 ):
     """List all hospitals with pagination."""
@@ -93,10 +95,10 @@ async def list_hospitals(
 
 @router.get("/blood-banks", response_model=PaginatedResponse)
 async def list_blood_banks(
-    page: int = Query(default=1, ge=1),
+    page: int = Query(default=1, ge=1, le=100000),
     page_size: int = Query(default=50, ge=1, le=200),
-    city: Optional[str] = Query(default=None),
-    search: Optional[str] = Query(default=None),
+    city: Optional[str] = Query(default=None, max_length=45),
+    search: Optional[str] = Query(max_length=100, default=None),
     session: AsyncSession = Depends(get_db, scope="function"),
 ):
     """List hospitals as blood banks (public endpoint for blood bank lookup)."""
@@ -120,8 +122,8 @@ async def list_blood_banks(
 
 @router.get("/autofill", response_model=List[HospitalAutofillResponse])
 async def hospital_autofill(
-    q: str = Query(..., min_length=2, description="Search query"),
-    limit: int = Query(default=10, le=20),
+    q: str = Query(..., min_length=2, max_length=100, description="Search query"),
+    limit: int = Query(default=10, ge=1, le=20),
     session: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Get hospital suggestions for autofill."""
@@ -140,15 +142,18 @@ async def hospital_autofill(
 
 
 @router.get("/cities", response_model=List[str])
-async def get_cities(session: AsyncSession = Depends(get_db, scope="function")):
+async def get_cities(
+    limit: int = Query(100, ge=1, le=500), offset: int = Query(0, ge=0, le=1000000),
+    session: AsyncSession = Depends(get_db, scope="function"),
+):
     """Get list of cities with hospitals."""
     repo = HospitalRepository(session)
-    return await repo.get_cities()
+    return await repo.get_cities(limit, offset)
 
 
 @router.get("/{hospital_id}", response_model=HospitalResponse)
 async def get_hospital(
-    hospital_id: str,
+    hospital_id: Annotated[str, ApiPath(min_length=1, max_length=36)],
     session: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Get hospital details by ID."""
@@ -163,7 +168,7 @@ async def get_hospital(
 
 @router.patch("/{hospital_id}", response_model=HospitalResponse)
 async def update_hospital(
-    hospital_id: str,
+    hospital_id: Annotated[str, ApiPath(min_length=1, max_length=36)],
     data: HospitalUpdate,
     session: AsyncSession = Depends(get_db, scope="function"),
     current_admin = Depends(get_current_admin),
@@ -204,7 +209,7 @@ async def update_hospital(
 
 @router.delete("/{hospital_id}", response_model=MessageResponse)
 async def delete_hospital(
-    hospital_id: str,
+    hospital_id: Annotated[str, ApiPath(min_length=1, max_length=36)],
     session: AsyncSession = Depends(get_db, scope="function"),
     current_admin = Depends(get_current_admin),
 ):

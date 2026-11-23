@@ -158,7 +158,7 @@ async def get_current_donor(
     user = await get_current_user(token, session)
     
     if user.get("user_type") != "donor":
-        logger.warning(f"Non-donor {user['user_id']} tried donor endpoint")
+        logger.warning("Non-donor tried donor endpoint")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only donors can access this resource",
@@ -206,7 +206,7 @@ async def get_current_admin(
     user = await get_current_user(token, session)
     
     if user.get("user_type") != "admin":
-        logger.warning(f"Non-admin {user['user_id']} tried admin endpoint")
+        logger.warning("Non-admin tried admin endpoint")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only admins can access this resource",

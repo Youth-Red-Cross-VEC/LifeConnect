@@ -197,9 +197,13 @@
     },
     "GET /api/v1/certificates/": {
       "body": null,
-      "params": [],
+      "params": [
+        "query:limit:optional",
+        "query:offset:optional"
+      ],
       "responses": {
-        "200": "CertificateListResponse"
+        "200": "CertificateListResponse",
+        "422": "HTTPValidationError"
       },
       "secured": true
     },
@@ -234,7 +238,9 @@
       "body": null,
       "params": [
         "path:blood_group:required",
-        "query:active_only:optional"
+        "query:active_only:optional",
+        "query:limit:optional",
+        "query:offset:optional"
       ],
       "responses": {
         "200": "array<DonorListResponse>",
@@ -303,9 +309,13 @@
     },
     "GET /api/v1/hospitals/cities": {
       "body": null,
-      "params": [],
+      "params": [
+        "query:limit:optional",
+        "query:offset:optional"
+      ],
       "responses": {
-        "200": "array<string>"
+        "200": "array<string>",
+        "422": "HTTPValidationError"
       },
       "secured": false
     },
@@ -606,10 +616,19 @@
       "secured": true
     },
     "POST /api/v1/donors/register": {
-      "body": "DonorCreate",
+      "body": "DonorEnrollment",
       "params": [],
       "responses": {
         "201": "DonorResponse",
+        "422": "HTTPValidationError"
+      },
+      "secured": false
+    },
+    "POST /api/v1/donors/register/code": {
+      "body": "EnrollmentCodeRequest",
+      "params": [],
+      "responses": {
+        "200": "app__schemas__common__MessageResponse",
         "422": "HTTPValidationError"
       },
       "secured": false
@@ -828,11 +847,12 @@
       "description": "null|string?",
       "name": "string"
     },
-    "DonorCreate": {
+    "DonorEnrollment": {
       "address_details": "AddressDetailsCreate",
       "blood_group": "string",
       "disease_details": "DiseaseDetailsCreate",
       "email": "string",
+      "enrollment_code": "string",
       "name": "string",
       "password": "string",
       "personal_details": "PersonalDetailsCreate"
@@ -870,6 +890,9 @@
       "name": "null|string?",
       "pincode": "null|string?",
       "state": "null|string?"
+    },
+    "EnrollmentCodeRequest": {
+      "email": "string"
     },
     "ErasureDecision": {
       "decision": "string"

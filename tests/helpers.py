@@ -118,4 +118,4 @@ def refresh_cookie(response) -> str:
 
 
 def cookie_headers(token: str) -> dict[str, str]:
-    return {"Cookie": f"lc_refresh_token={token}"}
+    return {"Cookie": f"lc_refresh_token={token}", "Content-Type": "application/json"}

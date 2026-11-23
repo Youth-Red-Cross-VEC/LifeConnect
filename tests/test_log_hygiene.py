@@ -36,7 +36,8 @@ async def test_email_logs_mask_recipient(monkeypatch, caplog):
     assert not await svc.send_email("jane.doe@example.com", "s", "<p>x</p>")
 
     assert "jane.doe@example.com" not in caplog.text
-    assert "j***@example.com" in caplog.text
+    assert "example.com" not in caplog.text
+    assert "delivery failed" in caplog.text
 
 
 @pytest.mark.asyncio

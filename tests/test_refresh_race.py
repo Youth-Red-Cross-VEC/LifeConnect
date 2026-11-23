@@ -51,3 +51,40 @@ async def test_sequential_refresh_still_rotates(client: AsyncClient, test_sessio
     rows = (await test_session.execute(select(RefreshSession).order_by(RefreshSession.created_at))).scalars().all()
     spent = [x for x in rows if x.revoked_at is not None]
     assert len(spent) == 1 and spent[0].replaced_by is not None
+
+
+@pytest.mark.asyncio
+async def test_logout_waits_for_pending_rotation_on_postgresql(postgres_security_engine):
+    """Two independent transactions must leave the successor revoked."""
+    import asyncio
+    from sqlalchemy import event
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+    from app.services.refresh_session_service import claim_session, issue_refresh_token, revoke_chain
+
+    sessions = async_sessionmaker(postgres_security_engine, expire_on_commit=False)
+    claims = {"sub": "DON-race", "user_type": "donor", "tv": 0}
+    async with sessions() as rotating:
+        _, first = await issue_refresh_token(rotating, claims)
+        await rotating.commit()
+        assert await claim_session(rotating, first)
+        _, successor = await issue_refresh_token(rotating, claims)
+        parent = await rotating.get(RefreshSession, first)
+        parent.replaced_by = successor
+        await rotating.flush()
+        reading = asyncio.Event()
+
+        async def logout():
+            async with sessions.begin() as ending:
+                connection = await ending.connection()
+                event.listen(connection.sync_connection, "before_cursor_execute",
+                             lambda *args: reading.set(), once=True)
+                await revoke_chain(ending, first)
+
+        pending = asyncio.create_task(logout())
+        try:
+            await asyncio.wait_for(reading.wait(), timeout=5)
+        finally:
+            await rotating.commit()
+            await asyncio.wait_for(pending, timeout=5)
+    async with sessions() as checking:
+        assert (await checking.get(RefreshSession, successor)).revoked_at is not None

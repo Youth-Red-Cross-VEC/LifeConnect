@@ -1,9 +1,10 @@
 import re
 
-from pydantic import model_validator
+from limits import parse_many
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings
 from functools import lru_cache
-from typing import Optional
+from typing import Literal, Optional
 from urllib.parse import urlsplit
 
 
@@ -30,9 +31,9 @@ class Settings(BaseSettings):
 
     # Security - JWT Configuration (Partner will implement auth using these)
     SECRET_KEY: str
-    ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
-    REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+    ALGORITHM: Literal["HS256"] = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=15, ge=1, le=1440)
+    REFRESH_TOKEN_EXPIRE_DAYS: int = Field(default=7, ge=1, le=30)
 
     # External APIs
     GOOGLE_MAPS_API_KEY: str
@@ -59,12 +60,15 @@ class Settings(BaseSettings):
     ALLOWED_ORIGINS: list[str] | None = None
 
     # Rate Limiting
-    RATE_LIMIT_PER_MINUTE: int = 60
+    RATE_LIMIT_PER_MINUTE: int = Field(default=60, gt=0)
     # memory:// counts per process. With more than one web worker/replica use a shared
     # store (e.g. redis://host:6379/0) or the effective limit is multiplied by the worker count.
     RATE_LIMIT_STORAGE_URI: str = "memory://"
 
     # Per-IP limits on credential endpoints (brute force / email flooding)
+    ACCOUNT_AUTH_RATE_LIMIT: str = "10/10 minutes"
+    ACCOUNT_CODE_SEND_RATE_LIMIT: str = "3/10 minutes"
+    SUPPORT_QUERY_RATE_LIMIT: str = "5/minute;30/hour"
     AUTH_RATE_LIMIT: str = "5/minute"
     PASSWORD_RESET_RATE_LIMIT: str = "3/minute"
 
@@ -77,8 +81,8 @@ class Settings(BaseSettings):
     CERT_RETENTION_DAYS: int = 30
 
     # One-time codes (admin invite, password reset)
-    OTP_TTL_SECONDS: int = 600
-    OTP_MAX_ATTEMPTS: int = 5
+    OTP_TTL_SECONDS: int = Field(default=600, ge=1, le=900)
+    OTP_MAX_ATTEMPTS: int = Field(default=5, ge=1, le=10)
 
     # Donation eligibility: days a donor stays unavailable after donating (90 is the common deferral).
     DONATION_COOLDOWN_DAYS: int = 90
@@ -99,7 +103,16 @@ class Settings(BaseSettings):
     def docs_enabled(self) -> bool:
         if self.ENABLE_DOCS is not None:
             return self.ENABLE_DOCS
-        return self.APP_ENV.lower() != "production"
+        return self.APP_ENV in {"test", "development"}
+
+    @field_validator("AUTH_RATE_LIMIT", "PASSWORD_RESET_RATE_LIMIT", "BLOOD_REQUEST_RATE_LIMIT",
+                     "SUPPORT_QUERY_RATE_LIMIT", "ACCOUNT_AUTH_RATE_LIMIT", "ACCOUNT_CODE_SEND_RATE_LIMIT")
+    @classmethod
+    def valid_rate_windows(cls, value: str) -> str:
+        for item in parse_many(value):
+            if item.amount < 1 or item.get_expiry() < 1:
+                raise ValueError("Rate limits require a positive count and duration")
+        return value
 
     @model_validator(mode="after")
     def _validate_security_settings(self) -> "Settings":
@@ -109,13 +122,18 @@ class Settings(BaseSettings):
             raise ValueError(
                 f"SECRET_KEY is still a placeholder from the docs or .env.example. Generate one with: {_GENERATE_HINT}"
             )
-        if len(self.SECRET_KEY) < MIN_SECRET_KEY_LENGTH:
+        if len(self.SECRET_KEY.strip()) < MIN_SECRET_KEY_LENGTH:
             raise ValueError(
                 f"SECRET_KEY must be at least {MIN_SECRET_KEY_LENGTH} characters. Generate one with: {_GENERATE_HINT}"
             )
-        production = self.APP_ENV.lower() == "production"
+        self.APP_ENV = self.APP_ENV.strip().lower()
+        if self.APP_ENV not in {"development", "test", "staging", "production"}:
+            raise ValueError("APP_ENV must identify development, test, staging or production")
+        production = self.APP_ENV in {"production", "staging"}
         if self.ALLOWED_ORIGINS is None:
             self.ALLOWED_ORIGINS = [] if production else ["http://localhost:3000", "http://localhost:5173"]
+        if any(origin in {"*", "null"} for origin in self.ALLOWED_ORIGINS):
+            raise ValueError("ALLOWED_ORIGINS must contain exact HTTPS origins in production and explicit trusted origins in development")
         if production:
             if self.DEBUG:
                 raise ValueError("DEBUG must be false when APP_ENV=production")
@@ -129,7 +147,11 @@ class Settings(BaseSettings):
                         or origin != f"https://{url.netloc}" or "*" in origin
                         or any(char.isspace() for char in origin)):
                     raise ValueError("ALLOWED_ORIGINS must contain exact HTTPS origins in production")
-            if not self.RECAPTCHA_SECRET_KEY:
+            if not self.MAIL_USE_TLS:
+                raise ValueError("MAIL_USE_TLS is required for production SMTP credentials")
+            if not self.MAIL_PASSWORD.strip() or _PLACEHOLDER_SECRET.search(self.MAIL_PASSWORD):
+                raise ValueError("MAIL_PASSWORD requires a configured SMTP credential")
+            if not self.RECAPTCHA_SECRET_KEY or not self.RECAPTCHA_SECRET_KEY.strip() or _PLACEHOLDER_SECRET.search(self.RECAPTCHA_SECRET_KEY):
                 raise ValueError("RECAPTCHA_SECRET_KEY must be set when APP_ENV=production")
             if not self.RECAPTCHA_ENFORCED:
                 raise ValueError("RECAPTCHA_ENFORCED must be true when APP_ENV=production")
@@ -137,7 +159,7 @@ class Settings(BaseSettings):
             # limit is N times the configured one. Refuse it in production instead of silently
             # weakening brute-force protection.
             storage_uri = self.RATE_LIMIT_STORAGE_URI.strip().lower()
-            if not storage_uri or storage_uri.startswith("memory://"):
+            if not storage_uri.startswith(("redis://", "rediss://", "redis+unix://")):
                 raise ValueError(
                     "RATE_LIMIT_STORAGE_URI must be a shared store (e.g. redis://redis:6379/0) when "
                     "APP_ENV=production: memory:// counts per process, so the effective limit is "

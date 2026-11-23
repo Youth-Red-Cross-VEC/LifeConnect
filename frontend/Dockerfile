@@ -29,7 +29,7 @@ RUN apk upgrade --no-cache && rm /etc/nginx/conf.d/default.conf
 
 # Copy our custom nginx config
 COPY nginx.conf /etc/nginx/conf.d/default.conf
-COPY nginx-upstream.conf /etc/nginx/conf.d/upstream.conf
+COPY nginx-upstream.conf /etc/nginx/conf.d/00-upstream.conf
 COPY nginx-site.conf /etc/nginx/snippets/site.conf
 COPY security-headers.conf /etc/nginx/snippets/security-headers.conf
 COPY nginx-production.conf.template /etc/nginx/lifeconnect-templates/default.conf.template

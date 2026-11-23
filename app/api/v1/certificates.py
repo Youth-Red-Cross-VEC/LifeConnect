@@ -4,8 +4,9 @@ Certificate API Routes.
 Endpoints for generating and managing blood donation certificates.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Query, Path as ApiPath
+import asyncio
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,12 +14,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.models.blood_request import ResponseDetails
 from app.models.privacy import ErasureFile
+from app.models.audit import AdminAuditLog
 from app.repositories.blood_request import BloodRequestRepository
-from typing import Optional
+from typing import Annotated, Optional
 from pathlib import Path
 
-from app.services.certificate_service import get_certificate_service, CertificateService
+from app.services.certificate_service import get_certificate_service, CertificateService, read_certificate_bytes
 from app.services.email_service import get_email_service, EmailService
+from app.schemas.validation import RecordId, SingleLine
 from app.schemas.common import SuccessResponse
 from app.services.audit_service import record_admin_action
 from app.services.erasure_service import lock_donor
@@ -52,23 +55,23 @@ async def _email_then_delete(email_service: EmailService, cert_service: Certific
 # Schemas
 # =======================
 
-class CertificateRequest(BaseModel):
+class CertificateRequest(BaseModel, extra="forbid"):
     """Request schema for generating a certificate.
 
     Donor identity (name, email, blood group) is read from the database;
     the client only says WHICH donor, never who they are.
     """
 
-    donor_id: str = Field(..., min_length=1, max_length=36)
-    request_id: Optional[str] = Field(
+    donor_id: RecordId = Field(..., min_length=1, max_length=36)
+    request_id: Optional[RecordId] = Field(
         default=None, max_length=36,
         description="Blood request the donation belongs to; supplies the location/date defaults",
     )
-    donation_date: Optional[str] = Field(
+    donation_date: Optional[SingleLine] = Field(
         default=None, max_length=50,
         description="Format: YYYY-MM-DD or human-readable. Defaults to the request's donation date",
     )
-    location: Optional[str] = Field(default=None, max_length=200)
+    location: Optional[SingleLine] = Field(default=None, max_length=200)
     send_email: bool = Field(default=True, description="Send certificate via email")
 
 
@@ -170,7 +173,7 @@ async def generate_certificate(
     summary="Download a certificate",
 )
 async def download_certificate(
-    filename: str,
+    filename: Annotated[str, ApiPath(max_length=180)],
     cert_service: CertificateService = Depends(get_certificate_service),
     current_admin = Depends(get_current_admin),
     session: AsyncSession = Depends(get_db, scope="function"),
@@ -184,10 +187,13 @@ async def download_certificate(
             detail=f"Certificate '{filename}' not found",
         )
     
-    return FileResponse(
-        path=str(file_path),
-        media_type="image/png",
-        filename=filename,
+    try:
+        contents = await asyncio.to_thread(read_certificate_bytes, file_path)
+    except (ValueError, OSError, SyntaxError):
+        raise HTTPException(404, "Certificate unavailable") from None
+    return Response(
+        contents, media_type="image/png" if file_path.suffix == ".png" else "text/plain",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"', "Cache-Control": "private, no-store"},
     )
 
 
@@ -197,6 +203,8 @@ async def download_certificate(
     summary="List all certificates",
 )
 async def list_certificates(
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0, le=1000000),
     cert_service: CertificateService = Depends(get_certificate_service),
     current_admin = Depends(get_current_admin),
     session: AsyncSession = Depends(get_db, scope="function"),
@@ -207,7 +215,7 @@ async def list_certificates(
     certificates = [name for name in certificates if name not in pending]
     
     return CertificateListResponse(
-        certificates=certificates,
+        certificates=certificates[offset:offset + limit],
         total=len(certificates),
     )
 
@@ -218,7 +226,7 @@ async def list_certificates(
     summary="Delete a certificate",
 )
 async def delete_certificate(
-    filename: str,
+    filename: Annotated[str, ApiPath(max_length=180)],
     cert_service: CertificateService = Depends(get_certificate_service),
     session: AsyncSession = Depends(get_db, scope="function"),
     current_admin = Depends(get_current_admin),
@@ -242,8 +250,8 @@ async def delete_certificate(
     summary="Send existing certificate via email",
 )
 async def send_certificate_email(
-    filename: str,
-    donor_id: str,
+    filename: Annotated[str, Query(min_length=1, max_length=180)],
+    donor_id: Annotated[str, Query(min_length=1, max_length=36)],
     background_tasks: BackgroundTasks,
     cert_service: CertificateService = Depends(get_certificate_service),
     email_service: EmailService = Depends(get_email_service),
@@ -261,6 +269,15 @@ async def send_certificate_email(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Donor not found",
         )
+
+    owner = await session.scalar(
+        select(AdminAuditLog.detail).where(
+            AdminAuditLog.entity_type == "certificate", AdminAuditLog.entity_id == filename,
+            AdminAuditLog.action == "certificate.generate",
+        ).order_by(AdminAuditLog.id.desc()).limit(1)
+    )
+    if owner != f"donor_id={donor.id}":
+        raise HTTPException(404, "Certificate not found for this donor")
 
     file_path = None if await session.get(ErasureFile, filename) else await cert_service.get_certificate(filename)
     

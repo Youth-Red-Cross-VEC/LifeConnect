@@ -73,3 +73,65 @@ async def test_super_admin_can_invite_and_toggle_an_admin(admin_client: AsyncCli
     assert invited.status_code == 200
     assert activated.status_code == 200
     assert deactivated.status_code == 200
+
+
+async def test_invite_remains_retryable_after_registration_conflict(client, test_session):
+    from app.services.otp_service import PURPOSE_ADMIN_INVITE, store_otp
+    from tests.helpers import insert_admin
+
+    existing = await insert_admin(test_session, 1)
+    email = "invited@example.com"
+    await store_otp(test_session, email, "123456", PURPOSE_ADMIN_INVITE)
+    body = dict(email=email, password="Invitation123", username="Invited",
+                vec_registration_number=existing.vec_registration_number,
+                date_of_birth="1990-01-01", mobile_number="9000000001", invite_otp="123456")
+    path = "/api/v1/admins/register"
+    assert (await client.post(path, json=body)).status_code == 409
+    body["vec_registration_number"] = "NEW-2"
+    assert (await client.post(path, json=body)).status_code == 201
+    assert (await client.post(path, json=body)).status_code == 400
+
+async def test_previous_admin_session_cannot_inherit_promotion(admin_client, test_session):
+    from tests.helpers import cookie_headers, refresh_cookie
+
+    headers, account = await _normal_headers(test_session)
+    login = await admin_client.post("/api/v1/auth/admin/login", json={"email": account.email, "password": "Secret123"})
+    assert login.status_code == 200
+    cookie = refresh_cookie(login)
+    assert (await admin_client.put(f"/api/v1/admins/{account.id}", json={"role": "super_admin"})).status_code == 200
+    assert (await admin_client.get("/api/v1/admins/me/profile", headers=headers)).status_code == 401
+    assert (await admin_client.post("/api/v1/auth/refresh", headers=cookie_headers(cookie))).status_code == 401
+
+async def test_parallel_self_demotions_preserve_one_super_admin(postgres_security_engine):
+    import asyncio
+    from fastapi import HTTPException
+    from sqlalchemy import select
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+    from app.api.v1.admins import update_admin
+    from app.models.admin import AdminDetails
+    from app.models.audit import AdminAuditLog
+    from app.schemas.admin import AdminUpdate
+
+    async with postgres_security_engine.begin() as connection:
+        await connection.run_sync(AdminAuditLog.__table__.create)
+    sessions = async_sessionmaker(postgres_security_engine, expire_on_commit=False)
+    async with sessions() as seeding:
+        first = await insert_admin(seeding, 1, role=AdminRole.SUPER_ADMIN)
+        second = await insert_admin(seeding, 2, role=AdminRole.SUPER_ADMIN)
+    barrier = asyncio.Barrier(2)
+
+    async def demote(account_id):
+        try:
+            async with sessions.begin() as transaction:
+                actor = await transaction.get(AdminDetails, account_id)
+                await asyncio.wait_for(barrier.wait(), 5)
+                await update_admin(account_id, AdminUpdate(role=AdminRole.ADMIN), transaction, actor)
+            return 200
+        except HTTPException as exc:
+            return exc.status_code
+
+    statuses = await asyncio.wait_for(asyncio.gather(demote(first.id), demote(second.id)), 10)
+    assert sorted(statuses) == [200, 409]
+    async with sessions() as check:
+        roles = (await check.scalars(select(AdminDetails.role))).all()
+        assert roles.count(AdminRole.SUPER_ADMIN) == 1

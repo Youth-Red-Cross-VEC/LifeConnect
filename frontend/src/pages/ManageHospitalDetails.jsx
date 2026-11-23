@@ -1,3 +1,4 @@
+import { errorText } from "../services/requests";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import AdminBase from "./AdminBase";
@@ -43,7 +44,7 @@ export default function ManageHospitalDetails() {
       if (res && res.message && !res.detail) {
         setHospitals((prev) => prev.filter((h) => h.id !== hospitalId));
       } else {
-        setError(res?.detail || res?.message || "Failed to delete hospital.");
+        setError(errorText(res, "Failed to delete hospital."));
       }
     } catch {
       setError("Server error. Try again.");

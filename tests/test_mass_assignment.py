@@ -21,10 +21,13 @@ PRIVILEGED = {
 
 
 @pytest.mark.asyncio
-async def test_registration_ignores_privileged_fields(client: AsyncClient, test_session):
+async def test_registration_rejects_privileged_fields(client: AsyncClient, test_session, verified_registration):
     body = {**registration_payload("fresh@example.com"), **PRIVILEGED, "email": "fresh@example.com", "password": "Secret123"}
-    r = await client.post("/api/v1/donors/register", json=body)
-    assert r.status_code == 201, r.text
+    r = await verified_registration(client, body)
+    assert r.status_code == 422
+    assert (await test_session.scalars(select(DonorDetail))).first() is None
+    r = await verified_registration(client, registration_payload("fresh@example.com"))
+    assert r.status_code == 201
 
     donor = (await test_session.execute(select(DonorDetail))).scalar_one()
     assert donor.id != "DON-HIJACK" and donor.authentication_id != "AUTH-HIJACK"
@@ -40,6 +43,8 @@ async def test_donor_update_changes_only_the_profile_fields(client: AsyncClient,
     token = create_access_token({"sub": "DON-1", "user_type": "donor", "email": "donor1@example.com"})
     r = await client.patch("/api/v1/donors/DON-1", json={**PRIVILEGED, "name": "Renamed Donor", "active_status": True},
                            headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 422
+    r = await client.patch("/api/v1/donors/DON-1", json={"name": "Renamed Donor"}, headers={"Authorization": f"Bearer {token}"})
     assert r.status_code == 200, r.text
 
     test_session.expire_all()
@@ -54,6 +59,8 @@ async def test_donor_update_changes_only_the_profile_fields(client: AsyncClient,
 async def test_admin_update_cannot_touch_credentials_counters_or_ids(admin_client: AsyncClient, test_session):
     await insert_admin(test_session, 1)
     r = await admin_client.put("/api/v1/admins/ADM-1", json={**PRIVILEGED, "active_status": "Active", "department": "Ops"})
+    assert r.status_code == 422
+    r = await admin_client.put("/api/v1/admins/ADM-1", json={"department": "Ops"})
     assert r.status_code == 200, r.text
 
     test_session.expire_all()
@@ -68,6 +75,8 @@ async def test_admin_update_cannot_touch_credentials_counters_or_ids(admin_clien
 async def test_hospital_update_cannot_change_the_id_or_country(admin_client: AsyncClient, test_session):
     await insert_request(test_session, 1)  # creates HOSP-1
     r = await admin_client.patch("/api/v1/hospitals/HOSP-1", json={"id": "HOSP-HIJACK", "country": "Mars", "city": "Madurai"})
+    assert r.status_code == 422
+    r = await admin_client.patch("/api/v1/hospitals/HOSP-1", json={"city": "Madurai"})
     assert r.status_code == 200, r.text
 
     test_session.expire_all()
@@ -96,11 +105,12 @@ async def test_public_blood_request_cannot_choose_its_own_status_or_approver(cli
     from datetime import datetime, timedelta
 
     await insert_request(test_session, 1)
-    r = await client.post("/api/v1/blood-requests/", json={
+    body = {
         "patient_name": "Sample Patient", "blood_group": "O+", "hospital_id": "HOSP-1", "contact_number": "9000200001",
         "patient_age": 40, "due_date": (datetime.utcnow() + timedelta(days=3)).isoformat(), "units_required": 1,
-        **PRIVILEGED,
-    })
+    }
+    assert (await client.post("/api/v1/blood-requests/", json={**body, **PRIVILEGED})).status_code == 422
+    r = await client.post("/api/v1/blood-requests/", json=body)
     assert r.status_code == 201, r.text
     created = (await test_session.execute(
         select(BloodRequestDetails).where(BloodRequestDetails.id == r.json()["id"])
@@ -112,9 +122,11 @@ async def test_public_blood_request_cannot_choose_its_own_status_or_approver(cli
 @pytest.mark.asyncio
 async def test_a_query_body_cannot_claim_ownership_or_an_admin_answer(client: AsyncClient, test_session):
     await insert_donor(test_session, 1)
-    r = await client.post("/api/v1/queries/", json={
-        "user_name": "Visitor", "user_email": "visitor@example.com", "user_query": "A question about donating", **PRIVILEGED,
-    })
+    body = {
+        "user_name": "Visitor", "user_email": "visitor@example.com", "user_query": "A question about donating",
+    }
+    assert (await client.post("/api/v1/queries/", json={**body, **PRIVILEGED})).status_code == 422
+    r = await client.post("/api/v1/queries/", json=body)
     assert r.status_code == 201, r.text
     row = (await test_session.execute(select(QueryTable))).scalar_one()
     assert row.donor_id is None, "ownership comes only from the authenticated donor"

@@ -20,8 +20,8 @@ async def _emails(session) -> list[str]:
 
 
 @pytest.mark.asyncio
-async def test_registration_stores_the_email_lowercased(client: AsyncClient, test_session):
-    r = await client.post(REGISTER, json=registration_payload("Mixed.Case@Example.COM"))
+async def test_registration_stores_the_email_lowercased(client: AsyncClient, test_session, verified_registration):
+    r = await verified_registration(client, registration_payload("Mixed.Case@Example.COM"))
     assert r.status_code == 201, r.text
     assert r.json()["email"] == "mixed.case@example.com"
     assert await _emails(test_session) == ["mixed.case@example.com"]
@@ -29,17 +29,17 @@ async def test_registration_stores_the_email_lowercased(client: AsyncClient, tes
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("variant", ["mixed.case@example.com", "MIXED.CASE@EXAMPLE.COM", "Mixed.Case@Example.com"])
-async def test_a_case_variant_of_a_registered_email_is_a_duplicate(client: AsyncClient, test_session, variant):
-    assert (await client.post(REGISTER, json=registration_payload("mixed.case@example.com"))).status_code == 201
-    r = await client.post(REGISTER, json=registration_payload(variant))
+async def test_a_case_variant_of_a_registered_email_is_a_duplicate(client: AsyncClient, test_session, variant, verified_registration):
+    assert (await verified_registration(client, registration_payload("mixed.case@example.com"))).status_code == 201
+    r = await verified_registration(client, registration_payload(variant))
     assert r.status_code == 409
     assert len(await _emails(test_session)) == 1
 
 
 @pytest.mark.asyncio
-async def test_a_case_variant_of_a_legacy_mixed_case_row_is_a_duplicate(client: AsyncClient, test_session):
+async def test_a_case_variant_of_a_legacy_mixed_case_row_is_a_duplicate(client: AsyncClient, test_session, verified_registration):
     await insert_donor(test_session, 1, email="Legacy.User@Example.com")  # stored before normalization existed
-    r = await client.post(REGISTER, json=registration_payload("legacy.user@example.com"))
+    r = await verified_registration(client, registration_payload("legacy.user@example.com"))
     assert r.status_code == 409
 
 
@@ -93,23 +93,23 @@ async def test_repository_lookups_are_case_insensitive(test_session):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("typed", ["admin1@example.com", "ADMIN1@Example.com"])
-async def test_a_donor_cannot_register_with_an_admins_email(client: AsyncClient, test_session, typed):
+async def test_a_donor_cannot_register_with_an_admins_email(client: AsyncClient, test_session, typed, verified_registration):
     await insert_admin(test_session, 1)
 
-    r = await client.post(REGISTER, json=registration_payload(typed))
+    r = await verified_registration(client, registration_payload(typed))
 
     assert r.status_code == 409
     assert await _emails(test_session) == []
 
 
 @pytest.mark.asyncio
-async def test_admin_email_and_donor_email_collisions_look_the_same(client: AsyncClient, test_session):
+async def test_admin_email_and_donor_email_collisions_look_the_same(client: AsyncClient, test_session, verified_registration):
     """The refusal must not reveal whether the address belongs to an admin or to another donor."""
     await insert_admin(test_session, 1)
     await insert_donor(test_session, 1)
 
-    as_admin = await client.post(REGISTER, json=registration_payload("admin1@example.com"))
-    as_donor = await client.post(REGISTER, json=registration_payload("donor1@example.com"))
+    as_admin = await verified_registration(client, registration_payload("admin1@example.com"))
+    as_donor = await verified_registration(client, registration_payload("donor1@example.com"))
 
     assert as_admin.status_code == as_donor.status_code == 409
     strip = lambda body, who: body["detail"].replace(who, "<email>")
@@ -124,13 +124,13 @@ async def test_admin_login_ignores_email_case(client: AsyncClient, test_session)
 
 
 @pytest.mark.asyncio
-async def test_losing_a_registration_race_is_a_409_not_a_500(client: AsyncClient, test_session, monkeypatch):
+async def test_losing_a_registration_race_is_a_409_not_a_500(client: AsyncClient, test_session, monkeypatch, verified_registration):
     """Two requests pass the duplicate check together; the unique index must turn the loser into a 409."""
     await insert_donor(test_session, 1, email="Racer@Example.com")
     async def never_seen(self, email):
         return False
     monkeypatch.setattr(DonorRepository, "exists_by_email", never_seen)
 
-    r = await client.post(REGISTER, json=registration_payload("racer@example.com"))
+    r = await verified_registration(client, registration_payload("racer@example.com"))
 
     assert r.status_code == 409

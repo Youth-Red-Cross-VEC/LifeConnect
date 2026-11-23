@@ -1,3 +1,4 @@
+import { errorText } from "../services/requests";
 import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useGoogleReCaptcha } from "react-google-recaptcha-v3";
@@ -13,14 +14,11 @@ export default function GenerateRequests() {
     hospital_address: "",
     contact_number: "",
     patient_age: "",
-    pincode: "",
-    landmark: "",
     due_date: "",
     request_reason: "",
     units_required: "",
   });
 
-  const [hospitals, setHospitals] = useState([]);
   const [suggestions, setSuggestions] = useState([]);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -28,13 +26,20 @@ export default function GenerateRequests() {
   const navigate = useNavigate();
   const suggestionsRef = useRef(null);
 
-  // Fetch hospital list on mount
   useEffect(() => {
-    api.getBloodBanks().then((res) => {
-      if (Array.isArray(res)) setHospitals(res);
-      else if (res && Array.isArray(res.hospitals)) setHospitals(res.hospitals);
-    }).catch(() => { });
-  }, []);
+    const query = form.hospital_name.trim();
+    if (form.hospital_id || query.length < 2) return;
+    let active = true;
+    const timer = setTimeout(async () => {
+      try {
+        const rows = await api.getHospitalAutofill(query);
+        if (active) setSuggestions(Array.isArray(rows) ? rows : []);
+      } catch {
+        if (active) setSuggestions([]);
+      }
+    }, 200);
+    return () => { active = false; clearTimeout(timer); };
+  }, [form.hospital_name, form.hospital_id]);
 
   // Close suggestions when clicking outside
   useEffect(() => {
@@ -49,22 +54,18 @@ export default function GenerateRequests() {
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setForm((prev) => ({ ...prev, [name]: value }));
-
     if (name === "hospital_name") {
-      const q = value.toLowerCase();
-      if (q.length > 0) {
-        setSuggestions(hospitals.filter((h) => h.name.toLowerCase().includes(q)));
-      } else {
-        setSuggestions([]);
-      }
+      setSuggestions([]);
+      setForm((prev) => ({ ...prev, hospital_name: value, hospital_id: "", hospital_address: "" }));
+    } else {
+      setForm((prev) => ({ ...prev, [name]: value }));
     }
   };
 
   const selectHospital = (hospital) => {
     setForm((prev) => ({
       ...prev,
-      hospital_name: hospital.name,
+      hospital_name: hospital.hospital_name,
       hospital_id: hospital.id ?? "",
       hospital_address: hospital.address ?? prev.hospital_address,
     }));
@@ -74,18 +75,25 @@ export default function GenerateRequests() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
+    if (!form.hospital_id) {
+      setError("Select a hospital from the search results.");
+      return;
+    }
     setIsLoading(true);
     try {
       // The API answers 201 with the created request (an object with an id), not { success: true }.
       // The token is only checked when the server runs with RECAPTCHA_ENFORCED=true.
       const recaptcha_token = executeRecaptcha ? await executeRecaptcha("blood_request") : undefined;
-      const res = await api.generateBloodRequest({ ...form, recaptcha_token });
+      const res = await api.generateBloodRequest({
+        patient_name: form.patient_name, attendant_name: form.attendant_name, blood_group: form.blood_group,
+        hospital_id: form.hospital_id, contact_number: form.contact_number, patient_age: form.patient_age,
+        due_date: form.due_date, request_reason: form.request_reason, units_required: form.units_required, recaptcha_token,
+      });
       if (res && res.id) {
         navigate("/blood-request/confirmation");
       } else {
         // 400/409 carry { detail }; the rate limiter's 429 carries { error }.
-        const detail = [res?.detail, res?.error].find((v) => typeof v === "string");
-        setError(detail || res?.message || "Failed to submit request. Please try again.");
+        setError(errorText(res, "Failed to submit request. Please try again."));
       }
     } catch {
       setError("Server error. Try again.");
@@ -464,8 +472,8 @@ export default function GenerateRequests() {
             {suggestions.length > 0 && (
               <div className="autocomplete-suggestions">
                 {suggestions.map((h) => (
-                  <div key={h.id ?? h.name} onMouseDown={() => selectHospital(h)}>
-                    {h.name}
+                  <div key={h.id} onMouseDown={() => selectHospital(h)}>
+                    {h.hospital_name}
                   </div>
                 ))}
               </div>
@@ -478,31 +486,10 @@ export default function GenerateRequests() {
             id="hospital_address"
             name="hospital_address"
             value={form.hospital_address}
-            onChange={handleChange}
-            required
+            readOnly
             disabled={isLoading}
           />
 
-          <label htmlFor="pincode">Pincode</label>
-          <input
-            type="text"
-            id="pincode"
-            name="pincode"
-            value={form.pincode}
-            onChange={handleChange}
-            required
-            disabled={isLoading}
-          />
-
-          <label htmlFor="landmark">Landmark (Optional)</label>
-          <input
-            type="text"
-            id="landmark"
-            name="landmark"
-            value={form.landmark}
-            onChange={handleChange}
-            disabled={isLoading}
-          />
         </fieldset>
 
         <button type="submit" className="submit-btn" disabled={isLoading}>

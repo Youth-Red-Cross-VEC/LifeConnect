@@ -49,6 +49,7 @@ export function createHttpClient({
       refreshInFlight = fetchImpl(`${baseUrl}/api/v1/auth/refresh`, {
         method: "POST",
         credentials: "include",
+        headers: { "Content-Type": "application/json" },
       })
         .then(async (res) => {
           if (!res.ok) return false;
@@ -118,6 +119,7 @@ export function createHttpClient({
       await fetchImpl(`${baseUrl}/api/v1/auth/logout`, {
         method: "POST",
         credentials: "include",
+        headers: { "Content-Type": "application/json" },
       });
     } finally {
       session.clear();

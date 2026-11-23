@@ -30,7 +30,7 @@ class TestDonorEndpoints:
         assert "not found" in response.json()["detail"].lower()
 
     @pytest.mark.asyncio
-    async def test_register_donor(self, client: AsyncClient):
+    async def test_register_donor(self, client: AsyncClient, verified_registration):
         """Test registering a new donor."""
         donor_data = {
             "name": "Test Donor",
@@ -57,7 +57,7 @@ class TestDonorEndpoints:
             }
         }
         
-        response = await client.post("/api/v1/donors/register", json=donor_data)
+        response = await verified_registration(client, donor_data)
         
         assert response.status_code == 201
         data = response.json()
@@ -68,7 +68,7 @@ class TestDonorEndpoints:
         assert "id" in data
 
     @pytest.mark.asyncio
-    async def test_register_donor_duplicate_email(self, client: AsyncClient):
+    async def test_register_donor_duplicate_email(self, client: AsyncClient, verified_registration):
         """Test that registering with duplicate email fails."""
         donor_data = {
             "name": "First Donor",
@@ -95,12 +95,12 @@ class TestDonorEndpoints:
         }
         
         # First registration should succeed
-        response1 = await client.post("/api/v1/donors/register", json=donor_data)
+        response1 = await verified_registration(client, donor_data)
         assert response1.status_code == 201
         
         # Second registration with same email should fail
         donor_data["name"] = "Second Donor"
-        response2 = await client.post("/api/v1/donors/register", json=donor_data)
+        response2 = await verified_registration(client, donor_data)
         assert response2.status_code == 409  # Conflict
 
     @pytest.mark.asyncio

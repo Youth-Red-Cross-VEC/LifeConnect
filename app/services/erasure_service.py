@@ -17,7 +17,7 @@ from app.models.otp import OtpCode, OtpFailureWindow
 from app.models.privacy import ErasureFile
 from app.models.query import QueryTable
 from app.models.refresh_session import RefreshSession
-from app.services.otp_service import PURPOSE_DONOR_RESET
+from app.services.otp_service import PURPOSE_DONOR_ENROLLMENT, PURPOSE_DONOR_RESET
 
 
 async def lock_donor(session: AsyncSession, donor_id: str) -> DonorDetail | None:
@@ -34,7 +34,7 @@ async def erase_donor(session: AsyncSession, donor: DonorDetail) -> None:
     ))
     for table in (OtpCode, OtpFailureWindow):
         await session.execute(delete(table).where(
-            table.purpose == PURPOSE_DONOR_RESET, func.lower(table.email) == email,
+            table.purpose.in_([PURPOSE_DONOR_RESET, PURPOSE_DONOR_ENROLLMENT]), func.lower(table.email) == email,
         ))
     await session.execute(delete(AuthenticationDetailsDonor).where(
         AuthenticationDetailsDonor.auth_id == donor.authentication_id,

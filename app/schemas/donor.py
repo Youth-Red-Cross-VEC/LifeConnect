@@ -1,36 +1,25 @@
 from pydantic import BaseModel, EmailStr, Field, field_validator
 from typing import Optional
 from datetime import datetime, date
+from app.schemas.validation import OtpCode, BirthDate, BloodGroup, Paragraph, Phone, PostalCode, SingleLine
 from app.schemas.common import BaseSchema
 from app.schemas.passwords import check_new_password, check_password_length
-import re
 
 
 # ============ Personal Details Schemas ============
 
 
-class PersonalDetailsCreate(BaseModel):
+class PersonalDetailsCreate(BaseModel, extra="forbid"):
     """Schema for creating personal details."""
 
-    first_name: str = Field(..., min_length=1, max_length=45)
-    last_name: Optional[str] = Field(None, max_length=45)
+    first_name: SingleLine = Field(..., min_length=1, max_length=45)
+    last_name: Optional[SingleLine] = Field(None, max_length=45)
     # Accepted for backwards compatibility but ignored: the server derives age from date_of_birth.
     age: Optional[int] = Field(None, description="Ignored; computed from date_of_birth")
-    date_of_birth: date
-    contact_number: str = Field(..., min_length=10, max_length=15)
-    secondary_contact_number: Optional[str] = Field(None, max_length=15)
-    marital_status: Optional[str] = Field(None, max_length=10)
-
-    @field_validator("contact_number", "secondary_contact_number")
-    @classmethod
-    def validate_phone(cls, v: Optional[str]) -> Optional[str]:
-        if v is None:
-            return v
-        # Remove spaces and validate
-        v = v.replace(" ", "").replace("-", "")
-        if not re.match(r"^\+?[0-9]{10,15}$", v):
-            raise ValueError("Invalid phone number format")
-        return v
+    date_of_birth: BirthDate
+    contact_number: Phone = Field(..., min_length=10, max_length=15)
+    secondary_contact_number: Optional[Phone] = Field(None, max_length=15)
+    marital_status: Optional[SingleLine] = Field(None, max_length=10)
 
 
 class PersonalDetailsResponse(BaseSchema):
@@ -49,14 +38,14 @@ class PersonalDetailsResponse(BaseSchema):
 # ============ Address Details Schemas ============
 
 
-class AddressDetailsCreate(BaseModel):
+class AddressDetailsCreate(BaseModel, extra="forbid"):
     """Schema for creating address details."""
 
-    address: str = Field(..., min_length=5, max_length=200)
-    pincode: str = Field(..., min_length=5, max_length=10)
-    country: str = Field(..., max_length=45)
-    state: str = Field(..., max_length=45)
-    city: str = Field(..., max_length=45)
+    address: Paragraph = Field(..., min_length=5, max_length=200)
+    pincode: PostalCode = Field(..., min_length=5, max_length=10)
+    country: SingleLine = Field(..., min_length=1, max_length=45)
+    state: SingleLine = Field(..., min_length=1, max_length=45)
+    city: SingleLine = Field(..., min_length=1, max_length=45)
 
 
 class AddressDetailsResponse(BaseSchema):
@@ -73,11 +62,11 @@ class AddressDetailsResponse(BaseSchema):
 # ============ Disease Details Schemas ============
 
 
-class DiseaseDetailsCreate(BaseModel):
+class DiseaseDetailsCreate(BaseModel, extra="forbid"):
     """Schema for disease details."""
 
-    name: str = Field(..., max_length=100)
-    description: Optional[str] = Field(None, max_length=200)
+    name: SingleLine = Field(..., min_length=1, max_length=100)
+    description: Optional[Paragraph] = Field(None, max_length=200)
 
 
 class DiseaseDetailsResponse(BaseSchema):
@@ -90,29 +79,21 @@ class DiseaseDetailsResponse(BaseSchema):
 
 # ============ Donor Schemas ============
 
-VALID_BLOOD_GROUPS = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"]
 
 
-class DonorCreate(BaseModel):
+class DonorCreate(BaseModel, extra="forbid"):
     """Schema for donor registration."""
 
-    name: str = Field(..., min_length=2, max_length=100)
+    name: SingleLine = Field(..., min_length=2, max_length=100)
     email: EmailStr = Field(..., max_length=100)
     password: str = Field(..., min_length=8, max_length=100)
-    blood_group: str = Field(..., description="Blood group (A+, A-, B+, B-, AB+, AB-, O+, O-)")
+    blood_group: BloodGroup = Field(..., description="Blood group (A+, A-, B+, B-, AB+, AB-, O+, O-)")
 
     # Nested details
     personal_details: PersonalDetailsCreate
     address_details: AddressDetailsCreate
     disease_details: DiseaseDetailsCreate
 
-    @field_validator("blood_group")
-    @classmethod
-    def validate_blood_group(cls, v: str) -> str:
-        v = v.upper()
-        if v not in VALID_BLOOD_GROUPS:
-            raise ValueError(f"Invalid blood group. Must be one of: {VALID_BLOOD_GROUPS}")
-        return v
 
     @field_validator("password")
     @classmethod
@@ -120,38 +101,27 @@ class DonorCreate(BaseModel):
         return check_new_password(v)
 
 
-class DonorUpdate(BaseModel):
+class DonorEnrollment(DonorCreate):
+    enrollment_code: OtpCode
+
+
+class EnrollmentCodeRequest(BaseModel, extra="forbid"):
+    email: EmailStr = Field(max_length=100)
+
+
+class DonorUpdate(BaseModel, extra="forbid"):
     """Schema for updating donor details."""
-    name: Optional[str] = Field(None, min_length=2, max_length=100)
+    name: Optional[SingleLine] = Field(None, min_length=2, max_length=100)
     # Accepted and validated, but never applied: blood group is immutable for self-service.
-    blood_group: Optional[str] = None
+    blood_group: Optional[BloodGroup] = None
     # Donors control their own availability; only an admin can enable/disable the account.
     is_available: Optional[bool] = None
-    contact_number: Optional[str] = Field(None, max_length=15)
-    address: Optional[str] = Field(None, min_length=5, max_length=200)
-    city: Optional[str] = Field(None, min_length=1, max_length=45)
-    state: Optional[str] = Field(None, min_length=1, max_length=45)
-    pincode: Optional[str] = Field(None, min_length=5, max_length=10)
+    contact_number: Optional[Phone] = Field(None, max_length=15)
+    address: Optional[Paragraph] = Field(None, min_length=5, max_length=200)
+    city: Optional[SingleLine] = Field(None, min_length=1, max_length=45)
+    state: Optional[SingleLine] = Field(None, min_length=1, max_length=45)
+    pincode: Optional[PostalCode] = Field(None, min_length=5, max_length=10)
 
-    @field_validator("blood_group")
-    @classmethod
-    def validate_blood_group(cls, v: Optional[str]) -> Optional[str]:
-        if v is None:
-            return v
-        v = v.upper()
-        if v not in VALID_BLOOD_GROUPS:
-            raise ValueError(f"Invalid blood group. Must be one of: {VALID_BLOOD_GROUPS}")
-        return v
-
-    @field_validator("contact_number")
-    @classmethod
-    def validate_contact_number(cls, v: Optional[str]) -> Optional[str]:
-        if v is None:
-            return v
-        v = v.replace(" ", "").replace("-", "")
-        if not re.match(r"^\+?[0-9]{10,15}$", v):
-            raise ValueError("Invalid phone number format")
-        return v
 
 
 class DonorResponse(BaseSchema):
@@ -186,7 +156,7 @@ class DonorListResponse(BaseSchema):
     last_donated_date: Optional[datetime]
 
 
-class DonorLoginRequest(BaseModel):
+class DonorLoginRequest(BaseModel, extra="forbid"):
     """Schema for donor login."""
 
     email: EmailStr = Field(..., max_length=100)
@@ -208,17 +178,17 @@ class DonorLoginResponse(BaseModel):
     name: str
 
 
-class PasswordResetRequest(BaseModel):
+class PasswordResetRequest(BaseModel, extra="forbid"):
     """Schema for password reset request."""
 
     email: EmailStr = Field(..., max_length=100)
 
 
-class PasswordResetConfirm(BaseModel):
+class PasswordResetConfirm(BaseModel, extra="forbid"):
     """Schema for password reset confirmation."""
 
     email: EmailStr = Field(..., max_length=100)
-    otp: str
+    otp: OtpCode
     new_password: str
 
     @field_validator("new_password")

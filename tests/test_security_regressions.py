@@ -126,7 +126,9 @@ async def test_donor_notification_escapes_every_field(sent_html):
 async def test_otp_and_certificate_mails_escape_the_name(sent_html, tmp_path):
     service = EmailService(get_settings())
     certificate = tmp_path / "Asha_20261005_120000_certificate.png"
-    certificate.write_bytes(b"png")
+    from PIL import Image
+    with Image.new("RGB", (1, 1)) as image:
+        image.save(certificate)
     await service.send_otp_email("d@example.com", "123456", PAYLOAD)
     await service.send_certificate_email("d@example.com", PAYLOAD, certificate)
     assert len(sent_html) == 2

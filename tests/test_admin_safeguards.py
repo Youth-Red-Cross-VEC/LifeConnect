@@ -78,16 +78,15 @@ async def test_the_last_active_admin_cannot_be_deactivated(client: AsyncClient, 
         client.put(f"/api/v1/admins/{only_id}", json={"active_status": "Inactive"}),
     ):
         r = await call
-        assert r.status_code == 409, r.text
-        assert "last active super admin" in r.json()["detail"]
+        assert r.status_code == 401, r.text
     assert await _status(test_session, only_id) == "Active"
 
 
 @pytest.mark.asyncio
-async def test_deactivating_an_already_inactive_admin_is_not_blocked(client: AsyncClient, test_session, stale_caller):
+async def test_stale_actor_cannot_modify_an_already_inactive_admin(client: AsyncClient, test_session, stale_caller):
     await insert_admin(test_session, 1)
     await insert_admin(test_session, 2, active=False)
-    assert (await client.patch("/api/v1/admins/ADM-2/deactivate")).status_code == 200
+    assert (await client.patch("/api/v1/admins/ADM-2/deactivate")).status_code == 401
     assert await _status(test_session, "ADM-1") == "Active"
 
 

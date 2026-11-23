@@ -8,6 +8,8 @@ Admin endpoints for managing request lifecycle.
 import logging
 from pathlib import Path
 
+from fastapi import Path as ApiPath
+from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status, Query, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
@@ -180,7 +182,7 @@ async def create_blood_request(
 @router.get("/pending", response_model=List[BloodRequestListResponse])
 async def get_pending_requests(
     response: Response,
-    page: int = Query(default=1, ge=1),
+    page: int = Query(default=1, ge=1, le=100000),
     page_size: int = Query(default=100, ge=1, le=500),
     session: AsyncSession = Depends(get_db, scope="function"),
     current_admin = Depends(get_current_admin),
@@ -196,7 +198,7 @@ async def get_pending_requests(
 @router.get("/ongoing", response_model=List[BloodRequestListResponse])
 async def get_ongoing_requests(
     response: Response,
-    page: int = Query(default=1, ge=1),
+    page: int = Query(default=1, ge=1, le=100000),
     page_size: int = Query(default=100, ge=1, le=500),
     session: AsyncSession = Depends(get_db, scope="function"),
     current_admin = Depends(get_current_admin),
@@ -212,7 +214,7 @@ async def get_ongoing_requests(
 @router.get("/closed", response_model=List[BloodRequestListResponse])
 async def get_closed_requests(
     limit: int = Query(default=100, ge=1, le=500),
-    offset: int = Query(default=0, ge=0),
+    offset: int = Query(default=0, ge=0, le=1000000),
     session: AsyncSession = Depends(get_db, scope="function"),
     current_admin = Depends(get_current_admin),
 ):
@@ -225,7 +227,7 @@ async def get_closed_requests(
 @router.get("/expired", response_model=List[BloodRequestListResponse])
 async def get_expired_requests(
     limit: int = Query(default=100, ge=1, le=500),
-    offset: int = Query(default=0, ge=0),
+    offset: int = Query(default=0, ge=0, le=1000000),
     session: AsyncSession = Depends(get_db, scope="function"),
     current_admin = Depends(get_current_admin),
 ):
@@ -238,7 +240,7 @@ async def get_expired_requests(
 @router.get("/declined", response_model=List[BloodRequestListResponse])
 async def get_declined_requests(
     limit: int = Query(default=100, ge=1, le=500),
-    offset: int = Query(default=0, ge=0),
+    offset: int = Query(default=0, ge=0, le=1000000),
     session: AsyncSession = Depends(get_db, scope="function"),
     current_admin = Depends(get_current_admin),
 ):
@@ -250,7 +252,7 @@ async def get_declined_requests(
 
 @router.get("/{request_id}", response_model=BloodRequestResponse)
 async def get_blood_request(
-    request_id: str,
+    request_id: Annotated[str, ApiPath(min_length=1, max_length=36)],
     session: AsyncSession = Depends(get_db, scope="function"),
     current_admin = Depends(get_current_admin),
 ):
@@ -266,7 +268,7 @@ async def get_blood_request(
 
 @router.post("/{request_id}/approve", response_model=MessageResponse)
 async def approve_blood_request(
-    request_id: str,
+    request_id: Annotated[str, ApiPath(min_length=1, max_length=36)],
     background_tasks: BackgroundTasks,
     send_emails: bool = Query(default=True),
     session: AsyncSession = Depends(get_db, scope="function"),
@@ -338,7 +340,7 @@ async def approve_blood_request(
 
 @router.post("/{request_id}/decline", response_model=MessageResponse)
 async def decline_blood_request(
-    request_id: str,
+    request_id: Annotated[str, ApiPath(min_length=1, max_length=36)],
     reason: Optional[str] = Query(default=None, max_length=255),
     session: AsyncSession = Depends(get_db, scope="function"),
     current_admin = Depends(get_current_admin),
@@ -370,7 +372,7 @@ async def decline_blood_request(
 
 @router.post("/{request_id}/close", response_model=MessageResponse)
 async def close_blood_request(
-    request_id: str,
+    request_id: Annotated[str, ApiPath(min_length=1, max_length=36)],
     data: BloodRequestClose,
     background_tasks: BackgroundTasks,
     session: AsyncSession = Depends(get_db, scope="function"),

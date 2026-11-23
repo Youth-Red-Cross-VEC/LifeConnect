@@ -11,9 +11,9 @@ export function errorText(res, fallback) {
   const detail = res?.detail;
   if (typeof detail === "string" && detail) return detail;
   if (Array.isArray(detail) && detail.length) {
-    return detail.map((item) => item?.msg).filter(Boolean).join("; ") || fallback;
+    return detail.map((item) => item?.msg).filter((msg) => typeof msg === "string" && msg).join("; ") || fallback;
   }
-  return res?.message || fallback;
+  return [res?.message, res?.error].find((msg) => typeof msg === "string" && msg) || fallback;
 }
 
 // "DON-1, DON-2" -> ["DON-1", "DON-2"]; blanks and the legacy placeholder "None" are dropped.

@@ -71,9 +71,12 @@ async def test_admin_put_inactive_revokes_sessions(admin_client: AsyncClient, te
 @pytest.mark.asyncio
 async def test_donor_deactivation_by_admin_revokes_sessions(admin_client: AsyncClient, test_session):
     await insert_donor(test_session)
-    _, token = await _login(admin_client, DONOR_LOGIN, "donor1@example.com")
+    login, token = await _login(admin_client, DONOR_LOGIN, "donor1@example.com")
     assert (await admin_client.post("/api/v1/donors/DON-1/deactivate")).status_code == 200
     assert (await admin_client.post("/api/v1/donors/DON-1/activate")).status_code == 200
+    headers = {"Authorization": f"Bearer {login['access_token']}"}
+    assert (await admin_client.get("/api/v1/donors/DON-1", headers=headers)).status_code == 401
+    await _login(admin_client, DONOR_LOGIN, "donor1@example.com")
     assert (await admin_client.post(REFRESH, headers=cookie_headers(token))).status_code == 401
 
 
@@ -89,3 +92,13 @@ async def test_other_users_sessions_survive(client: AsyncClient, test_session):
     )
     assert response.status_code == 200
     assert (await client.post(REFRESH, headers=cookie_headers(other_cookie))).status_code == 200
+
+async def test_logout_all_revokes_only_bearer_owner(client, test_session):
+    await insert_donor(test_session)
+    await insert_admin(test_session, 1)
+    donor, donor_cookie = await _login(client, DONOR_LOGIN, "donor1@example.com")
+    _, admin_cookie = await _login(client, ADMIN_LOGIN, "admin1@example.com")
+    headers = {**cookie_headers(admin_cookie), "Authorization": f"Bearer {donor['access_token']}"}
+    assert (await client.post("/api/v1/auth/logout-all", headers=headers)).status_code == 200
+    assert (await client.post(REFRESH, headers=cookie_headers(donor_cookie))).status_code == 401
+    assert (await client.post(REFRESH, headers=cookie_headers(admin_cookie))).status_code == 200

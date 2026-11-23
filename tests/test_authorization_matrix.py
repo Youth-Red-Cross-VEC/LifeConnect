@@ -10,7 +10,7 @@ import re
 from datetime import timedelta
 
 import pytest
-from httpx import AsyncClient
+from httpx import ASGITransport, AsyncClient
 
 from app.api.auth.utils import create_access_token, create_refresh_token
 from app.main import app
@@ -31,6 +31,7 @@ PUBLIC = {
     ("POST", "/api/v1/auth/refresh"),
     ("POST", "/api/v1/blood-requests/"),
     ("POST", "/api/v1/donors/register"),
+    ("POST", "/api/v1/donors/register/code"),
     ("GET", "/api/v1/hospitals/"),
     ("GET", "/api/v1/hospitals/autofill"),
     ("GET", "/api/v1/hospitals/blood-banks"),
@@ -94,8 +95,13 @@ async def test_secured_operation_token_matrix(client: AsyncClient, test_session,
     url = _url(path)
     donor = {"sub": "DON-1", "user_type": "donor", "email": "donor1@example.com"}
 
+    # Each independent caller must reach the authorization check, including on
+    # invite routes whose IP budget is smaller than the number of scenarios.
+    peers = iter(range(1, 7))
     async def status_for(headers=None):
-        return (await client.request(method, url, headers=headers)).status_code
+        transport = ASGITransport(app=app, client=(f"192.0.2.{next(peers)}", 4000))
+        async with AsyncClient(transport=transport, base_url=client.base_url) as caller:
+            return (await caller.request(method, url, headers=headers)).status_code
 
     assert await status_for() == 401, "no token"
     assert await status_for(_bearer("garbage")) == 401, "garbage token"
@@ -111,7 +117,8 @@ async def test_secured_operation_token_matrix(client: AsyncClient, test_session,
 @pytest.mark.asyncio
 @pytest.mark.parametrize("method,path", sorted(DONOR_ONLY))
 async def test_admin_token_is_forbidden_on_donor_only_operations(admin_client: AsyncClient, method, path):
-    r = await admin_client.request(method, _url(path), json={"name": "Someone"})
+    body = {} if method == "GET" else {"name": "Someone"}
+    r = await admin_client.request(method, _url(path), json=body)
     assert r.status_code == 403
 
 

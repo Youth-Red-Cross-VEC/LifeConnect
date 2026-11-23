@@ -101,3 +101,12 @@ def test_docs_follow_the_environment_unless_set_explicitly():
     assert build(APP_ENV="production", **prod).docs_enabled is False
     assert build(APP_ENV="production", ENABLE_DOCS=True, **prod).docs_enabled is True
     assert build(APP_ENV="development", ENABLE_DOCS=False).docs_enabled is False
+
+
+@pytest.mark.parametrize(("name", "value"), [
+    ("OTP_TTL_SECONDS", 0), ("OTP_TTL_SECONDS", 901),
+    ("OTP_MAX_ATTEMPTS", 0), ("OTP_MAX_ATTEMPTS", 11),
+])
+def test_recovery_configuration_enforces_short_lived_bounded_codes(name, value):
+    with pytest.raises(ValidationError):
+        build(**{name: value})

@@ -1,40 +1,40 @@
 from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List
 from datetime import datetime, date, timezone
+from app.schemas.validation import CalendarDate, CalendarDateTime, Quantity, BloodGroup, Paragraph, Phone, PostalCode, RecordId, SingleLine
 from app.schemas.common import BaseSchema
 from app.core.request_status import BloodRequestStatus  # noqa: F401  (re-exported)
 from app.utils.dates import utcnow
 
 
-VALID_BLOOD_GROUPS = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"]
 
 
 # ============ Hospital Schemas ============
 
 
-class HospitalCreate(BaseModel):
+class HospitalCreate(BaseModel, extra="forbid"):
     """Schema for creating a hospital."""
 
-    hospital_name: str = Field(..., min_length=2, max_length=100)
-    hospital_address: str = Field(..., min_length=5, max_length=200)
-    pincode: str = Field(..., min_length=5, max_length=10)
-    city: str = Field(..., max_length=45)
-    state: str = Field(..., max_length=45)
-    country: str = Field(default="India", max_length=45)
-    branch: Optional[str] = Field(None, max_length=45)
-    landmark: Optional[str] = Field(None, max_length=100)
+    hospital_name: SingleLine = Field(..., min_length=2, max_length=100)
+    hospital_address: Paragraph = Field(..., min_length=5, max_length=200)
+    pincode: PostalCode = Field(..., min_length=5, max_length=10)
+    city: SingleLine = Field(..., min_length=1, max_length=45)
+    state: SingleLine = Field(..., min_length=1, max_length=45)
+    country: SingleLine = Field(default="India", min_length=1, max_length=45)
+    branch: Optional[SingleLine] = Field(None, max_length=45)
+    landmark: Optional[SingleLine] = Field(None, max_length=100)
 
 
-class HospitalUpdate(BaseModel):
+class HospitalUpdate(BaseModel, extra="forbid"):
     """Schema for updating hospital details."""
 
-    hospital_name: Optional[str] = Field(None, max_length=100)
-    hospital_address: Optional[str] = Field(None, max_length=200)
-    pincode: Optional[str] = Field(None, max_length=10)
-    city: Optional[str] = Field(None, max_length=45)
-    state: Optional[str] = Field(None, max_length=45)
-    branch: Optional[str] = Field(None, max_length=45)
-    landmark: Optional[str] = Field(None, max_length=100)
+    hospital_name: Optional[SingleLine] = Field(None, min_length=2, max_length=100)
+    hospital_address: Optional[Paragraph] = Field(None, min_length=5, max_length=200)
+    pincode: Optional[PostalCode] = Field(None, max_length=10)
+    city: Optional[SingleLine] = Field(None, min_length=1, max_length=45)
+    state: Optional[SingleLine] = Field(None, min_length=1, max_length=45)
+    branch: Optional[SingleLine] = Field(None, max_length=45)
+    landmark: Optional[SingleLine] = Field(None, max_length=100)
 
     @field_validator("hospital_name", "hospital_address", "pincode", "city", "state")
     @classmethod
@@ -72,34 +72,30 @@ class HospitalAutofillResponse(BaseModel):
 # ============ Blood Request Schemas ============
 
 
-class BloodRequestCreate(BaseModel):
+class BloodRequestCreate(BaseModel, extra="forbid"):
     """Schema for creating a blood request."""
 
-    patient_name: str = Field(..., min_length=2, max_length=100)
-    blood_group: str = Field(..., description="Required blood group")
-    hospital_id: str = Field(..., description="Hospital ID")
-    contact_number: str = Field(..., min_length=10, max_length=15)
-    patient_age: int = Field(..., ge=0, le=150)
-    due_date: datetime = Field(..., description="Required by date")
-    request_reason: Optional[str] = Field(None, max_length=200)
-    units_required: int = Field(..., ge=1, le=20)
-    attendant_name: Optional[str] = Field(None, max_length=100)
+    patient_name: SingleLine = Field(..., min_length=2, max_length=100)
+    blood_group: BloodGroup = Field(..., description="Required blood group")
+    hospital_id: RecordId = Field(..., min_length=1, max_length=36, description="Hospital ID")
+    contact_number: Phone = Field(..., min_length=10, max_length=15)
+    patient_age: Quantity = Field(..., ge=0, le=150)
+    due_date: CalendarDateTime = Field(..., description="Required by date")
+    request_reason: Optional[Paragraph] = Field(None, max_length=200)
+    units_required: Quantity = Field(..., ge=1, le=20)
+    attendant_name: Optional[SingleLine] = Field(None, max_length=100)
     # reCAPTCHA v3 token (action "blood_request"); required only when RECAPTCHA_ENFORCED=true
     recaptcha_token: Optional[str] = Field(None, max_length=4096)
 
-    @field_validator("blood_group")
-    @classmethod
-    def validate_blood_group(cls, v: str) -> str:
-        v = v.upper()
-        if v not in VALID_BLOOD_GROUPS:
-            raise ValueError(f"Invalid blood group. Must be one of: {VALID_BLOOD_GROUPS}")
-        return v
 
     @field_validator("due_date")
     @classmethod
     def validate_due_date(cls, value: datetime) -> datetime:
         if value.tzinfo is not None:
-            value = value.astimezone(timezone.utc).replace(tzinfo=None)
+            try:
+                value = value.astimezone(timezone.utc).replace(tzinfo=None)
+            except OverflowError as exc:
+                raise ValueError("Due date is outside the supported range") from exc
         if value < utcnow():
             raise ValueError("due_date cannot be in the past")
         return value
@@ -119,16 +115,16 @@ class BloodRequestDecline(BaseModel):
     reason: Optional[str] = None
 
 
-class BloodRequestClose(BaseModel):
+class BloodRequestClose(BaseModel, extra="forbid"):
     """Schema for closing a blood request."""
 
     # Optional: the path /{request_id}/close is authoritative; kept for older clients.
-    request_id: Optional[str] = Field(default=None, max_length=36)
+    request_id: Optional[RecordId] = Field(default=None, max_length=36)
     status: str = Field(default="Closed")
-    report: Optional[str] = Field(None, max_length=255)
-    units_donated: int = Field(..., ge=0)
-    donation_date: date
-    donor_ids: List[str] = Field(default_factory=list)
+    report: Optional[Paragraph] = Field(None, max_length=255)
+    units_donated: Quantity = Field(..., ge=0)
+    donation_date: CalendarDate
+    donor_ids: List[RecordId] = Field(default_factory=list, max_length=100)
     send_certificates: bool = True
 
     @field_validator("donation_date")
@@ -177,11 +173,11 @@ class BloodRequestListResponse(BaseSchema):
 # ============ Response Details Schemas ============
 
 
-class ResponseDetailsCreate(BaseModel):
+class ResponseDetailsCreate(BaseModel, extra="forbid"):
     """Schema for creating response details."""
 
     status: Optional[str] = None
-    report: Optional[str] = Field(None, max_length=255)
+    report: Optional[Paragraph] = Field(None, max_length=255)
     units_donated: Optional[int] = None
     certificate_status: Optional[str] = None
     donation_date: Optional[date] = None

@@ -55,7 +55,7 @@ class DonorRepository:
         return result.scalar() > 0
 
     async def get_active_by_blood_group(
-        self, blood_group: str
+        self, blood_group: str, *, limit: Optional[int] = None, offset: int = 0
     ) -> List[DonorDetail]:
         """Get donors of this blood group who may donate now.
 
@@ -86,6 +86,8 @@ class DonorRepository:
                 )
             )
         )
+        if limit is not None:
+            query = query.order_by(DonorDetail.id).limit(limit).offset(offset)
         result = await self.session.execute(query)
         return list(result.scalars().all())
 
@@ -183,8 +185,8 @@ class DonorRepository:
         """Enable or disable a donor account (admin action)."""
         stmt = (
             update(DonorDetail)
-            .where(DonorDetail.id == donor_id)
-            .values(active_status=active)
+            .where(DonorDetail.id == donor_id, DonorDetail.active_status != active)
+            .values(active_status=active, token_version=DonorDetail.token_version + 1)
         )
         await self.session.execute(stmt)
 

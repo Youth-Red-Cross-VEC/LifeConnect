@@ -21,7 +21,7 @@ async def _donor_headers(client: AsyncClient, email: str) -> dict:
 
 
 @pytest.mark.asyncio
-async def test_registering_with_a_victims_email_does_not_expose_their_queries(admin_client: AsyncClient):
+async def test_registering_with_a_victims_email_does_not_expose_their_queries(admin_client: AsyncClient, verified_registration):
     # The victim (no donor account) submits an anonymous query and an admin answers it.
     created = await admin_client.post(QUERIES, json=PAYLOAD)
     assert created.status_code == 201, created.text
@@ -29,8 +29,8 @@ async def test_registering_with_a_victims_email_does_not_expose_their_queries(ad
     reply = await admin_client.post(f"{QUERIES}{query_id}/reply", json={"admin_response": "Private answer"})
     assert reply.status_code == 200
 
-    # The attacker registers a donor account with the victim's email (no mailbox access) and logs in.
-    reg = await admin_client.post("/api/v1/donors/register", json=registration_payload("victim@example.com"))
+    # A later verified registration using that email must still not inherit the anonymous query.
+    reg = await verified_registration(admin_client, registration_payload("victim@example.com"))
     assert reg.status_code == 201, reg.text
     headers = await _donor_headers(admin_client, "victim@example.com")
 

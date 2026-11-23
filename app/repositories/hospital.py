@@ -128,8 +128,8 @@ class HospitalRepository:
         result = await self.session.execute(stmt)
         return result.rowcount > 0
 
-    async def get_cities(self) -> List[str]:
+    async def get_cities(self, limit: int, offset: int) -> List[str]:
         """Get list of unique cities."""
-        query = select(HospitalDetails.city).distinct().order_by(HospitalDetails.city)
+        query = select(HospitalDetails.city).distinct().order_by(HospitalDetails.city).limit(limit).offset(offset)
         result = await self.session.execute(query)
         return [row[0] for row in result.all()]

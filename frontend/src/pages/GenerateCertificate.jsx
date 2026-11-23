@@ -1,3 +1,4 @@
+import { errorText } from "../services/requests";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import AdminBase from "./AdminBase";
@@ -35,7 +36,7 @@ export default function GenerateCertificate() {
         setGeneratedFile(res.filename || "");
         setForm({ donor_id: "", donation_date: "", location: "" });
       } else {
-        setError(res?.detail || res?.message || "Failed to send certificate. Please try again.");
+        setError(errorText(res, "Failed to send certificate. Please try again."));
       }
     } catch {
       setError("Server error. Try again.");

@@ -32,10 +32,16 @@ export default function RegisterDonor() {
   const [success, setSuccess] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [codeSent, setCodeSent] = useState(false);
+  const [code, setCode] = useState("");
   const navigate = useNavigate();
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
+    if (name === "Email") {
+      setCodeSent(false);
+      setCode("");
+    }
     setForm((prev) => ({
       ...prev,
       [name]: type === "checkbox" ? checked : value,
@@ -56,11 +62,21 @@ export default function RegisterDonor() {
       return;
     }
 
-    setIsLoading(false);
     setIsLoading(true);
 
     try {
+      if (!codeSent) {
+        const result = await api.donorRegistrationCode(form.Email);
+        if (result?.success) {
+          setCodeSent(true);
+          setSuccess(result.message);
+        } else {
+          setError(typeof result?.detail === "string" ? result.detail : "Could not send the registration code.");
+        }
+        return;
+      }
       const payload = {
+        enrollment_code: code,
         name: `${form.first_name} ${form.last_name || ""}`.trim(),
         email: form.Email,
         password: form.password,
@@ -88,13 +104,13 @@ export default function RegisterDonor() {
       };
 
       const res = await api.donorRegister(payload);
-      if (res && (res.id || res.email || res.success || !res.error)) {
+      if (res?.id) {
         setSuccess("Registration successful! Redirecting to confirmation...");
         setTimeout(() => {
           navigate("/donor/registration-confirmation");
         }, 1500);
       } else {
-        setError(res?.detail?.[0]?.msg || res?.message || "Registration failed. Please try again.");
+        setError((typeof res?.detail === "string" ? res.detail : res?.detail?.[0]?.msg) || res?.message || "Registration failed. Please try again.");
       }
     } catch {
       setError("Server error. Try again.");
@@ -736,8 +752,17 @@ export default function RegisterDonor() {
           </div>
         </fieldset>
 
+        {codeSent && <fieldset>
+          <legend>Email verification</legend>
+          <label htmlFor="registration-code">Six-digit code sent to {form.Email}</label>
+          <input id="registration-code" type="text" autoComplete="one-time-code" inputMode="numeric"
+            pattern="[0-9]{6}" maxLength={6} required value={code} onChange={e => setCode(e.target.value)} />
+          <button type="button" disabled={isLoading} onClick={() => {
+            setCodeSent(false); setCode(""); setSuccess(""); setError("");
+          }}>Request another code</button>
+        </fieldset>}
         <button type="submit" className="submit-btn" disabled={isLoading}>
-          {isLoading ? "Submitting..." : "Submit"}
+          {isLoading ? "Submitting..." : codeSent ? "Complete registration" : "Send verification code"}
         </button>
       </form>
 

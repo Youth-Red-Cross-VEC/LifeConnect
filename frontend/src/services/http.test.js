@@ -178,6 +178,7 @@ test("logout revokes the refresh token on the server and clears the session", as
   });
   await client.logout();
   assert.equal(calls[0].init.body, undefined);
+  assert.equal(calls[0].init.headers["Content-Type"], "application/json");
   assert.equal(session.getToken(), null);
   assert.equal(session.getUserType(), null);
 });

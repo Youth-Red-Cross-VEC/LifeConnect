@@ -4,6 +4,8 @@ from datetime import datetime
 from typing import Literal
 from uuid import uuid4
 
+from fastapi import Path as ApiPath
+from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, SecretStr
 from sqlalchemy import select
@@ -13,7 +15,7 @@ from app.api.auth.deps import get_current_donor, require_super_admin
 from app.api.auth.utils import verify_password_async
 from app.config import get_settings
 from app.core.database import get_db
-from app.core.rate_limiter import limiter
+from app.core.rate_limiter import check_account_limit, limiter
 from app.models.admin import AdminDetails
 from app.models.donor import DonorDetail
 from app.models.privacy import ErasureRequest
@@ -24,11 +26,11 @@ from app.utils.dates import utcnow
 router = APIRouter(prefix="/privacy/erasure-requests", tags=["Privacy"])
 
 
-class ErasureSubmission(BaseModel):
+class ErasureSubmission(BaseModel, extra="forbid"):
     current_password: SecretStr
 
 
-class ErasureDecision(BaseModel):
+class ErasureDecision(BaseModel, extra="forbid"):
     decision: Literal["approve", "reject"]
 
 
@@ -51,6 +53,7 @@ async def submit_erasure(
     donor: DonorDetail = Depends(get_current_donor),
     session: AsyncSession = Depends(get_db, scope="function"),
 ):
+    check_account_limit(request, donor.email, get_settings().ACCOUNT_AUTH_RATE_LIMIT)
     locked = await lock_donor(session, donor.id)
     password = data.current_password.get_secret_value()
     if (locked is None or not locked.active_status or len(password.encode("utf-8")) > 72
@@ -78,7 +81,7 @@ async def my_erasure(
 
 @router.get("", response_model=list[ErasureReviewItem])
 async def pending_erasures(
-    offset: int = Query(0, ge=0),
+    offset: int = Query(0, ge=0, le=1000000),
     limit: int = Query(50, ge=1, le=100),
     admin: AdminDetails = Depends(require_super_admin),
     session: AsyncSession = Depends(get_db, scope="function"),
@@ -90,7 +93,7 @@ async def pending_erasures(
 
 @router.patch("/{request_id}", response_model=ErasureReceipt)
 async def review_erasure(
-    request_id: str,
+    request_id: Annotated[str, ApiPath(min_length=1, max_length=36)],
     data: ErasureDecision,
     admin: AdminDetails = Depends(require_super_admin),
     session: AsyncSession = Depends(get_db, scope="function"),

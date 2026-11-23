@@ -4,13 +4,16 @@ Certificate Generation Service.
 Generates blood donation certificates using Pillow.
 """
 
-import os
 import asyncio
+import os
+import stat
+from io import BytesIO
+from tempfile import NamedTemporaryFile
 from datetime import datetime
 from pathlib import Path
 import re
 import uuid
-from typing import Optional
+from typing import IO, Callable, Optional
 import structlog
 
 # Try to import Pillow, provide fallback if not available
@@ -23,22 +26,51 @@ except ImportError:
 logger = structlog.get_logger(__name__)
 
 
-# Only filenames produced by this service are valid: <name>_<YYYYMMDD>_<HHMMSS>[_<8 hex>]_certificate.<png|txt>.
-# Matched with fullmatch (a trailing "$" would also accept a trailing newline) and [0-9] (\d matches other
-# scripts' digits). The 8-hex suffix is new; certificates written before it existed still resolve.
+# New files use a random identifier. Keep accepting historical donor-name and timestamp formats.
 _CERT_FILENAME_RE = re.compile(r"[A-Za-z0-9_\-]{1,120}_[0-9]{8}_[0-9]{6}(?:_[0-9a-f]{8})?_certificate\.(png|txt)")
 
 
-def _new_filename(donor_name: str, extension: str) -> str:
-    """Unique per call: two certificates for one donor in the same second must not overwrite each other."""
+MAX_CERTIFICATE_BYTES = 8 * 1024 * 1024
+
+
+def _new_filename(extension: str) -> str:
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    return f"{_safe_name(donor_name)}_{timestamp}_{uuid.uuid4().hex[:8]}_certificate.{extension}"
+    return f"{uuid.uuid4().hex}_{timestamp}_certificate.{extension}"
 
 
-def _safe_name(donor_name: str) -> str:
-    """Reduce a donor name to filesystem-safe characters."""
-    cleaned = re.sub(r"[^A-Za-z0-9_\-]", "_", donor_name.strip())
-    return cleaned[:60] or "donor"
+def _private_regular_file(info: os.stat_result) -> bool:
+    return (stat.S_ISREG(info.st_mode) and info.st_nlink == 1
+            and not getattr(info, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT)
+
+
+def read_certificate_bytes(path: Path) -> bytes:
+    """Validate and read the same open file for both HTTP and SMTP delivery."""
+    before = path.lstat()
+    if not _private_regular_file(before) or before.st_size > MAX_CERTIFICATE_BYTES:
+        raise ValueError("Invalid certificate file")
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0)
+    with os.fdopen(os.open(path, flags), "rb") as stream:
+        opened = os.fstat(stream.fileno())
+        if not os.path.samestat(before, opened) or not _private_regular_file(opened):
+            raise ValueError("Invalid certificate file")
+        data = stream.read(MAX_CERTIFICATE_BYTES + 1)
+    if not data or len(data) > MAX_CERTIFICATE_BYTES:
+        raise ValueError("Invalid certificate size")
+    if path.suffix == ".png" and PILLOW_AVAILABLE:
+        try:
+            with Image.open(BytesIO(data), formats=["PNG"]) as image:
+                if image.width * image.height > 16000000:
+                    raise ValueError("Invalid certificate dimensions")
+                image.verify()
+        except (Image.DecompressionBombError, SyntaxError) as exc:
+            raise ValueError("Invalid certificate image") from exc
+    elif path.suffix == ".txt":
+        text = data.decode("utf-8")
+        if any(ord(c) < 32 and c not in "\r\n\t" for c in text):
+            raise ValueError("Invalid certificate text")
+    else:
+        raise ValueError("Invalid certificate format")
+    return data
 
 
 class CertificateService:
@@ -65,7 +97,7 @@ class CertificateService:
         read-only volume until the first donor tried to get a certificate.
         """
         try:
-            self.output_dir.mkdir(parents=True, exist_ok=True)
+            self.output_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
         except OSError as e:
             raise RuntimeError(
                 f"Cannot create certificate output directory '{self.output_dir}': {e}. "
@@ -167,19 +199,27 @@ class CertificateService:
             draw.text(position, str(text), font=font, fill="black")
         
         # Generate unique filename
-        file_path = self.output_dir / _new_filename(donor_name, "png")
-        
-        # Save certificate
-        template.save(file_path)
-        
-        logger.info(
-            "Certificate generated",
-            donor=donor_name,
-            file_path=str(file_path),
-        )
-        
-        return str(file_path)
-    
+        try:
+            return self._publish_certificate("png", lambda stream: template.save(stream, format="PNG"))
+        finally:
+            template.close()
+
+    def _publish_certificate(self, extension: str, write: Callable[[IO[bytes]], object]) -> str:
+        # A private temporary file is invisible to the certificate listing. A hard link
+        # publishes the completed data atomically and fails if the target already exists.
+        temporary = NamedTemporaryFile(dir=self.output_dir, prefix=".lc-cert-", suffix=".tmp", delete=False)
+        temp_path = Path(temporary.name)
+        try:
+            with temporary as stream:
+                write(stream.file)
+                if stream.tell() > MAX_CERTIFICATE_BYTES:
+                    raise ValueError("Generated certificate exceeds the size limit")
+            target = self.output_dir / _new_filename(extension)
+            os.link(temp_path, target)
+            return str(target)
+        finally:
+            temp_path.unlink(missing_ok=True)
+
     def _create_simple_certificate(
         self,
         donor_name: str,
@@ -218,22 +258,13 @@ class CertificateService:
             draw.text((100, y_position), line, font=font, fill="black")
             y_position += 40
         
-        file_path = self.output_dir / _new_filename(donor_name, "png")
-        
-        image.save(file_path)
-        
-        logger.info(
-            "Simple certificate generated (template not found)",
-            donor=donor_name,
-            file_path=str(file_path),
-        )
-        
-        return str(file_path)
-    
+        with image:
+            return self._publish_certificate("png", lambda stream: image.save(stream, format="PNG"))
+
     async def _generate_placeholder(self, donor_name: str) -> str:
         """Generate a placeholder text file when Pillow is not available."""
         self._ensure_output_dir()
-        file_path = self.output_dir / _new_filename(donor_name, "txt")
+
         
         content = f"""
         BLOOD DONATION CERTIFICATE
@@ -245,20 +276,18 @@ class CertificateService:
         """
         
         # Explicit encoding: the platform default (cp1252 on Windows) cannot represent every donor name.
-        with open(file_path, "w", encoding="utf-8") as f:
-            f.write(content)
-        
-        return str(file_path)
-    
+        return self._publish_certificate("txt", lambda stream: stream.write(content.encode("utf-8")))
+
     def _resolve_safe(self, filename: str) -> Optional[Path]:
-        """Validate filename pattern and enforce containment in output_dir."""
         if not _CERT_FILENAME_RE.fullmatch(filename or ""):
             return None
-        base = self.output_dir.resolve()
-        candidate = (base / filename).resolve()
-        if candidate.parent != base:
-            return None
-        return candidate
+        # Keep the original directory entry. Resolving a link before deletion could
+        # instead delete the certificate it points to.
+        path = self.output_dir.resolve() / filename
+        try:
+            return path if _private_regular_file(path.lstat()) else None
+        except FileNotFoundError:
+            return path
 
     async def get_certificate(self, filename: str) -> Optional[Path]:
         """Get path to an existing certificate."""
@@ -275,9 +304,37 @@ class CertificateService:
             f.name
             for pattern in ("*.png", "*.txt")
             for f in self.output_dir.glob(pattern)
-            if _CERT_FILENAME_RE.fullmatch(f.name)
+            if self._resolve_safe(f.name) is not None and f.is_file()
         )
     
+    def entry_remains(self, filename: str) -> bool:
+        if not _CERT_FILENAME_RE.fullmatch(filename):
+            return False
+        try:
+            (self.output_dir / filename).lstat()
+        except FileNotFoundError:
+            return False
+        return True
+
+    def purge_expired_files(self, cutoff: float) -> int:
+        if not self.output_dir.exists():
+            return 0
+        deleted = 0
+        for path in self.output_dir.iterdir():
+            temporary = re.fullmatch(r"\.lc-cert-[a-zA-Z0-9_-]+\.tmp", path.name)
+            if not (temporary or _CERT_FILENAME_RE.fullmatch(path.name)):
+                continue
+            try:
+                info = path.lstat()
+                # A crash just after publication can leave a second hard link at the temp name.
+                managed_file = _private_regular_file(info) or (temporary and stat.S_ISREG(info.st_mode))
+                if managed_file and info.st_mtime < cutoff:
+                    path.unlink()
+                    deleted += 1
+            except FileNotFoundError:
+                continue
+        return deleted
+
     async def delete_certificate(self, filename: str) -> bool:
         """Delete a certificate file."""
         file_path = self._resolve_safe(filename)

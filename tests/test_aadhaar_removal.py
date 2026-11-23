@@ -18,7 +18,7 @@ def test_model_has_no_aadhaar_column():
 
 
 @pytest.mark.asyncio
-async def test_register_ignores_and_never_returns_aadhaar(client: AsyncClient):
+async def test_register_rejects_and_never_returns_aadhaar(client: AsyncClient, verified_registration):
     payload = {
         "name": "No Aadhaar", "email": "noaadhaar@example.com", "password": "SecurePass123",
         "blood_group": "O+",
@@ -32,9 +32,12 @@ async def test_register_ignores_and_never_returns_aadhaar(client: AsyncClient):
         },
         "disease_details": {"name": "None"},
     }
-    r = await client.post("/api/v1/donors/register", json=payload)
-    assert r.status_code == 201
-    assert "123412341234" not in r.text and "aadhar" not in r.text.lower()
+    r = await verified_registration(client, payload)
+    assert r.status_code == 422
+    assert "123412341234" not in r.text
+    del payload["personal_details"]["aadhar_number"]
+    registered = await verified_registration(client, payload)
+    assert registered.status_code == 201 and "aadhar" not in registered.text.lower()
 
 
 def _seed_aadhaar(db_path, value):

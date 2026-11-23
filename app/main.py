@@ -6,7 +6,7 @@ FastAPI application factory and main entry point.
 
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
-from fastapi.exception_handlers import request_validation_exception_handler
+from app.core.api_limits import ApiRequestLimits
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -30,20 +30,12 @@ async def lifeconnect_exception_handler(
     """Return a client-safe error body while keeping diagnostics server-side.
 
     ``exc.details`` can embed submitted values (an email, a phone number) or internal
-    identifiers, so it is only included in a local development/test response. Every
+    identifiers, so its contents stay out of responses and logs. Every
     caller still gets a stable ``error_id`` to quote to support.
     """
     error_id = uuid.uuid4().hex
-    settings = get_settings()
-    show_details = settings.DEBUG and settings.APP_ENV.lower() in {"development", "test"}
-
     logger.warning("Application error error_id=%s type=%s", error_id, type(exc).__name__)
-    if show_details:
-        logger.debug("Application error details error_id=%s details=%r", error_id, exc.details)
-
     content = {"detail": exc.message, "error_id": error_id}
-    if show_details:
-        content["error_details"] = exc.details
     return JSONResponse(status_code=400, content=content)
 
 
@@ -111,48 +103,39 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
-    # Middleware add order is inner-to-outer: the LAST added wraps the others. CORS must be the
-    # outermost layer so even a 500 produced by CatchAllMiddleware (or the rate limiter) carries
-    # Access-Control-Allow-Origin and the browser can read the response.
+    # Middleware registration proceeds from the innermost layer outward.
     from app.core.middleware import CatchAllMiddleware, SecurityHeadersMiddleware
-    app.add_middleware(CatchAllMiddleware)
 
     # Configure rate limiting
+    app.add_middleware(ApiRequestLimits)
     setup_rate_limiting(app)
 
-    # Add security headers middleware
-    app.add_middleware(SecurityHeadersMiddleware)
+    app.add_middleware(CatchAllMiddleware)
 
-    # Configure CORS (outermost)
+    # CORS also decorates handled errors. Security headers wrap preflight responses.
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.ALLOWED_ORIGINS or [],
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type"],
+        expose_headers=["Retry-After", "Content-Disposition"],
     )
+
+    app.add_middleware(SecurityHeadersMiddleware)
 
     # Exception handlers
     app.add_exception_handler(LifeConnectException, lifeconnect_exception_handler)
 
     @app.exception_handler(RequestValidationError)
     async def validation_exception_handler(request: Request, exc: RequestValidationError):
-        if request.url.path.rstrip("/") in {
-            "/api/v1/auth/donor/password-reset/request",
-            "/api/v1/auth/donor/password-reset/confirm",
-            "/api/v1/auth/admin/password-reset/request",
-            "/api/v1/auth/admin/password-reset/confirm",
-            "/api/v1/privacy/erasure-requests",
-        }:
-            # Pydantic includes submitted values in its default errors, including passwords and OTPs.
-            details = [{key: error[key] for key in ("loc", "msg", "type")} for error in exc.errors()]
-            return JSONResponse(status_code=422, content={"detail": details})
-        return await request_validation_exception_handler(request, exc)
+        details = [{key: error[key] for key in ("loc", "msg", "type")} for error in exc.errors()]
+        return JSONResponse(status_code=422, content={"detail": details})
 
     @app.exception_handler(Exception)
     async def general_exception_handler(request: Request, exc: Exception):
         error_id = uuid.uuid4().hex
-        logger.error("Unhandled request failure error_id=%s", error_id)
+        logger.error("Unhandled request failure error_id=%s type=%s", error_id, type(exc).__name__)
         return JSONResponse(
             status_code=500,
             content={"detail": "Internal server error", "error_id": error_id},

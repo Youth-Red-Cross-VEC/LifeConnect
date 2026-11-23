@@ -1,3 +1,4 @@
+import { errorText } from "../services/requests";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../services/api";
@@ -39,7 +40,7 @@ export default function AdminSignup() {
         setForm((prev) => ({ ...prev, email: inviteEmail }));
         setStep(2);
       } else {
-        setError(res?.detail || "Failed to send invite OTP. Make sure you are logged in as an admin.");
+        setError(errorText(res, "Failed to send invite OTP. Make sure you are logged in as an admin."));
       }
     } catch {
       setError("Server error. Try again.");
@@ -78,10 +79,10 @@ export default function AdminSignup() {
         invite_otp: otp,
       };
       const res = await api.adminSignup(payload);
-      if (res && (res.id || res.email || res.success || !res.error)) {
+      if (res?.id) {
         navigate("/admin/login");
       } else {
-        setError(res?.detail?.[0]?.msg || res?.detail || res?.message || "Signup failed. Please try again.");
+        setError(errorText(res, "Signup failed. Please try again."));
       }
     } catch {
       setError("Server error. Try again.");

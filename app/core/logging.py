@@ -29,6 +29,10 @@ def setup_logging() -> None:
         level=logging.DEBUG if settings.DEBUG else logging.INFO,
     )
 
+    # HTTPX info logs contain full URLs, including distance lookups with address and API key.
+    for name in ("httpx", "httpcore", "aiosmtplib"):
+        logging.getLogger(name).setLevel(logging.WARNING)
+
     # Configure structlog processors
     shared_processors: list[Any] = [
         structlog.contextvars.merge_contextvars,

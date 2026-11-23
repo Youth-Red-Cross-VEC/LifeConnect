@@ -104,8 +104,8 @@ async def test_admin_login_verifies_off_loop(client: AsyncClient, test_session, 
 
 
 @pytest.mark.asyncio
-async def test_donor_registration_hashes_off_loop(client: AsyncClient, bcrypt_calls):
-    r = await client.post("/api/v1/donors/register", json=registration_payload("new@example.com"))
+async def test_donor_registration_hashes_off_loop(client: AsyncClient, bcrypt_calls, verified_registration):
+    r = await verified_registration(client, registration_payload("new@example.com"))
     assert r.status_code == 201, r.text
     _assert_all_off_loop(bcrypt_calls, "hash")
 

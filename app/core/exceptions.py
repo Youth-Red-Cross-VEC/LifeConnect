@@ -16,7 +16,7 @@ class EntityNotFoundError(LifeConnectException):
 
     def __init__(self, entity_type: str, entity_id: str):
         super().__init__(
-            message=f"{entity_type} with id '{entity_id}' not found",
+            message=f"{entity_type} not found",
             details={"entity_type": entity_type, "entity_id": entity_id},
         )
 
@@ -26,7 +26,7 @@ class DuplicateEntityError(LifeConnectException):
 
     def __init__(self, entity_type: str, field: str, value: str):
         super().__init__(
-            message=f"{entity_type} with {field} '{value}' already exists",
+            message=f"{entity_type} already exists",
             details={"entity_type": entity_type, "field": field, "value": value},
         )
 
@@ -64,7 +64,7 @@ class ExternalServiceError(LifeConnectException):
 
     def __init__(self, service_name: str, message: str):
         super().__init__(
-            message=f"External service error ({service_name}): {message}",
+            message="External service unavailable",
             details={"service": service_name},
         )
 

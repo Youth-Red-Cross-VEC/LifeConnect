@@ -3,7 +3,7 @@ import { api } from "../services/api";
 
 export default function FetchDonors() {
   const [bloodType, setBloodType] = useState("");
-  const [hospitalAddress, setHospitalAddress] = useState("");
+  const [donorName, setDonorName] = useState("");
   const [donors, setDonors] = useState([]);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -25,14 +25,14 @@ export default function FetchDonors() {
     setCurrentPage(1);
 
     try {
-      const params = { blood_type: bloodType };
-      if (hospitalAddress) params.hospital_address = hospitalAddress;
+      const params = bloodType ? { blood_group: bloodType } : {};
+      if (donorName) params.search = donorName;
       const res = await api.getDonors(params);
 
-      if (res && !res.error) {
-        setDonors(res);
+      if (Array.isArray(res?.items)) {
+        setDonors(res.items.map(d => ({ ...d, Name: d.name, blood_grp: d.blood_group, status: d.active_status ? "Active" : "Inactive" })));
       } else {
-        setError(res?.error || "No donors found.");
+        setError(typeof res?.detail === "string" ? res.detail : "Unable to load donors.");
       }
     } catch {
       setError("Server error. Try again.");
@@ -423,14 +423,14 @@ export default function FetchDonors() {
               <option value="AB-">AB-</option>
             </select>
 
-            <label htmlFor="hospital_address">Hospital Address (Optional):</label>
+            <label htmlFor="donor_name">Donor name (optional):</label>
             <input
               type="text"
-              id="hospital_address"
-              name="hospital_address"
-              placeholder="Enter Hospital Address"
-              value={hospitalAddress}
-              onChange={(e) => setHospitalAddress(e.target.value)}
+              id="donor_name"
+              name="donor_name"
+              placeholder="Enter donor name"
+              value={donorName}
+              onChange={(e) => setDonorName(e.target.value)}
               disabled={isLoading}
             />
 

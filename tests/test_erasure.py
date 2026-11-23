@@ -20,7 +20,7 @@ from app.models.privacy import ErasureFile, ErasureRequest
 from app.models.query import QueryTable
 from app.models.refresh_session import RefreshSession
 from app.services.certificate_service import CertificateService, get_certificate_service
-from app.services.otp_service import PURPOSE_ADMIN_RESET, PURPOSE_DONOR_RESET, store_otp
+from app.services.otp_service import PURPOSE_ADMIN_RESET, PURPOSE_DONOR_ENROLLMENT, PURPOSE_DONOR_RESET, store_otp
 from tests.helpers import cookie_headers, insert_admin, insert_donor, insert_request, refresh_cookie
 
 URL = "/api/v1/privacy/erasure-requests"
@@ -30,6 +30,20 @@ async def login(client, role, email):
     response = await client.post(f"/api/v1/auth/{role}/login", json={"email": email, "password": "Secret123"})
     assert response.status_code == 200
     return {"Authorization": f"Bearer {response.json()['access_token']}"}, refresh_cookie(response)
+
+
+async def test_erasure_rejects_unverified_or_invalid_submissions(client, test_session):
+    await insert_donor(test_session)
+    await insert_admin(test_session, 1, role=AdminRole.ADMIN)
+    donor, _ = await login(client, "donor", "donor1@example.com")
+    admin, _ = await login(client, "admin", "admin1@example.com")
+    correct = {"current_password": "Secret123"}
+    assert (await client.post(URL, json=correct)).status_code == 401
+    assert (await client.post(URL, headers=admin, json=correct)).status_code == 403
+    assert (await client.post(URL, headers=donor, json={"current_password": "Wrong123"})).status_code == 403
+    invalid = await client.post(URL, headers=donor, json={"current_password": {"sensitive": "hide-me"}})
+    assert invalid.status_code == 422 and "hide-me" not in invalid.text
+    assert (await client.post(URL, headers=donor, json={**correct, "donor_id": "DON-2"})).status_code == 422
 
 
 async def test_erasure_requires_password_ownership_and_super_admin(client, test_session):
@@ -42,12 +56,7 @@ async def test_erasure_requires_password_ownership_and_super_admin(client, test_
     admin, _ = await login(client, "admin", "admin1@example.com")
     reviewer, _ = await login(client, "admin", "admin2@example.com")
     correct = {"current_password": "Secret123"}
-    assert (await client.post(URL, json=correct)).status_code == 401
-    assert (await client.post(URL, headers=admin, json=correct)).status_code == 403
-    assert (await client.post(URL, headers=donor, json={"current_password": "Wrong123"})).status_code == 403
-    invalid = await client.post(URL, headers=donor, json={"current_password": {"sensitive": "hide-me"}})
-    assert invalid.status_code == 422 and "hide-me" not in invalid.text
-    submitted = await client.post(URL, headers=donor, json={**correct, "donor_id": "DON-2"})
+    submitted = await client.post(URL, headers=donor, json=correct)
     assert submitted.status_code == 202
     receipt = submitted.json()
     assert (await client.post(URL, headers=donor, json=correct)).json()["id"] == receipt["id"]
@@ -89,6 +98,7 @@ async def test_erasure_removes_linked_data_and_sessions_but_retains_request_stat
                                   entity_id=filename, detail=f"donor_id={donor.id}"))
     await test_session.commit()
     await store_otp(test_session, donor.email, "123456", PURPOSE_DONOR_RESET)
+    await store_otp(test_session, donor.email, "123456", PURPOSE_DONOR_ENROLLMENT)
     await store_otp(test_session, donor.email, "654321", PURPOSE_ADMIN_RESET)
     credentials, old_cookie = await login(client, "donor", donor.email)
     reviewer, _ = await login(client, "admin", "admin1@example.com")

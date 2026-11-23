@@ -42,7 +42,7 @@ async def verify_recaptcha(token: str, action: str | None = None) -> bool:
             result = response.json()
 
         if not result.get("success", False):
-            logger.warning("reCAPTCHA v3 verification failed: %s", result.get("error-codes"))
+            logger.warning("reCAPTCHA verification rejected")
             return False
 
         score: float = result.get("score", 0.0)
@@ -50,8 +50,7 @@ async def verify_recaptcha(token: str, action: str | None = None) -> bool:
 
         if action and returned_action != action:
             logger.warning(
-                "reCAPTCHA action mismatch: expected '%s', got '%s'",
-                action, returned_action
+                "reCAPTCHA action mismatch"
             )
             return False
 
@@ -62,9 +61,9 @@ async def verify_recaptcha(token: str, action: str | None = None) -> bool:
             )
             return False
 
-        logger.info("reCAPTCHA v3 passed — score: %.2f, action: %s", score, returned_action)
+        logger.info("reCAPTCHA v3 passed — score: %.2f, action: %s", score, action)
         return True
 
     except Exception as e:
-        logger.error("Error verifying reCAPTCHA: %s", e)
+        logger.error("Error verifying reCAPTCHA: %s", type(e).__name__)
         return False

@@ -10,8 +10,8 @@ import asyncio
 from html import escape as _esc
 
 from app.config import Settings
+from app.services.certificate_service import read_certificate_bytes
 
-from app.core.logging import mask_email
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +66,7 @@ class EmailService:
             message.attach(MIMEText(html_body, "html"))
 
             # Add attachment if provided
-            if attachment_path and attachment_path.exists():
+            if attachment_path:
                 await self._attach_file(message, attachment_path)
 
             # Send email. Bcc recipients go in the SMTP envelope only, never in a header.
@@ -80,11 +80,11 @@ class EmailService:
                 start_tls=self.settings.MAIL_USE_TLS,
             )
 
-            logger.info(f"Email sent successfully to {mask_email(to)}")
+            logger.info("Email sent successfully")
             return True
 
         except Exception as e:
-            logger.error(f"Failed to send email to {mask_email(to)}: {type(e).__name__}")
+            logger.error("Email delivery failed type=%s", type(e).__name__)
             return False
 
     def _build_message(
@@ -103,17 +103,16 @@ class EmailService:
         if text_body:
             message.attach(MIMEText(text_body, "plain"))
         message.attach(MIMEText(html_body, "html"))
-        if attachment_path and attachment_path.exists():
+        if attachment_path:
             self._attach_file_sync(message, attachment_path)
         return message
 
     def _attach_file_sync(self, message: MIMEMultipart, file_path: Path) -> None:
-        with open(file_path, "rb") as f:
-            part = MIMEBase("application", "octet-stream")
-            part.set_payload(f.read())
-            encoders.encode_base64(part)
-            part.add_header("Content-Disposition", "attachment", filename=file_path.name)
-            message.attach(part)
+        part = MIMEBase("application", "octet-stream")
+        part.set_payload(read_certificate_bytes(file_path))
+        encoders.encode_base64(part)
+        part.add_header("Content-Disposition", "attachment", filename=file_path.name)
+        message.attach(part)
 
     async def send_many(self, messages: List[dict]) -> int:
         """Send several messages over ONE SMTP connection.
@@ -156,8 +155,7 @@ class EmailService:
                         await asyncio.sleep(0.2)
                 except Exception as e:
                     logger.error(
-                        f"Batch email: failed for {mask_email(item.get('to', ''))}: "
-                        f"{type(e).__name__}"
+                        "Batch email delivery failed type=%s", type(e).__name__
                     )
         finally:
             try:
@@ -170,14 +168,7 @@ class EmailService:
 
     async def _attach_file(self, message: MIMEMultipart, file_path: Path) -> None:
         """Attach a file to the email."""
-        with open(file_path, "rb") as f:
-            part = MIMEBase("application", "octet-stream")
-            part.set_payload(f.read())
-            encoders.encode_base64(part)
-            # Let the email package quote/encode the name; interpolating it into the header by hand would let
-            # a space or a quote in a file name split or terminate the parameter.
-            part.add_header("Content-Disposition", "attachment", filename=file_path.name)
-            message.attach(part)
+        await asyncio.to_thread(self._attach_file_sync, message, file_path)
 
     def build_blood_request_notification(
         self,
@@ -270,8 +261,8 @@ class EmailService:
 
     async def send_otp_email(self, email: str, otp: str, name: str, purpose: str = "password_reset") -> bool:
         """Send an OTP email with copy specific to its security purpose."""
-        invite = purpose == "admin_invite"
-        title = "Admin invitation code" if invite else "Password reset code"
+        title = {"admin_invite": "Admin invitation code",
+                 "donor_enrollment": "Donor registration code"}.get(purpose, "Password reset code")
         subject = f"LifeConnect - {title}"
         name, otp = _esc(str(name)), _esc(str(otp))
 
@@ -283,7 +274,7 @@ class EmailService:
                     <p>Dear {name},</p>
                     <p>Your {title.lower()} is:</p>
                     <h1 style="color: #8B0000; font-size: 36px; letter-spacing: 5px; text-align: center; padding: 20px; background: #f8f9fa; border-radius: 8px;">{otp}</h1>
-                    <p>This OTP is valid for 10 minutes.</p>
+                    <p>This code expires shortly. Use the most recent code you requested.</p>
                     <p style="color: #888; font-size: 12px; margin-top: 30px;">
                         If you did not request this, please ignore this email.
                     </p>

@@ -75,4 +75,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 
 # --proxy-headers: honour X-Forwarded-For/-Proto, but only from FORWARDED_ALLOW_IPS (uvicorn's default is
 # 127.0.0.1; docker-compose.yml sets it to the nginx container). Never set it to "*".
-CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]
+CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--no-access-log"]

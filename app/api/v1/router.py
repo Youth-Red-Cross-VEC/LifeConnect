@@ -2,7 +2,9 @@
 API v1 Router - Aggregates all v1 endpoints.
 """
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+from app.core.api_limits import validate_parameters
+from app.core.rate_limiter import check_default_api_limit
 
 from app.api.v1.health import router as health_router
 from app.api.v1.donors import router as donors_router
@@ -17,7 +19,7 @@ from app.api.v1.privacy import router as privacy_router
 # Import auth router when partner implements it
 from app.api.auth.router import router as auth_router
 
-router = APIRouter(prefix="/api/v1")
+router = APIRouter(prefix="/api/v1", dependencies=[Depends(check_default_api_limit), Depends(validate_parameters)])
 
 # Include all routers
 router.include_router(health_router)

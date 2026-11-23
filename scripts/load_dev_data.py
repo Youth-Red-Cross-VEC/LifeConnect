@@ -5,9 +5,8 @@
     python scripts/load_dev_data.py --full     # 2 admins, 10 donors, hospitals, requests (docs/SyntheticData.sql)
     python scripts/load_dev_data.py --database-url postgresql+asyncpg://user:pw@localhost/lifeconnect
 
-Every account in that data has the PUBLISHED password `DevOnly#2026`, so anyone who has read this repository can
-log in as the seeded admin. That makes loading it into the wrong database a security incident, and this script
-refuses to do it:
+Seed accounts have password login disabled by default. To exercise local login, supply a private
+DEV_SEED_PASSWORD in the loader process environment. The loader refuses these targets:
 
   * APP_ENV=production (any capitalisation): refused.
   * the database already holds any admin or donor account (a copy of real data restored "just for testing",
@@ -18,6 +17,7 @@ Uses DATABASE_URL and APP_ENV from the environment/.env unless --database-url is
 """
 import argparse
 import asyncio
+import os
 import sys
 from pathlib import Path
 from typing import Optional
@@ -42,12 +42,12 @@ def async_url(url: str) -> str:
 def refuse_reason(app_env: str, existing: dict[str, int]) -> Optional[str]:
     """Why the seed must not be loaded, or None if it may be."""
     if app_env.strip().lower() == "production":
-        return "APP_ENV is production: the dev seed has a published admin password and must never be loaded here."
+        return "APP_ENV is production: development fixtures must never be loaded here."
     populated = {table: n for table, n in existing.items() if n}
     if populated:
         found = ", ".join(f"{n} row(s) in {table}" for table, n in populated.items())
         return (
-            f"the database is not empty ({found}). The dev seed adds an admin with a published password, so "
+            f"the database is not empty ({found}). The dev seed adds administrator accounts, so "
             "it only loads into an empty database (run `alembic upgrade head` on a fresh one)."
         )
     return None
@@ -100,11 +100,20 @@ async def load(url: str, sql: str, app_env: str) -> int:
             if reason:
                 print(f"Refusing to load the dev data: {reason}", file=sys.stderr)
                 return 2
+            from app.api.auth.utils import hash_password_async
+            from app.schemas.passwords import check_new_password
+
+            secret = os.environ.get("DEV_SEED_PASSWORD")
+            if secret is not None:
+                check_new_password(secret)
             statements = split_statements(sql)
             for statement in statements:
-                await conn.execute(text(statement))
+                if secret and "'!disabled-dev-seed!'" in statement:
+                    statement = statement.replace("'!disabled-dev-seed!'", ":seed_hash")
+                    await conn.execute(text(statement), {"seed_hash": await hash_password_async(secret)})
+                else:
+                    await conn.execute(text(statement))
             print(f"Loaded {len(statements)} statements of synthetic development data.")
-            print("Every seeded account uses the published password DevOnly#2026. Development only.")
             return 0
     finally:
         await engine.dispose()

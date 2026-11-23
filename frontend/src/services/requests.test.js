@@ -57,3 +57,9 @@ test("detailRows shows dashes for missing values and includes nested hospital da
   assert.equal(rows["Hospital Address"], "—");
   assert.ok(!Object.values(rows).includes("undefined"));
 });
+
+test("validation messages are always renderable text", () => {
+  assert.equal(errorText({detail: [{msg: {unexpected: true}}, {msg: "Check the phone number"}]}, "Failed"), "Check the phone number");
+  assert.equal(errorText({message: {}, error: "Rate limit reached"}, "Failed"), "Rate limit reached");
+  assert.equal(errorText({message: {}}, "Failed"), "Failed");
+});
