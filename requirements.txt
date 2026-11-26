@@ -16,4 +16,5 @@ aiosmtplib==5.1.2
 pillow==13.0.0
 structlog==26.1.0
 slowapi==0.1.10
+limits==5.8.0
 python-dotenv==1.2.2

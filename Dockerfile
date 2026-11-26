@@ -64,6 +64,7 @@ COPY --chown=appuser:appuser migrations/ ./migrations/
 # later inherits this ownership, and without it certificate generation failed with a bare
 # PermissionError as appuser.
 RUN mkdir -p /code/app/static/images/certificates && \
+    chmod 0700 /code/app/static/images/certificates && \
     chown -R appuser:appuser /code/app/static
 
 USER appuser

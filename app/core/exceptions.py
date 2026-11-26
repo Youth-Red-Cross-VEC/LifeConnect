@@ -5,6 +5,8 @@ from typing import Any, Optional
 class LifeConnectException(Exception):
     """Base exception for LifeConnect application."""
 
+    status_code = 400
+
     def __init__(self, message: str, details: Optional[Any] = None):
         self.message = message
         self.details = details
@@ -14,9 +16,11 @@ class LifeConnectException(Exception):
 class EntityNotFoundError(LifeConnectException):
     """Raised when a requested entity is not found."""
 
+    status_code = 404
+
     def __init__(self, entity_type: str, entity_id: str):
         super().__init__(
-            message=f"{entity_type} with id '{entity_id}' not found",
+            message=f"{entity_type} not found",
             details={"entity_type": entity_type, "entity_id": entity_id},
         )
 
@@ -24,15 +28,19 @@ class EntityNotFoundError(LifeConnectException):
 class DuplicateEntityError(LifeConnectException):
     """Raised when attempting to create a duplicate entity."""
 
+    status_code = 409
+
     def __init__(self, entity_type: str, field: str, value: str):
         super().__init__(
-            message=f"{entity_type} with {field} '{value}' already exists",
+            message=f"{entity_type} already exists",
             details={"entity_type": entity_type, "field": field, "value": value},
         )
 
 
 class InvalidCredentialsError(LifeConnectException):
     """Raised when authentication credentials are invalid."""
+
+    status_code = 401
 
     def __init__(self):
         super().__init__(message="Invalid email or password")
@@ -41,12 +49,16 @@ class InvalidCredentialsError(LifeConnectException):
 class UnauthorizedError(LifeConnectException):
     """Raised when user is not authorized to perform an action."""
 
+    status_code = 401
+
     def __init__(self, message: str = "Not authorized to perform this action"):
         super().__init__(message=message)
 
 
 class ForbiddenError(LifeConnectException):
     """Raised when access to a resource is forbidden."""
+
+    status_code = 403
 
     def __init__(self, message: str = "Access forbidden"):
         super().__init__(message=message)
@@ -55,6 +67,8 @@ class ForbiddenError(LifeConnectException):
 class ValidationError(LifeConnectException):
     """Raised when input validation fails."""
 
+    status_code = 422
+
     def __init__(self, message: str, errors: Optional[list] = None):
         super().__init__(message=message, details={"errors": errors or []})
 
@@ -62,9 +76,11 @@ class ValidationError(LifeConnectException):
 class ExternalServiceError(LifeConnectException):
     """Raised when an external service call fails."""
 
+    status_code = 503
+
     def __init__(self, service_name: str, message: str):
         super().__init__(
-            message=f"External service error ({service_name}): {message}",
+            message="External service unavailable",
             details={"service": service_name},
         )
 

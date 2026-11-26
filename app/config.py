@@ -1,6 +1,7 @@
 import re
 
-from pydantic import model_validator
+from limits import parse_many
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings
 from functools import lru_cache
 from typing import Optional
@@ -59,12 +60,14 @@ class Settings(BaseSettings):
     ALLOWED_ORIGINS: list[str] | None = None
 
     # Rate Limiting
-    RATE_LIMIT_PER_MINUTE: int = 60
+    RATE_LIMIT_PER_MINUTE: int = Field(default=60, ge=1)
     # memory:// counts per process. With more than one web worker/replica use a shared
     # store (e.g. redis://host:6379/0) or the effective limit is multiplied by the worker count.
     RATE_LIMIT_STORAGE_URI: str = "memory://"
 
     # Per-IP limits on credential endpoints (brute force / email flooding)
+    ACCOUNT_AUTH_RATE_LIMIT: str = "10/10 minutes"
+    ACCOUNT_CODE_SEND_RATE_LIMIT: str = "3/10 minutes"
     AUTH_RATE_LIMIT: str = "5/minute"
     PASSWORD_RESET_RATE_LIMIT: str = "3/minute"
 
@@ -101,6 +104,14 @@ class Settings(BaseSettings):
             return self.ENABLE_DOCS
         return self.APP_ENV.lower() != "production"
 
+    @field_validator("ACCOUNT_AUTH_RATE_LIMIT", "ACCOUNT_CODE_SEND_RATE_LIMIT", "AUTH_RATE_LIMIT",
+                     "PASSWORD_RESET_RATE_LIMIT", "BLOOD_REQUEST_RATE_LIMIT")
+    @classmethod
+    def valid_rate_windows(cls, value: str) -> str:
+        if any(window.amount < 1 or window.get_expiry() < 1 for window in parse_many(value)):
+            raise ValueError("Rate limits require a positive count and duration")
+        return value
+
     @model_validator(mode="after")
     def _validate_security_settings(self) -> "Settings":
         # Every environment: the JWT signing key must be a real secret. A short or copied-from-the-docs
@@ -133,17 +144,9 @@ class Settings(BaseSettings):
                 raise ValueError("RECAPTCHA_SECRET_KEY must be set when APP_ENV=production")
             if not self.RECAPTCHA_ENFORCED:
                 raise ValueError("RECAPTCHA_ENFORCED must be true when APP_ENV=production")
-            # memory:// keeps one counter per process, so with N workers/replicas the effective
-            # limit is N times the configured one. Refuse it in production instead of silently
-            # weakening brute-force protection.
-            storage_uri = self.RATE_LIMIT_STORAGE_URI.strip().lower()
-            if not storage_uri or storage_uri.startswith("memory://"):
-                raise ValueError(
-                    "RATE_LIMIT_STORAGE_URI must be a shared store (e.g. redis://redis:6379/0) when "
-                    "APP_ENV=production: memory:// counts per process, so the effective limit is "
-                    "multiplied by the number of web workers/replicas. Install the optional client "
-                    "with: pip install -r requirements-redis.txt"
-                )
+        if self.APP_ENV.strip().lower() in {"production", "staging"}:
+            if not self.RATE_LIMIT_STORAGE_URI.startswith(("redis://", "rediss://", "redis+unix://")):
+                raise ValueError("RATE_LIMIT_STORAGE_URI must be a shared store using Redis")
         return self
 
     class Config:

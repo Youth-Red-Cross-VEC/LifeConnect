@@ -1,4 +1,4 @@
-from sqlalchemy import String, Integer, DateTime, Date, Time, Enum as SAEnum
+from sqlalchemy import String, Integer, DateTime, Date, Time, Enum as SAEnum, Index, func
 from sqlalchemy.orm import Mapped, mapped_column
 from app.models.base import Base, TimestampMixin
 from datetime import datetime, date, time
@@ -48,6 +48,9 @@ class AdminDetails(Base, TimestampMixin):
     last_login_date: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     approved_donation_count: Mapped[int] = mapped_column(Integer, default=0)
     closed_requests_count: Mapped[int] = mapped_column(Integer, default=0)
+
+
+Index("uq_admin_details_email_lower", func.lower(AdminDetails.email), unique=True)
 
 
 class AuthenticationDetailsAdmin(Base):

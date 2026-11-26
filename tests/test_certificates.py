@@ -126,3 +126,66 @@ async def test_generate_uses_recorded_donation_date_from_request(
         "/api/v1/certificates/generate", json={"donor_id": "DON-1", "request_id": "REQ-1"}
     )
     assert response.status_code == 201, response.text
+
+@pytest.mark.asyncio
+async def test_certificate_delivery_matches_owner_and_deduplicates_after_cleanup_failure(
+    admin_client, test_session, cert_service, fake_email, monkeypatch
+):
+    await insert_donor(test_session, 1)
+    await insert_donor(test_session, 2)
+
+    async def unavailable(filename):
+        raise OSError("synthetic cleanup failure")
+
+    monkeypatch.setattr(cert_service, "delete_certificate", unavailable)
+    generated = await admin_client.post("/api/v1/certificates/generate", json={
+        "donor_id": "DON-1", "donation_date": "2026-01-15",
+    })
+    assert generated.status_code == 201
+    assert generated.json()["email_sent"] is False
+    assert "queued" in generated.json()["message"].lower()
+    params = {"filename": generated.json()["filename"], "donor_id": "DON-2"}
+    path = "/api/v1/certificates/send-email"
+    assert (await admin_client.post(path, params=params)).status_code == 404
+    params["donor_id"] = "DON-1"
+    assert (await admin_client.post(path, params=params)).status_code == 200
+    assert len(fake_email.sent) == 1
+
+async def test_certificate_storage_visibility_and_deletion_retry(admin_client, test_session, cert_service, monkeypatch):
+    from app.models.privacy import ErasureFile
+    from app.services.certificate_service import read_certificate_bytes
+    from pathlib import Path
+
+    await insert_donor(test_session, 1)
+    unowned = Path(await cert_service.generate_certificate("Synthetic", "2026-11-24", "O+", "Test Hospital"))
+    root = "/api/v1/certificates"
+    assert unowned.name not in (await admin_client.get(root + "/")).json()["certificates"]
+    assert (await admin_client.get(f"{root}/download/{unowned.name}")).status_code == 404
+    new = await admin_client.post(root + "/generate", json={
+        "donor_id": "DON-1", "donation_date": "2026-11-24", "send_email": False,
+    })
+    name = new.json()["filename"]
+    path = cert_service.output_dir / name
+    response = await admin_client.get(f"{root}/download/{name}")
+    assert response.content == read_certificate_bytes(path)
+    assert "no-store" in response.headers["cache-control"].split(", ")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert (await admin_client.get(f"/static/images/certificates/{name}")).status_code == 404
+    async def failed(filename):
+        raise PermissionError("synthetic")
+    monkeypatch.setattr(cert_service, "delete_certificate", failed)
+    assert (await admin_client.delete(f"{root}/{name}")).status_code == 200
+    assert path.exists() and await test_session.get(ErasureFile, name)
+    assert (await admin_client.get(f"{root}/download/{name}")).status_code == 404
+
+async def test_legacy_text_and_invalid_png_download(admin_client, cert_service):
+    legacy = "Legacy_20261124_120000_certificate.txt"
+    cert_service.output_dir.mkdir(parents=True)
+    (cert_service.output_dir / legacy).write_bytes(b"synthetic certificate")
+    root = "/api/v1/certificates/download/"
+    response = await admin_client.get(root + legacy)
+    assert response.status_code == 200 and response.headers["content-type"].startswith("text/plain")
+    assert response.content == b"synthetic certificate"
+    invalid = legacy.replace(".txt", ".png")
+    (cert_service.output_dir / invalid).write_bytes(b"not an image")
+    assert (await admin_client.get(root + invalid)).status_code == 404

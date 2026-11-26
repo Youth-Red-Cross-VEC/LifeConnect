@@ -121,3 +121,31 @@ def test_every_get_db_dependency_uses_function_scope():
             if re.search(r"Depends\(\s*get_db\s*\)", line):
                 offenders.append(f"{path.relative_to(root.parent)}:{number}")
     assert not offenders, offenders
+
+async def test_certificate_generation_and_deletion_respect_commit_result(commit_client, tmp_path):
+    from app.services.certificate_service import CertificateService, get_certificate_service
+    from tests.helpers import insert_admin
+
+    service = CertificateService(output_dir=str(tmp_path))
+    app.dependency_overrides[get_certificate_service] = lambda: service
+    async with commit_client.state["factory"]() as session:
+        admin = await insert_admin(session)
+        await insert_donor(session)
+        token = create_access_token({"sub": admin.id, "user_type": "admin", "email": admin.email})
+    headers = {"Authorization": f"Bearer {token}"}
+    root = "/api/v1/certificates"
+    body = {"donor_id": "DON-1", "donation_date": "2026-11-24", "send_email": False}
+    commit_client.state["fail"] = True
+    assert (await commit_client.post(root + "/generate", json=body, headers=headers)).status_code == 500
+    orphan, = await service.list_certificates()
+    commit_client.state["fail"] = False
+    assert (await commit_client.get(root + "/", headers=headers)).json()["certificates"] == []
+    assert (await commit_client.get(root + "/download/" + orphan, headers=headers)).status_code == 404
+    generated = await commit_client.post(root + "/generate", json=body, headers=headers)
+    name = generated.json()["filename"]
+    commit_client.state["fail"] = True
+    assert (await commit_client.delete(root + "/" + name, headers=headers)).status_code == 500
+    commit_client.state["fail"] = False
+    assert (await commit_client.get(root + "/download/" + name, headers=headers)).status_code == 200
+    assert (await commit_client.delete(root + "/" + name, headers=headers)).status_code == 200
+    assert await service.get_certificate(name) is None

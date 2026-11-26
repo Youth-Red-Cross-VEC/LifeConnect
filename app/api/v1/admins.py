@@ -5,6 +5,7 @@ Endpoints for admin registration, profile management, and administration.
 Note: Authentication (login/logout) is handled by the auth module (partner's responsibility).
 """
 
+from app.config import get_settings
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -34,7 +35,7 @@ from app.services.otp_service import (
     PURPOSE_ADMIN_INVITE, generate_otp, store_otp, verify_otp,
     failed_confirmation_count, record_failed_confirmation, clear_failed_confirmations,
 )
-from app.core.rate_limiter import limiter
+from app.core.rate_limiter import enforce_account_limit, limiter
 from app.services.refresh_session_service import revoke_all_for_user
 
 router = APIRouter(prefix="/admins", tags=["Admins"])
@@ -84,6 +85,7 @@ async def _guard_role_change(repo: AdminRepository, target: AdminDetails, new_ro
     status_code=status.HTTP_200_OK,
 )
 async def invite_admin(
+    request: Request,
     data: AdminInviteRequest,
     session: AsyncSession = Depends(get_db, scope="function"),
     current_admin: AdminDetails = Depends(require_super_admin),
@@ -91,9 +93,9 @@ async def invite_admin(
     """
     Generate and email a 6-digit invite OTP to the given address.
 
-    Only existing admins can send invites. The OTP is valid for 10 minutes
-    and must be supplied in the subsequent `POST /admins/register` call.
+    Only super administrators can send invites. The current OTP must be supplied in the subsequent `POST /admins/register` call.
     """
+    await enforce_account_limit(request, data.email, get_settings().ACCOUNT_CODE_SEND_RATE_LIMIT)
     from app.services.email_service import get_email_service
     otp = generate_otp()
     await store_otp(session, data.email, otp, PURPOSE_ADMIN_INVITE)
@@ -106,14 +108,13 @@ async def invite_admin(
         purpose="admin_invite",
     )
     if not sent:
-        # Do not report success when the invite never left the server: the invitee would wait for a
-        # code that is not coming. A retry issues a new code.
+        # Acceptance was not confirmed. An explicit retry issues a new code.
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Could not send the invite email; please try again later",
         )
     record_admin_action(session, current_admin.id, "admin.invite", "admin_invite")
-    return {"message": f"Invite OTP sent to {data.email}. Valid for 10 minutes."}
+    return {"message": f"Invite OTP sent to {data.email}. Use the most recent code."}
 
 
 # =======================
@@ -139,11 +140,12 @@ async def register_admin(
     The OTP is sent to the registrant's email and is valid for 10 minutes.
     This prevents self-registration without an existing admin's approval.
     """
+    await enforce_account_limit(request, data.email, get_settings().ACCOUNT_AUTH_RATE_LIMIT)
     if await failed_confirmation_count(session, data.email, PURPOSE_ADMIN_INVITE) >= 10:
         raise HTTPException(status_code=429, detail="Too many failed code attempts; try again later")
 
     # Verify invite OTP
-    if not await verify_otp(session, data.email, data.invite_otp, PURPOSE_ADMIN_INVITE):
+    if not await verify_otp(session, data.email, data.invite_otp, PURPOSE_ADMIN_INVITE, commit_success=False):
         await record_failed_confirmation(session, data.email, PURPOSE_ADMIN_INVITE)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

@@ -13,7 +13,7 @@ from app.api.auth.deps import get_current_donor, require_super_admin
 from app.api.auth.utils import verify_password_async
 from app.config import get_settings
 from app.core.database import get_db
-from app.core.rate_limiter import limiter
+from app.core.rate_limiter import enforce_account_limit, limiter
 from app.models.admin import AdminDetails
 from app.models.donor import DonorDetail
 from app.models.privacy import ErasureRequest
@@ -51,6 +51,7 @@ async def submit_erasure(
     donor: DonorDetail = Depends(get_current_donor),
     session: AsyncSession = Depends(get_db, scope="function"),
 ):
+    await enforce_account_limit(request, donor.email, get_settings().ACCOUNT_AUTH_RATE_LIMIT)
     locked = await lock_donor(session, donor.id)
     password = data.current_password.get_secret_value()
     if (locked is None or not locked.active_status or len(password.encode("utf-8")) > 72

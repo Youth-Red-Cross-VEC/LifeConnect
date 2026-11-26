@@ -1,4 +1,4 @@
-from sqlalchemy import String
+from sqlalchemy import Index, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base, TimestampMixin
 from typing import Optional, List, TYPE_CHECKING
@@ -30,3 +30,12 @@ class HospitalDetails(Base, TimestampMixin):
     blood_requests: Mapped[List["BloodRequestDetails"]] = relationship(
         back_populates="hospital"
     )
+
+
+Index(
+    "uq_hospital_identity",
+    func.lower(HospitalDetails.hospital_name),
+    func.lower(func.coalesce(HospitalDetails.branch, "")),
+    HospitalDetails.pincode,
+    unique=True,
+)

@@ -175,6 +175,8 @@ Check constraints: `ck_erasure_request_status`
 | attempts | INTEGER | no |  |
 | created_at | DATETIME | no |  |
 
+Check constraints: `ck_otp_codes_attempts`
+
 ## `otp_failure_windows`
 
 | Column | Type | Nullable | Notes |
@@ -184,6 +186,8 @@ Check constraints: `ck_erasure_request_status`
 | email | VARCHAR(100) | no |  |
 | attempts | INTEGER | no |  |
 | window_started_at | DATETIME | no |  |
+
+Check constraints: `ck_otp_failure_windows_attempts`
 
 ## `personal_details`
 

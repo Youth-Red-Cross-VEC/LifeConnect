@@ -9,10 +9,11 @@ import logging
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status, Query, BackgroundTasks
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from typing import List, Optional
 from datetime import datetime
 
+from app.services.certificate_delivery import deliver_certificate
 from app.core.database import get_db
 from app.config import get_settings
 from app.repositories.blood_request import BloodRequestRepository
@@ -44,20 +45,15 @@ router = APIRouter(prefix="/blood-requests", tags=["Blood Requests"])
 
 
 async def _send_donation_certificates(
-    donor_ids: list[str], donation_date: str, location: str, response_id: str, admin_id: str,
+    sessions: async_sessionmaker[AsyncSession], donor_ids: list[str], donation_date: str, location: str, response_id: str, admin_id: str,
 ) -> None:
     """Generate and email one certificate per donor after a close (best effort)."""
-    from app.core import database as database_module
-
-    db = database_module.db
-    if db is None:
-        return
     cert_service = get_certificate_service()
     email_service = EmailService(get_settings())
     all_sent = True
     for donor_id in donor_ids:
         try:
-            async with db.session() as session:
+            async with sessions.begin() as session:
                 donor = await lock_donor(session, donor_id)
                 if donor is None:
                     all_sent = False
@@ -69,20 +65,13 @@ async def _send_donation_certificates(
                 filename = Path(path).name
                 record_admin_action(session, admin_id, "certificate.generate", "certificate",
                                     filename, detail=f"donor_id={donor_id}")
-                try:
-                    sent = await email_service.send_certificate(
-                        donor_name=donor.name, donor_email=donor.email, certificate_path=path,
-                    )
-                    all_sent = all_sent and bool(sent)
-                    if sent:
-                        await cert_service.delete_certificate(filename)
-                except Exception as e:
-                    all_sent = False
-                    logger.error("Donation certificate delivery failed: %s", type(e).__name__)
+            sent = await deliver_certificate(email_service, cert_service, sessions,
+                                             donor_id, admin_id, filename)
+            all_sent = all_sent and sent
         except Exception as e:
             all_sent = False
             logger.error("Donation certificate delivery failed: %s", type(e).__name__)
-    async with db.session() as session:
+    async with sessions.begin() as session:
         await BloodRequestRepository(session).update_response(
             response_id, certificate_status="Sent" if all_sent else "Failed"
         )
@@ -332,7 +321,7 @@ async def approve_blood_request(
     await AdminRepository(session).increment_approved_count(admin_id)
     record_admin_action(session, admin_id, "blood_request.approve", "blood_request", request_id)
     return MessageResponse(
-        message=f"Blood request {request_id} approved. {len(donors)} donors notified."
+        message=f"Blood request {request_id} approved. Notifications queued for {len(donors)} donors."
     )
 
 
@@ -435,7 +424,7 @@ async def close_blood_request(
         units_donated=data.units_donated,
         donation_date=data.donation_date,
         donor_ids=",".join(donor_ids) if donor_ids else None,
-        certificate_status="Pending" if data.send_certificates else None,
+        certificate_status="Pending" if data.send_certificates and donor_ids else None,
     )
 
     # Update donor records
@@ -453,16 +442,12 @@ async def close_blood_request(
     if data.send_certificates and donor_ids:
         background_tasks.add_task(
             _send_donation_certificates,
+            sessions=async_sessionmaker(session.bind),
             donor_ids=donor_ids,
             donation_date=data.donation_date.isoformat(),
             location=blood_request.hospital_name,
             response_id=blood_request.response_id,
             admin_id=admin_id,
-        )
-    elif data.send_certificates:
-        # No donors were recorded, so no certificate delivery was required.
-        await request_repo.update_response(
-            blood_request.response_id, certificate_status="Sent"
         )
 
     return MessageResponse(

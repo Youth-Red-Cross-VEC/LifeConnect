@@ -1,11 +1,12 @@
 from datetime import date, datetime, timedelta
+import asyncio
 import logging
 import zlib
 from datetime import timezone
 
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import delete, or_, select, text
+from sqlalchemy import delete, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
@@ -61,7 +62,8 @@ async def expire_blood_requests(db: Database) -> None:
             count = await repo.expire_overdue_requests(_scheduler_today())
             logger.info(f"Expired {count} blood request(s)")
     except Exception as e:
-        logger.error(f"Error in expire_blood_requests: {e}")
+        logger.error(f"Error in expire_blood_requests: {type(e).__name__}")
+        raise RuntimeError("Scheduled job failed") from None
 
 
 async def activate_donor_status(db: Database) -> None:
@@ -82,7 +84,8 @@ async def activate_donor_status(db: Database) -> None:
             count = await repo.reactivate_eligible_donors(cutoff_date)
             logger.info(f"Reactivated {count} donor(s)")
     except Exception as e:
-        logger.error(f"Error in activate_donor_status: {e}")
+        logger.error(f"Error in activate_donor_status: {type(e).__name__}")
+        raise RuntimeError("Scheduled job failed") from None
 
 
 async def purge_expired_auth_records(db: Database) -> None:
@@ -96,19 +99,20 @@ async def purge_expired_auth_records(db: Database) -> None:
                 logger.info("purge_expired_auth_records already running elsewhere; skipping")
                 return
             now = utcnow()
-            otps = await session.execute(delete(OtpCode).where(OtpCode.expires_at < now))
+            otps = await session.execute(delete(OtpCode).where(OtpCode.expires_at <= now))
             sessions = await session.execute(delete(RefreshSession).where(
-                or_(RefreshSession.expires_at < now, RefreshSession.revoked_at.isnot(None))
+                RefreshSession.expires_at <= now
             ))
             failures = await session.execute(delete(OtpFailureWindow).where(
-                OtpFailureWindow.window_started_at < now - timedelta(hours=1)
+                OtpFailureWindow.window_started_at <= now - timedelta(hours=1)
             ))
             logger.info(
                 "Purged %s OTP(s), %s refresh token(s), and %s OTP failure window(s)",
                 otps.rowcount, sessions.rowcount, failures.rowcount,
             )
     except Exception as e:
-        logger.error(f"Error in purge_expired_auth_records: {e}")
+        logger.error(f"Error in purge_expired_auth_records: {type(e).__name__}")
+        raise RuntimeError("Scheduled job failed") from None
 
 
 async def purge_old_certificates(db: Database) -> None:
@@ -119,24 +123,21 @@ async def purge_old_certificates(db: Database) -> None:
                 logger.info("purge_old_certificates already running elsewhere; skipping")
                 return
             service = get_certificate_service()
-            pending = await session.scalars(select(ErasureFile).order_by(ErasureFile.filename))
+            pending = await session.scalars(select(ErasureFile).order_by(ErasureFile.filename).with_for_update(skip_locked=True))
             for entry in pending:
                 try:
                     await service.delete_certificate(entry.filename)
                 except OSError as exc:
                     logger.warning("Erasure file cleanup will retry: %s", type(exc).__name__)
                 else:
-                    await session.delete(entry)
+                    if not service.entry_remains(entry.filename):
+                        await session.delete(entry)
             cutoff = utcnow().replace(tzinfo=timezone.utc).timestamp() - get_settings().CERT_RETENTION_DAYS * 86400
-            deleted = 0
-            if service.output_dir.exists():
-                for path in service.output_dir.iterdir():
-                    if path.is_file() and path.stat().st_mtime < cutoff:
-                        path.unlink()
-                        deleted += 1
+            deleted = await asyncio.to_thread(service.purge_expired_files, cutoff)
             logger.info("Purged %s expired certificate file(s)", deleted)
     except Exception as e:
         logger.error("Error in purge_old_certificates: %s", type(e).__name__)
+        raise RuntimeError("Scheduled job failed") from None
 
 
 def setup_scheduled_jobs(scheduler, db: Database) -> None:

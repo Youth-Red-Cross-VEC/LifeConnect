@@ -1,7 +1,7 @@
 """B8: migration 0008 adds a unique index on lower(donor_details.email) and refuses to run if it would break.
 
 An existing database may already hold two accounts whose emails differ only by case. The migration must
-stop with an error that names them (and change nothing), not silently pick one or half-apply.
+stop with an redacted error (and change nothing), not silently pick one or half-apply.
 """
 
 import asyncio
@@ -70,7 +70,7 @@ def database(request, tmp_path):
     assert done.returncode == 0, done.stderr
 
 
-def test_case_variant_duplicates_stop_the_migration_and_are_named(database):
+def test_case_variant_duplicates_stop_the_migration_without_disclosing_accounts(database):
     dialect, url = database
     asyncio.run(_run(url, _donor(1, "Pat@Example.com", dialect) + _donor(2, "pat@example.com", dialect)))
 
@@ -79,8 +79,8 @@ def test_case_variant_duplicates_stop_the_migration_and_are_named(database):
     assert done.returncode != 0
     output = done.stdout + done.stderr
     assert "differ only by letter case" in output
-    assert "DON-1" in output and "DON-2" in output
-    assert "Pat@Example.com" in output and "pat@example.com" in output
+    assert "DON-1" not in output and "DON-2" not in output
+    assert "pat@example.com" not in output.lower()
 
     # Nothing was half-applied: the database is still at the previous revision.
     current = _run_alembic(url, "current")

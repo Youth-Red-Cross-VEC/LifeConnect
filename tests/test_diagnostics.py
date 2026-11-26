@@ -43,7 +43,8 @@ async def test_health_hides_database_error_details(broken_db_client, caplog):
     for leaked in ("db.internal.corp", "10.1.2.3", "lifeconnect_admin", "password", "ConnectionError"):
         assert leaked not in response.text
     # ...but an operator can still find out what went wrong, in the server log.
-    assert "database unreachable" in caplog.text
+    assert "database unreachable" in caplog.text and "ConnectionError" in caplog.text
+    assert SECRET_DETAIL not in caplog.text
 
 
 @pytest.mark.asyncio

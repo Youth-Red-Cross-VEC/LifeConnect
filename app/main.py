@@ -6,7 +6,6 @@ FastAPI application factory and main entry point.
 
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
-from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -14,11 +13,11 @@ import logging
 import uuid
 
 from app.config import get_settings
-from app.core.database import init_db, db
+from app.core.database import init_db
 from app.core.scheduler import start_scheduler_if_enabled
 from app.core.logging import setup_logging
 from app.core.exceptions import LifeConnectException
-from app.core.rate_limiter import setup_rate_limiting
+from app.core.rate_limiter import close_rate_storage, setup_rate_limiting
 from app.api.v1 import router as v1_router
 
 logger = logging.getLogger(__name__)
@@ -30,21 +29,13 @@ async def lifeconnect_exception_handler(
     """Return a client-safe error body while keeping diagnostics server-side.
 
     ``exc.details`` can embed submitted values (an email, a phone number) or internal
-    identifiers, so it is only included in a local development/test response. Every
+    identifiers, so its contents stay out of responses and logs. Every
     caller still gets a stable ``error_id`` to quote to support.
     """
     error_id = uuid.uuid4().hex
-    settings = get_settings()
-    show_details = settings.DEBUG and settings.APP_ENV.lower() in {"development", "test"}
-
     logger.warning("Application error error_id=%s type=%s", error_id, type(exc).__name__)
-    if show_details:
-        logger.debug("Application error details error_id=%s details=%r", error_id, exc.details)
-
     content = {"detail": exc.message, "error_id": error_id}
-    if show_details:
-        content["error_details"] = exc.details
-    return JSONResponse(status_code=400, content=content)
+    return JSONResponse(status_code=exc.status_code, content=content)
 
 
 @asynccontextmanager
@@ -73,21 +64,18 @@ async def lifespan(app: FastAPI):
     logger.info("Database connection pool initialized")
 
     # Jobs run in a dedicated process (python -m app.scheduler_worker), not in web workers
-    scheduler = start_scheduler_if_enabled(settings, database)
-
-    yield
-
-    # Shutdown
-    logger.info("Shutting down LifeConnect API...")
-
-    if scheduler:
-        scheduler.shutdown()
-        logger.info("Scheduler stopped")
-
-    # Close database connections
-    if db:
-        await db.close()
-    logger.info("Database connections closed")
+    try:
+        scheduler = start_scheduler_if_enabled(settings, database)
+        try:
+            yield
+        finally:
+            if scheduler:
+                scheduler.shutdown()
+    finally:
+        try:
+            close_rate_storage(app.state.limiter)
+        finally:
+            await database.close()
 
 
 def create_app() -> FastAPI:
@@ -137,17 +125,8 @@ def create_app() -> FastAPI:
 
     @app.exception_handler(RequestValidationError)
     async def validation_exception_handler(request: Request, exc: RequestValidationError):
-        if request.url.path.rstrip("/") in {
-            "/api/v1/auth/donor/password-reset/request",
-            "/api/v1/auth/donor/password-reset/confirm",
-            "/api/v1/auth/admin/password-reset/request",
-            "/api/v1/auth/admin/password-reset/confirm",
-            "/api/v1/privacy/erasure-requests",
-        }:
-            # Pydantic includes submitted values in its default errors, including passwords and OTPs.
-            details = [{key: error[key] for key in ("loc", "msg", "type")} for error in exc.errors()]
-            return JSONResponse(status_code=422, content={"detail": details})
-        return await request_validation_exception_handler(request, exc)
+        details = [{key: error[key] for key in ("loc", "msg", "type")} for error in exc.errors()]
+        return JSONResponse(status_code=422, content={"detail": details})
 
     @app.exception_handler(Exception)
     async def general_exception_handler(request: Request, exc: Exception):

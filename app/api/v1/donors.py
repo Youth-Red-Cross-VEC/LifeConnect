@@ -5,7 +5,9 @@ Public endpoints for donor registration and information.
 Protected endpoints require authentication (handled by partner's auth module).
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from app.config import get_settings
+from app.core.rate_limiter import enforce_account_limit
+from fastapi import Request, APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
@@ -50,6 +52,7 @@ logger = logging.getLogger(__name__)
 
 @router.post("/register", response_model=DonorResponse, status_code=status.HTTP_201_CREATED)
 async def register_donor(
+    request: Request,
     data: DonorCreate,
     session: AsyncSession = Depends(get_db, scope="function"),
 ):
@@ -59,6 +62,7 @@ async def register_donor(
     This is a public endpoint - no authentication required.
     Password will be hashed before storage.
     """
+    await enforce_account_limit(request, data.email, get_settings().ACCOUNT_AUTH_RATE_LIMIT)
     repo = DonorRepository(session)
 
     # One identity per address, whatever the letter case, and never an address an admin already uses.

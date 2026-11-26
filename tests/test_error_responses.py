@@ -1,8 +1,7 @@
 """Exception details are diagnostics, not API output.
 
 The handler must keep ``error_details`` (submitted values, internal ids) server-side and hand
-clients only the message plus an ``error_id`` they can quote. A local development response may
-include the details to make debugging possible.
+clients only the message plus an ``error_id`` they can quote in any environment.
 """
 
 from types import SimpleNamespace
@@ -58,7 +57,7 @@ async def test_non_debug_responses_never_return_exception_details(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_development_debug_response_keeps_details(monkeypatch):
+async def test_development_debug_also_protects_details(monkeypatch):
     monkeypatch.setattr("app.main.get_settings", lambda: _settings(True, "development"))
     body = await _get()
-    assert body["error_details"] == {"email": SENSITIVE}
+    assert "error_details" not in body and SENSITIVE not in str(body)

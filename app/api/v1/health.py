@@ -33,10 +33,10 @@ async def health_check(
         # Test database connection
         await session.execute(text("SELECT 1"))
         db_status = "connected"
-    except Exception:
+    except Exception as exc:
         # This endpoint is public: driver errors carry hostnames, usernames and addresses. The
-        # details go to the server log, the client only learns that the database is down.
-        logger.error("Health check: database unreachable", exc_info=True)
+        # operation and error type are sufficient to identify this failure in the server log.
+        logger.error("Health check: database unreachable type=%s", type(exc).__name__)
         await session.rollback()
         return JSONResponse(status_code=503, content={"status": "unhealthy"})
 

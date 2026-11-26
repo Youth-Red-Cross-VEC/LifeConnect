@@ -32,6 +32,19 @@ async def login(client, role, email):
     return {"Authorization": f"Bearer {response.json()['access_token']}"}, refresh_cookie(response)
 
 
+async def test_erasure_rejects_unauthorized_and_invalid_submissions(client, test_session):
+    await insert_donor(test_session)
+    await insert_admin(test_session, 1, role=AdminRole.ADMIN)
+    donor, _ = await login(client, "donor", "donor1@example.com")
+    admin, _ = await login(client, "admin", "admin1@example.com")
+    correct = {"current_password": "Secret123"}
+    assert (await client.post(URL, json=correct)).status_code == 401
+    assert (await client.post(URL, headers=admin, json=correct)).status_code == 403
+    assert (await client.post(URL, headers=donor, json={"current_password": "Wrong123"})).status_code == 403
+    invalid = await client.post(URL, headers=donor, json={"current_password": {"sensitive": "hide-me"}})
+    assert invalid.status_code == 422 and "hide-me" not in invalid.text
+
+
 async def test_erasure_requires_password_ownership_and_super_admin(client, test_session):
     await insert_donor(test_session)
     await insert_donor(test_session, 2)
@@ -42,11 +55,6 @@ async def test_erasure_requires_password_ownership_and_super_admin(client, test_
     admin, _ = await login(client, "admin", "admin1@example.com")
     reviewer, _ = await login(client, "admin", "admin2@example.com")
     correct = {"current_password": "Secret123"}
-    assert (await client.post(URL, json=correct)).status_code == 401
-    assert (await client.post(URL, headers=admin, json=correct)).status_code == 403
-    assert (await client.post(URL, headers=donor, json={"current_password": "Wrong123"})).status_code == 403
-    invalid = await client.post(URL, headers=donor, json={"current_password": {"sensitive": "hide-me"}})
-    assert invalid.status_code == 422 and "hide-me" not in invalid.text
     submitted = await client.post(URL, headers=donor, json={**correct, "donor_id": "DON-2"})
     assert submitted.status_code == 202
     receipt = submitted.json()

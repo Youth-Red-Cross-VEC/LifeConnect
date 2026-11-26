@@ -207,7 +207,7 @@ def test_production_overlay_exposes_only_the_tls_edge_and_keeps_state_private():
     assert services["postgres"]["networks"] == services["redis"]["networks"] == ["data"]
     assert overlay["networks"]["data"]["internal"] is True
     assert _env(services["api"])["APP_ENV"] == "production"
-    assert _env(services["api"])["RATE_LIMIT_STORAGE_URI"] == "redis://redis:6379/0"
+    assert _env(services["api"])["RATE_LIMIT_STORAGE_URI"] == "redis://:${REDIS_PASSWORD:?set a random URL-safe Redis password}@redis:6379/0"
     assert services["frontend"]["volumes"][0]["read_only"] is True
     assert services["frontend"]["build"]["args"]["VITE_RECAPTCHA_SITE_KEY"].startswith(
         "${VITE_RECAPTCHA_SITE_KEY:?"

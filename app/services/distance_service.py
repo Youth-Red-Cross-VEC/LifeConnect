@@ -1,5 +1,4 @@
 import httpx
-import re
 from typing import List, Optional
 import logging
 
@@ -50,28 +49,24 @@ class DistanceService:
 
                 data = response.json()
 
-                if data.get("status") != "OK":
-                    logger.warning(f"Google Maps API status: {data.get('status')}")
+                if not isinstance(data, dict) or data.get("status") != "OK":
                     return None
-
-                rows = data.get("rows", [])
-                if not rows or not rows[0].get("elements"):
+                rows = data.get("rows")
+                if not isinstance(rows, list) or not rows or not isinstance(rows[0], dict):
                     return None
-
-                element = rows[0]["elements"][0]
-                if element.get("status") != "OK":
+                elements = rows[0].get("elements")
+                if not isinstance(elements, list) or not elements or not isinstance(elements[0], dict):
                     return None
-
-                distance_text = element.get("distance", {}).get("text", "")
-                # Extract numeric value from "5.3 km" format
-                match = re.findall(r"[\d.]+", distance_text)
-                if match:
-                    return float(match[0])
-
+                element = elements[0]
+                distance = element.get("distance")
+                if element.get("status") == "OK" and isinstance(distance, dict):
+                    meters = distance.get("value")
+                    if type(meters) is int and 0 <= meters <= 2**63 - 1:
+                        return meters / 1000
                 return None
 
-        except Exception as e:
-            logger.error(f"Error calculating distance: {e}")
+        except (httpx.HTTPError, ValueError) as exc:
+            logger.warning("Distance lookup unavailable or malformed: %s", type(exc).__name__)
             return None
 
     async def sort_donors_by_distance(

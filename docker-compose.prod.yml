@@ -6,12 +6,14 @@ services:
 
   redis:
     image: redis:7.4-alpine
-    command: ["redis-server", "--appendonly", "yes"]
+    environment:
+      REDISCLI_AUTH: ${REDIS_PASSWORD:?set a random URL-safe Redis password}
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?set a random URL-safe Redis password}"]
     volumes:
       - redis_data:/data
     networks: [data]
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-e", "ping"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -24,7 +26,7 @@ services:
       ENABLE_DOCS: "false"
       RECAPTCHA_ENFORCED: "true"
       RECAPTCHA_SECRET_KEY: ${RECAPTCHA_SECRET_KEY:?set the production reCAPTCHA secret}
-      RATE_LIMIT_STORAGE_URI: redis://redis:6379/0
+      RATE_LIMIT_STORAGE_URI: redis://:${REDIS_PASSWORD:?set a random URL-safe Redis password}@redis:6379/0
       ALLOWED_ORIGINS: ${PRODUCTION_ALLOWED_ORIGINS:-[]}
     networks: [default, data]
     volumes: !override

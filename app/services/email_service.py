@@ -11,7 +11,8 @@ from html import escape as _esc
 
 from app.config import Settings
 
-from app.core.logging import mask_email
+from email_validator import validate_email
+from app.services.certificate_service import read_certificate_bytes
 
 logger = logging.getLogger(__name__)
 
@@ -53,39 +54,37 @@ class EmailService:
             True if sent successfully
         """
         try:
-            message = MIMEMultipart("alternative")
-            message["From"] = self.settings.MAIL_FROM
-            message["To"] = to
-            message["Subject"] = subject
-
-            # Add text part
-            if text_body:
-                message.attach(MIMEText(text_body, "plain"))
-
-            # Add HTML part
-            message.attach(MIMEText(html_body, "html"))
-
-            # Add attachment if provided
-            if attachment_path and attachment_path.exists():
-                await self._attach_file(message, attachment_path)
-
-            # Send email. Bcc recipients go in the SMTP envelope only, never in a header.
-            await aiosmtplib.send(
-                message,
-                recipients=[to, *(bcc or [])],
-                hostname=self.settings.MAIL_SERVER,
-                port=self.settings.MAIL_PORT,
-                username=self.settings.MAIL_USERNAME,
-                password=self.settings.MAIL_PASSWORD,
-                start_tls=self.settings.MAIL_USE_TLS,
-            )
-
-            logger.info(f"Email sent successfully to {mask_email(to)}")
+            recipients = self._envelope(to, bcc)
+            message = await asyncio.to_thread(self._build_message, recipients[0], subject, html_body,
+                                              text_body, attachment_path)
+            async with asyncio.timeout(25):
+                for attempt in range(2):
+                    try:
+                        refused, _ = await aiosmtplib.send(
+                            message, recipients=recipients, hostname=self.settings.MAIL_SERVER,
+                            port=self.settings.MAIL_PORT, username=self.settings.MAIL_USERNAME,
+                            password=self.settings.MAIL_PASSWORD, start_tls=self.settings.MAIL_USE_TLS,
+                            timeout=10,
+                        )
+                        break
+                    except aiosmtplib.SMTPConnectError:
+                        if attempt:
+                            raise
+                        await asyncio.sleep(0.2)
+            if refused:
+                logger.warning("SMTP partially accepted message")
+                return False
+            logger.info("SMTP accepted message")
             return True
-
-        except Exception as e:
-            logger.error(f"Failed to send email to {mask_email(to)}: {type(e).__name__}")
+        except (aiosmtplib.SMTPException, OSError, ValueError) as exc:
+            logger.error("Email delivery failed type=%s", type(exc).__name__)
             return False
+
+    @staticmethod
+    def _envelope(to: str, bcc: Optional[List[str]]) -> list[str]:
+        addresses = [validate_email(value, check_deliverability=False).normalized
+                     for value in [to, *(bcc or [])]]
+        return list(dict.fromkeys(addresses))
 
     def _build_message(
         self,
@@ -96,30 +95,34 @@ class EmailService:
         attachment_path: Optional[Path] = None,
     ) -> MIMEMultipart:
         """Build one MIME message. Shared by single and batched sends."""
-        message = MIMEMultipart("alternative")
+        if "\r" in subject or "\n" in subject:
+            raise ValueError("Invalid email subject")
+        body = MIMEMultipart("alternative")
+        message = MIMEMultipart("mixed") if attachment_path else body
+        if attachment_path:
+            message.attach(body)
         message["From"] = self.settings.MAIL_FROM
         message["To"] = to
         message["Subject"] = subject
         if text_body:
-            message.attach(MIMEText(text_body, "plain"))
-        message.attach(MIMEText(html_body, "html"))
-        if attachment_path and attachment_path.exists():
+            body.attach(MIMEText(text_body, "plain"))
+        body.attach(MIMEText(html_body, "html"))
+        if attachment_path:
             self._attach_file_sync(message, attachment_path)
         return message
 
     def _attach_file_sync(self, message: MIMEMultipart, file_path: Path) -> None:
-        with open(file_path, "rb") as f:
-            part = MIMEBase("application", "octet-stream")
-            part.set_payload(f.read())
-            encoders.encode_base64(part)
-            part.add_header("Content-Disposition", "attachment", filename=file_path.name)
-            message.attach(part)
+        part = MIMEBase("application", "octet-stream")
+        part.set_payload(read_certificate_bytes(file_path))
+        encoders.encode_base64(part)
+        part.add_header("Content-Disposition", "attachment", filename=file_path.name)
+        message.attach(part)
 
     async def send_many(self, messages: List[dict]) -> int:
         """Send several messages over ONE SMTP connection.
 
-        Returns how many were sent. A failure on one message does not abort the rest (the old
-        per-message background task had the same behaviour, but opened a connection each time).
+        Returns the number fully accepted by the relay. Stop on transport loss without replaying
+        submissions whose acceptance is unknown.
         """
         if not messages:
             return 0
@@ -129,55 +132,60 @@ class EmailService:
             hostname=self.settings.MAIL_SERVER,
             port=self.settings.MAIL_PORT,
             start_tls=self.settings.MAIL_USE_TLS,
+            timeout=10,
         )
         try:
             await client.connect()
             if self.settings.MAIL_USERNAME:
                 await client.login(self.settings.MAIL_USERNAME, self.settings.MAIL_PASSWORD)
-        except Exception as e:
+        except asyncio.CancelledError:
+            client.close()
+            raise
+        except (aiosmtplib.SMTPException, OSError) as e:
             logger.error(f"Batch email: SMTP connection failed: {type(e).__name__}")
+            client.close()
             return 0
 
         try:
             for index, item in enumerate(messages):
                 try:
-                    message = self._build_message(
-                        to=item["to"],
+                    recipients = self._envelope(item["to"], item.get("bcc"))
+                    message = await asyncio.to_thread(self._build_message,
+                        to=recipients[0],
                         subject=item["subject"],
                         html_body=item["html_body"],
                         text_body=item.get("text_body"),
                         attachment_path=item.get("attachment_path"),
                     )
-                    await client.send_message(
-                        message, recipients=[item["to"], *(item.get("bcc") or [])]
-                    )
-                    sent += 1
+                except (ValueError, OSError) as exc:
+                    logger.error("Batch email preparation failed type=%s", type(exc).__name__)
+                    continue
+                try:
+                    async with asyncio.timeout(25):
+                        refused, _ = await client.send_message(message, recipients=recipients)
+                    if refused:
+                        logger.warning("Batch email partially accepted")
+                    else:
+                        sent += 1
                     if index + 1 < len(messages):
                         await asyncio.sleep(0.2)
-                except Exception as e:
-                    logger.error(
-                        f"Batch email: failed for {mask_email(item.get('to', ''))}: "
-                        f"{type(e).__name__}"
-                    )
+                except (aiosmtplib.SMTPServerDisconnected, TimeoutError, OSError) as exc:
+                    logger.error("Batch SMTP transport interrupted type=%s", type(exc).__name__)
+                    break
+                except (aiosmtplib.SMTPException, ValueError) as exc:
+                    logger.error("Batch email delivery failed type=%s", type(exc).__name__)
         finally:
             try:
                 await client.quit()
-            except Exception:
-                pass
+            except (aiosmtplib.SMTPException, OSError):
+                client.close()
 
         logger.info(f"Batch email: sent {sent}/{len(messages)}")
         return sent
 
     async def _attach_file(self, message: MIMEMultipart, file_path: Path) -> None:
         """Attach a file to the email."""
-        with open(file_path, "rb") as f:
-            part = MIMEBase("application", "octet-stream")
-            part.set_payload(f.read())
-            encoders.encode_base64(part)
-            # Let the email package quote/encode the name; interpolating it into the header by hand would let
-            # a space or a quote in a file name split or terminate the parameter.
-            part.add_header("Content-Disposition", "attachment", filename=file_path.name)
-            message.attach(part)
+        await asyncio.to_thread(self._attach_file_sync, message, file_path)
 
     def build_blood_request_notification(
         self,
@@ -270,8 +278,8 @@ class EmailService:
 
     async def send_otp_email(self, email: str, otp: str, name: str, purpose: str = "password_reset") -> bool:
         """Send an OTP email with copy specific to its security purpose."""
-        invite = purpose == "admin_invite"
-        title = "Admin invitation code" if invite else "Password reset code"
+        title = {"admin_invite": "Admin invitation code",
+                 "donor_enrollment": "Donor registration code"}.get(purpose, "Password reset code")
         subject = f"LifeConnect - {title}"
         name, otp = _esc(str(name)), _esc(str(otp))
 
@@ -283,7 +291,7 @@ class EmailService:
                     <p>Dear {name},</p>
                     <p>Your {title.lower()} is:</p>
                     <h1 style="color: #8B0000; font-size: 36px; letter-spacing: 5px; text-align: center; padding: 20px; background: #f8f9fa; border-radius: 8px;">{otp}</h1>
-                    <p>This OTP is valid for 10 minutes.</p>
+                    <p>Use the most recent code you requested before it expires.</p>
                     <p style="color: #888; font-size: 12px; margin-top: 30px;">
                         If you did not request this, please ignore this email.
                     </p>

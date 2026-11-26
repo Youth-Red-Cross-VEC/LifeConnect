@@ -26,14 +26,16 @@ async def main() -> None:
         pool_timeout=settings.DATABASE_POOL_TIMEOUT,
         pool_recycle=settings.DATABASE_POOL_RECYCLE,
     )
-    scheduler = start_scheduler_if_enabled(settings, database)
-    if scheduler is None:
-        logger.error("SCHEDULER_ENABLED is false; the scheduler process has nothing to do")
-        return
     try:
-        await asyncio.Event().wait()
+        scheduler = start_scheduler_if_enabled(settings, database)
+        if scheduler is None:
+            logger.error("Scheduler is disabled")
+            return
+        try:
+            await asyncio.Event().wait()
+        finally:
+            scheduler.shutdown()
     finally:
-        scheduler.shutdown()
         await database.close()
 
 

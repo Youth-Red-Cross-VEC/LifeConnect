@@ -16,7 +16,7 @@ implemented in code today.
 | Admin audit trail | `admin_audit_log` | Admin identifiers and operational metadata. Legacy certificate filenames can contain names. | Kept indefinitely. Approved erasure redacts matching donor identifiers and certificate filenames while preserving event history. | 24 months |
 | One-time codes | `otp_codes` | Hashed codes + email | **Enforced:** expire after `OTP_TTL_SECONDS` (default 10 min) and are purged daily | n/a |
 | OTP failure windows | `otp_failure_windows` | Email + failed attempt count | **Enforced:** one-hour failure budget; expired windows purged daily | n/a |
-| Refresh tokens | `refresh_tokens` | User id only | **Enforced:** expired or revoked rows purged daily (`purge_expired_auth_records`) | n/a |
+| Refresh tokens | `refresh_tokens` | User id only | **Enforced:** expired rows purged daily; revoked rows retained until expiry for replay detection (`purge_expired_auth_records`) | n/a |
 | Generated certificates | files under `app/static` | Yes (donor name) | **Enforced:** identified files are blocked immediately after approval and queued for the existing daily cleanup. Other files expire after `CERT_RETENTION_DAYS` (default 30 days). | n/a |
 | Erasure receipts | `erasure_requests` | Pending and most recent declined receipt link to the donor. Completed receipts retain only the reference, timestamps and outcome. | Retained for case handling. | Data owner to approve |
 | Certificate cleanup queue | `erasure_files` | Identified filenames may include a donor name | Removed after successful deletion or when the file is already absent | Existing scheduler retries failures |
@@ -52,6 +52,10 @@ these identifiers at review and deleting the register entries after the last rel
 into an isolated environment, replay and verify the approved erasures and revoke restored sessions before
 serving traffic. Record the verification date, responsible operator and outcome. Do not restore an erased
 account to reverse an application rollback.
+
+## Reliability verification
+
+Cleanup preserves unexpired revoked refresh records so rotation replay detection can revoke successor sessions. OTP and failure-window removal uses the same inclusive expiry boundary as validation. Certificate cleanup retains unresolved removal entries and uses the existing configured cutoff for recognized private files. Repeated cleanup is safe when a file is already absent. Database job failure rolls back the transaction. PostgreSQL advisory locks serialize duplicate scheduled jobs.
 
 ## Decisions needed from the data owner
 

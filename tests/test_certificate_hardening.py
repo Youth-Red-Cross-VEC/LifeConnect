@@ -112,7 +112,8 @@ def _disposition(filename: str) -> str:
 def _file(filename: str) -> Path:
     path = Path(__file__).parent / "_attach_tmp" / filename
     path.parent.mkdir(exist_ok=True)
-    path.write_bytes(b"x")
+    from PIL import Image
+    Image.new("RGB", (1, 1)).save(path, format="PNG")
     return path
 
 

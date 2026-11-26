@@ -5,19 +5,25 @@ Endpoints for generating and managing blood donation certificates.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
-from fastapi.responses import FileResponse
+import asyncio
+
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.database import get_db
 from app.models.blood_request import ResponseDetails
+from app.services.certificate_delivery import certificate_owner, deliver_certificate
+from app.models.audit import AdminAuditLog
 from app.models.privacy import ErasureFile
 from app.repositories.blood_request import BloodRequestRepository
 from typing import Optional
 from pathlib import Path
 
-from app.services.certificate_service import get_certificate_service, CertificateService
+from app.services.certificate_service import (
+    CertificateService, get_certificate_service, read_certificate_bytes, requires_generation_record,
+)
 from app.services.email_service import get_email_service, EmailService
 from app.schemas.common import SuccessResponse
 from app.services.audit_service import record_admin_action
@@ -25,27 +31,6 @@ from app.services.erasure_service import lock_donor
 from app.api.auth.deps import get_current_admin
 
 router = APIRouter(prefix="/certificates", tags=["Certificates"])
-
-
-async def _email_then_delete(email_service: EmailService, cert_service: CertificateService,
-                             donor_id: str, donor_name: str, donor_email: str, path: str) -> bool:
-    from app.core import database
-
-    async def send(name: str, email: str) -> bool:
-        sent = await email_service.send_certificate(
-            donor_name=name, donor_email=email, certificate_path=path
-        )
-        if sent:
-            await cert_service.delete_certificate(Path(path).name)
-        return sent
-
-    if database.db is None:
-        return await send(donor_name, donor_email)
-    async with database.db.session() as session:
-        donor = await lock_donor(session, donor_id)
-        if donor is None or await session.get(ErasureFile, Path(path).name):
-            return False
-        return await send(donor.name, donor.email)
 
 
 # =======================
@@ -145,7 +130,6 @@ async def generate_certificate(
     )
 
     filename = Path(file_path).name
-    email_sent = False
     record_admin_action(
         session, current_admin.id, "certificate.generate", "certificate", filename,
         detail=f"donor_id={data.donor_id}",
@@ -153,15 +137,15 @@ async def generate_certificate(
 
     if data.send_email:
         background_tasks.add_task(
-            _email_then_delete, email_service, cert_service, donor.id, donor.name, donor.email, file_path
+            deliver_certificate, email_service, cert_service, async_sessionmaker(session.bind),
+            donor.id, current_admin.id, filename
         )
-        email_sent = True
 
     return CertificateResponse(
-        message=f"Certificate generated for {donor.name}",
+        message=f"Certificate generated for {donor.name}" + (". Email queued." if data.send_email else ""),
         file_path=filename,
         filename=filename,
-        email_sent=email_sent,
+        email_sent=False,
     )
 
 
@@ -176,19 +160,20 @@ async def download_certificate(
     session: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Download a generated certificate by filename (admin only)."""
-    file_path = None if await session.get(ErasureFile, filename) else await cert_service.get_certificate(filename)
-    
-    if not file_path:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Certificate '{filename}' not found",
-        )
-    
-    return FileResponse(
-        path=str(file_path),
-        media_type="image/png",
-        filename=filename,
-    )
+    if await session.get(ErasureFile, filename):
+        raise HTTPException(404, "Certificate unavailable")
+    if requires_generation_record(filename) and not await certificate_owner(session, filename):
+        raise HTTPException(404, "Certificate unavailable")
+    path = await cert_service.get_certificate(filename)
+    if path is None:
+        raise HTTPException(404, "Certificate unavailable")
+    try:
+        contents = await asyncio.to_thread(read_certificate_bytes, path)
+    except (ValueError, OSError, SyntaxError):
+        raise HTTPException(404, "Certificate unavailable") from None
+    return Response(contents, media_type="image/png" if path.suffix == ".png" else "text/plain",
+                    headers={"Content-Disposition": f'attachment; filename="{filename}"',
+                             "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"})
 
 
 @router.get(
@@ -204,12 +189,33 @@ async def list_certificates(
     """List all generated certificates."""
     certificates = await cert_service.list_certificates()
     pending = set(await session.scalars(select(ErasureFile.filename)))
-    certificates = [name for name in certificates if name not in pending]
+    modern = [name for name in certificates if requires_generation_record(name)]
+    recorded: set[str | None] = set()
+    for offset in range(0, len(modern), 500):
+        recorded.update(await session.scalars(select(AdminAuditLog.entity_id).where(
+            AdminAuditLog.action == "certificate.generate", AdminAuditLog.entity_type == "certificate",
+            AdminAuditLog.entity_id.in_(modern[offset:offset + 500]), AdminAuditLog.detail.is_not(None),
+        )))
+    certificates = [name for name in certificates if name not in pending and
+                    (not requires_generation_record(name) or name in recorded)]
     
     return CertificateListResponse(
         certificates=certificates,
         total=len(certificates),
     )
+
+
+async def remove_queued_certificate(sessions: async_sessionmaker[AsyncSession], service: CertificateService, filename: str) -> None:
+    async with sessions.begin() as session:
+        entry = await session.get(ErasureFile, filename, with_for_update=True)
+        if entry is None:
+            return
+        try:
+            await service.delete_certificate(filename)
+        except OSError:
+            return  # The scheduled cleanup retries this committed entry.
+        if not service.entry_remains(filename):
+            await session.delete(entry)
 
 
 @router.delete(
@@ -219,21 +225,24 @@ async def list_certificates(
 )
 async def delete_certificate(
     filename: str,
+    background_tasks: BackgroundTasks,
     cert_service: CertificateService = Depends(get_certificate_service),
     session: AsyncSession = Depends(get_db, scope="function"),
     current_admin = Depends(get_current_admin),
 ):
     """Delete a certificate file."""
-    deleted = await cert_service.delete_certificate(filename)
-    
-    if not deleted:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Certificate '{filename}' not found",
-        )
-    
+    if await cert_service.get_certificate(filename) is None:
+        raise HTTPException(404, "Certificate unavailable")
+    # Use the existing durable file-removal queue. An audit rollback also rolls back removal.
+    if session.get_bind().dialect.name == "postgresql":
+        from sqlalchemy.dialects.postgresql import insert as pg_insert
+    from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+    statement = (pg_insert(ErasureFile) if session.get_bind().dialect.name == "postgresql"
+                 else sqlite_insert(ErasureFile))
+    await session.execute(statement.values(filename=filename).on_conflict_do_nothing())
+    background_tasks.add_task(remove_queued_certificate, async_sessionmaker(session.bind), cert_service, filename)
     record_admin_action(session, current_admin.id, "certificate.delete", "certificate", filename)
-    return SuccessResponse(message=f"Certificate '{filename}' deleted")
+    return SuccessResponse(message="Certificate removed from access and queued for file deletion")
 
 
 @router.post(
@@ -262,6 +271,9 @@ async def send_certificate_email(
             detail="Donor not found",
         )
 
+    if await certificate_owner(session, filename) != f"donor_id={donor.id}":
+        raise HTTPException(404, "Certificate not found for this donor")
+
     file_path = None if await session.get(ErasureFile, filename) else await cert_service.get_certificate(filename)
     
     if not file_path:
@@ -271,7 +283,8 @@ async def send_certificate_email(
         )
     
     background_tasks.add_task(
-        _email_then_delete, email_service, cert_service, donor.id, donor.name, donor.email, str(file_path)
+        deliver_certificate, email_service, cert_service, async_sessionmaker(session.bind),
+        donor.id, current_admin.id, filename
     )
 
     record_admin_action(

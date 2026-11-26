@@ -39,22 +39,25 @@ async def store_otp(session: AsyncSession, email: str, otp: str, purpose: str) -
     """
     email = email.lower()
     now = utcnow()
-    record = (await session.execute(
-        select(OtpCode).where(OtpCode.purpose == purpose, OtpCode.email == email).with_for_update()
-    )).scalar_one_or_none()
-    if record is not None and record.expires_at > now:
-        record.code_hmac = _hash(otp, purpose, email)
+    if session.get_bind().dialect.name == "postgresql":
+        from sqlalchemy.dialects.postgresql import insert
     else:
-        if record is not None:
-            await session.delete(record)
-            await session.flush()
-        session.add(OtpCode(
-            purpose=purpose,
-            email=email,
-            code_hmac=_hash(otp, purpose, email),
-            expires_at=now + timedelta(seconds=get_settings().OTP_TTL_SECONDS),
-            attempts=0,
-        ))
+        from sqlalchemy.dialects.sqlite import insert
+    statement = insert(OtpCode).values(
+        purpose=purpose, email=email, code_hmac=_hash(otp, purpose, email),
+        expires_at=now + timedelta(seconds=get_settings().OTP_TTL_SECONDS), attempts=0,
+    )
+    active = OtpCode.expires_at > now
+    upsert = statement.on_conflict_do_update(
+        index_elements=["purpose", "email"],
+        set_={
+            "code_hmac": statement.excluded.code_hmac,
+            "expires_at": case((active, OtpCode.expires_at), else_=statement.excluded.expires_at),
+            "attempts": case((active, OtpCode.attempts), else_=0),
+            "created_at": case((active, OtpCode.created_at), else_=statement.excluded.created_at),
+        },
+    ).returning(OtpCode)
+    (await session.scalars(upsert, execution_options={"populate_existing": True})).one()
     await session.commit()  # the code is emailed right after; it must be durable first
 
 
@@ -64,7 +67,8 @@ async def verify_otp(
     """Purpose-bound, expiring, attempt-limited, single-use check."""
     email = email.lower()
     record = (await session.execute(
-        select(OtpCode).where(OtpCode.purpose == purpose, OtpCode.email == email).with_for_update()
+        select(OtpCode).where(OtpCode.purpose == purpose, OtpCode.email == email)
+        .with_for_update().execution_options(populate_existing=True)
     )).scalar_one_or_none()
     if record is None:
         return False
