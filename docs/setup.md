@@ -112,6 +112,10 @@ The backend uses `uv` for dependency management.
 
 Each operation has its own budget. Account counters use a keyed digest of the normalized address. IP counters use the ASGI peer after Uvicorn applies its trusted-proxy rules. IPv4-mapped addresses share their IPv4 bucket, and IPv6 clients share a bucket within a /64. Keep Nginx as the only trusted forwarding peer. A quota rejection from the IP or account limiter includes a Retry-After duration in seconds. Keep the same signing secret and Redis configuration across replicas. Each worker uses the same Redis database in the production Compose overlay.
 
+**Production Redis.** Supply a randomly generated URL-safe `REDIS_PASSWORD` in the Compose deployment environment. The API and Redis must receive the same value. Keep the Redis port on the internal data network. Restrict access to the Docker daemon and rendered Compose configuration, which can expose service credentials. Use authenticated TLS (`rediss://`) for connections crossing a network trust boundary. Use a dedicated Redis database for each environment, with the same database and application signing key on every API replica. Staging and production require shared Redis.
+
+Rate-limit counters expire at the end of their configured windows. During a store outage protected API requests return HTTP 503 with a retry interval. Redis reconnects on subsequent requests. Budget up to 32 connections per API worker and allow for the Redis health probe. The volume stores append-only data. Redis's default once-per-second fsync allows recent increments to be lost during a host crash. Coordinate the worker cutover because the new key prefix starts fresh quotas. Updating the signing key also starts fresh identity buckets.
+
 ### Docker deployment
 
 For local Docker use, set the generated `SECRET_KEY` and `POSTGRES_PASSWORD` in `.env`, then run
@@ -200,10 +204,9 @@ The Nginx access log records method, status, response bytes and elapsed time. Th
   emoji is too long. Choosing a password (registration and reset) also needs 8+ characters, an uppercase letter and
   a digit.
 - **Email addresses** are compared case-insensitively and stored in lowercase. A unique index on `lower(email)`
-  (migration `0008`) enforces it. If an existing database already has two donor accounts whose emails differ only by
-  case, `alembic upgrade head` stops with an error that lists them and changes nothing; merge or rename the extra
-  accounts, then run it again. To list them yourself:
-  `SELECT id, email FROM donor_details WHERE lower(email) IN (SELECT lower(email) FROM donor_details GROUP BY lower(email) HAVING count(*) > 1);`
+  enforces this rule for donors (0008) and administrators (0013). Case collisions stop the upgrade for
+  private review. In a restricted database session, group by lower(email) and filter for count(*) > 1
+  in the affected account table. Resolve account ownership before retrying. Keep identifiers out of logs.
   A donor cannot register with an address an admin uses.
 - **Support queries** belong to the signed-in donor who filed them (`query_table.donor_id`, migration `0007`).
   Queries filed anonymously, and every query that existed before that migration, have no owner: admins see them,
@@ -270,3 +273,14 @@ To keep your contributions organized, follow these steps:
    ```
 
 4. **Create a Pull Request** on GitHub.
+
+
+### Certificate storage
+
+Mount the same private certificate volume at `/code/app/static/images/certificates` in the API and scheduler. Keep it outside the web server's document root. The application user (UID 1000 in the image) needs create, link and unlink permissions. On Unix use mode 0700 for the directory. Existing volumes keep their prior permissions. Use a filesystem that supports same-directory hard links, atomic link creation and file sync. Verify these operations on a disposable volume of the intended storage class before rollout.
+
+The backend ships the blank template at `app/static/images/certificate_templates/template1.png`. Keep it in sync with the frontend's blank copy. Generated files remain private. If the template is missing or unreadable the service produces a plain PNG. Without Pillow it produces UTF-8 text with the same donation details.
+
+A new certificate appears in the admin API after its generation record commits. Following a failed commit, an unreferenced file can remain on the private volume until the existing certificate retention job removes it. A pending deletion immediately hides the file after commit. The scheduler retries if physical removal fails. Investigate persistently pending entries before touching the volume, particularly files with unexpected links. Observe both the generated output and the scheduler's cleanup logs during deployment verification.
+
+For paired PostgreSQL and certificate backups, isolated restoration, and cutover checks, use the [disaster recovery runbook](DISASTER_RECOVERY.md).

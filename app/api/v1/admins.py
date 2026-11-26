@@ -37,7 +37,7 @@ from app.services.otp_service import (
     PURPOSE_ADMIN_INVITE, generate_otp, store_otp, verify_otp,
     failed_confirmation_count, record_failed_confirmation, clear_failed_confirmations,
 )
-from app.core.rate_limiter import check_account_limit, limiter
+from app.core.rate_limiter import enforce_account_limit, limiter
 from app.services.refresh_session_service import revoke_all_for_user
 
 router = APIRouter(prefix="/admins", tags=["Admins"])
@@ -112,7 +112,7 @@ async def invite_admin(
     Only existing admins can send invites. The OTP is valid for 10 minutes
     and must be supplied in the subsequent `POST /admins/register` call.
     """
-    check_account_limit(request, data.email, get_settings().ACCOUNT_CODE_SEND_RATE_LIMIT)
+    await enforce_account_limit(request, data.email, get_settings().ACCOUNT_CODE_SEND_RATE_LIMIT)
     from app.services.email_service import get_email_service
     otp = generate_otp()
     await store_otp(session, data.email, otp, PURPOSE_ADMIN_INVITE)
@@ -132,7 +132,7 @@ async def invite_admin(
             detail="Could not send the invite email; please try again later",
         )
     record_admin_action(session, current_admin.id, "admin.invite", "admin_invite")
-    return {"message": f"Invite OTP sent to {data.email}."}
+    return {"message": f"Invite OTP sent to {data.email}. Use the most recent code."}
 
 
 # =======================
@@ -158,7 +158,7 @@ async def register_admin(
     The OTP is sent to the registrant's email and is valid for 10 minutes.
     This prevents self-registration without an existing admin's approval.
     """
-    check_account_limit(request, data.email, get_settings().ACCOUNT_AUTH_RATE_LIMIT)
+    await enforce_account_limit(request, data.email, get_settings().ACCOUNT_AUTH_RATE_LIMIT)
     if await failed_confirmation_count(session, data.email, PURPOSE_ADMIN_INVITE) >= 10:
         raise HTTPException(status_code=429, detail="Too many failed code attempts; try again later")
 

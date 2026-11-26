@@ -22,10 +22,10 @@ def test_mask_email():
 @pytest.mark.asyncio
 async def test_email_logs_mask_recipient(monkeypatch, caplog):
     async def ok(*a, **k):
-        return None
+        return {}, "accepted"
 
     async def boom(*a, **k):
-        raise RuntimeError("rejected jane.doe@example.com")
+        raise OSError("rejected jane.doe@example.com")
 
     svc = EmailService(get_settings())
     caplog.set_level(logging.INFO)
@@ -37,7 +37,7 @@ async def test_email_logs_mask_recipient(monkeypatch, caplog):
 
     assert "jane.doe@example.com" not in caplog.text
     assert "example.com" not in caplog.text
-    assert "delivery failed" in caplog.text
+    assert "Email delivery failed" in caplog.text
 
 
 @pytest.mark.asyncio

@@ -38,6 +38,7 @@ class Database:
 
         self.engine = create_async_engine(
             async_url,
+            connect_args={"timeout": 5, "command_timeout": 30} if async_url.startswith("postgresql+asyncpg://") else {},
             poolclass=AsyncAdaptedQueuePool,
             pool_size=pool_size,
             max_overflow=max_overflow,
@@ -74,14 +75,14 @@ class Database:
             try:
                 yield session
                 await session.commit()
-            except StarletteHTTPException:
-                # HTTP responses are raised intentionally by route logic; roll them back without
-                # reporting them as database faults.
-                await session.rollback()
-                raise
-            except Exception as e:
-                await session.rollback()
-                logger.error(f"Database session error: {type(e).__name__}")
+            except Exception as exc:
+                try:
+                    await session.rollback()
+                except Exception as rollback_error:
+                    logger.error("Database rollback failed: %s", type(rollback_error).__name__)
+                    await session.invalidate()
+                if not isinstance(exc, StarletteHTTPException):
+                    logger.error("Database session failed: %s", type(exc).__name__)
                 raise
 
     async def get_session(self) -> AsyncGenerator[AsyncSession, None]:

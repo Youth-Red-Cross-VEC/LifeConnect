@@ -29,15 +29,14 @@ def _lowercase_emails(bind) -> None:
 
     admin_duplicates = bind.execute(
         sa.text(
-            "SELECT lower(email) AS address FROM admin_details "
-            "GROUP BY lower(email) HAVING count(*) > 1"
+            "SELECT 1 FROM admin_details "
+            "GROUP BY lower(email) HAVING count(*) > 1 LIMIT 1"
         )
     ).fetchall()
     if admin_duplicates:
-        addresses = ", ".join(row[0] for row in admin_duplicates)
         raise RuntimeError(
-            "Cannot lower-case admin emails: these addresses belong to more than one admin "
-            f"({addresses}). Merge or delete the duplicates, then run the migration again."
+            "Cannot lower-case admin emails: case variants belong to more than one admin. "
+            "Review collisions privately before retrying."
         )
 
     bind.execute(sa.text(

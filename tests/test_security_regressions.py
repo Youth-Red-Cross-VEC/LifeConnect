@@ -91,6 +91,8 @@ def sent_html(monkeypatch):
             if part.get_content_type() == "text/html":
                 bodies.append(part.get_payload(decode=True).decode("utf-8"))
 
+        return {}, "accepted"
+
     monkeypatch.setattr(email_module.aiosmtplib, "send", capture)
     return bodies
 

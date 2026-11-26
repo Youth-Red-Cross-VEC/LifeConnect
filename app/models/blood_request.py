@@ -1,5 +1,5 @@
 from app.core.request_status import BloodRequestStatus
-from sqlalchemy import CheckConstraint, String, Text, Integer, DateTime, Date, ForeignKey
+from sqlalchemy import Index, CheckConstraint, String, Text, Integer, DateTime, Date, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base, TimestampMixin
 from datetime import datetime, date
@@ -54,6 +54,7 @@ class BloodRequestDetails(Base, TimestampMixin):
     """
 
     __tablename__ = "blood_request_details"
+    __table_args__ = (Index("uq_blood_request_response", "response_id", unique=True),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     patient_name: Mapped[str] = mapped_column(String(100), nullable=False)

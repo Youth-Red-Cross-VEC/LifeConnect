@@ -35,7 +35,11 @@ MAX_CERTIFICATE_BYTES = 8 * 1024 * 1024
 
 def _new_filename(extension: str) -> str:
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    return f"{uuid.uuid4().hex}_{timestamp}_certificate.{extension}"
+    return f"lc-{uuid.uuid4().hex}_{timestamp}_certificate.{extension}"
+
+
+def requires_generation_record(filename: str) -> bool:
+    return re.match(r"lc-[0-9a-f]{32}_", filename) is not None
 
 
 def _private_regular_file(info: os.stat_result) -> bool:
@@ -144,22 +148,14 @@ class CertificateService:
         Returns:
             Path to the generated certificate file
         """
+        if not re.fullmatch(r"[A-Za-z0-9_-]+\.png", template_name):
+            raise ValueError("Invalid certificate template name")
         if not PILLOW_AVAILABLE:
-            logger.warning("Pillow not installed, using placeholder certificate")
-            return await self._generate_placeholder(donor_name)
-        
-        # Run PIL operations in thread pool (PIL is not async-safe)
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(
-            None,
-            self._generate_certificate_sync,
-            donor_name,
-            donation_date,
-            blood_group,
-            location,
-            template_name,
+            return await asyncio.to_thread(self._generate_placeholder, donor_name, donation_date, blood_group, location)
+        return await asyncio.to_thread(
+            self._generate_certificate_sync, donor_name, donation_date, blood_group, location, template_name
         )
-    
+
     def _generate_certificate_sync(
         self,
         donor_name: str,
@@ -172,37 +168,24 @@ class CertificateService:
         self._ensure_output_dir()
         template_path = self.template_dir / template_name
         
-        # Check if template exists
-        if not template_path.exists():
-            logger.warning(f"Template not found: {template_path}")
-            # Create a simple blank certificate if template not found
-            return self._create_simple_certificate(
-                donor_name, donation_date, blood_group, location
-            )
-        
-        # Load template
-        template = Image.open(template_path)
-        draw = ImageDraw.Draw(template)
-        
-        font = self._load_font(25)
-        
-        # Text positions (matching Flask coordinates)
-        text_details = [
-            (donor_name, (328, 187)),
-            (donation_date, (215, 417)),
-            (blood_group, (675, 188)),
-            (location, (267, 455)),
-        ]
-        
-        # Draw text on template
-        for text, position in text_details:
-            draw.text(position, str(text), font=font, fill="black")
-        
-        # Generate unique filename
         try:
+            with Image.open(template_path, formats=["PNG"]) as source:
+                if source.width * source.height > 16_000_000 or source.width < 720 or source.height < 500:
+                    raise ValueError("Unsupported certificate template dimensions")
+                template = source.convert("RGB")
+        except (OSError, SyntaxError, ValueError, Image.DecompressionBombError) as exc:
+            logger.warning("Certificate template unavailable", error=type(exc).__name__)
+            return self._create_simple_certificate(donor_name, donation_date, blood_group, location)
+
+        with template:
+            draw = ImageDraw.Draw(template)
+            font = self._load_font(25)
+            for text, position in [
+                (donor_name, (328, 187)), (donation_date, (215, 417)),
+                (blood_group, (675, 188)), (location, (267, 455)),
+            ]:
+                draw.text(position, str(text), font=font, fill="black")
             return self._publish_certificate("png", lambda stream: template.save(stream, format="PNG"))
-        finally:
-            template.close()
 
     def _publish_certificate(self, extension: str, write: Callable[[IO[bytes]], object]) -> str:
         # A private temporary file is invisible to the certificate listing. A hard link
@@ -212,8 +195,10 @@ class CertificateService:
         try:
             with temporary as stream:
                 write(stream.file)
-                if stream.tell() > MAX_CERTIFICATE_BYTES:
-                    raise ValueError("Generated certificate exceeds the size limit")
+                if not 0 < stream.tell() <= MAX_CERTIFICATE_BYTES:
+                    raise ValueError("Invalid generated certificate size")
+                stream.flush()
+                os.fsync(stream.fileno())
             target = self.output_dir / _new_filename(extension)
             os.link(temp_path, target)
             return str(target)
@@ -261,21 +246,12 @@ class CertificateService:
         with image:
             return self._publish_certificate("png", lambda stream: image.save(stream, format="PNG"))
 
-    async def _generate_placeholder(self, donor_name: str) -> str:
-        """Generate a placeholder text file when Pillow is not available."""
+    def _generate_placeholder(self, donor_name: str, donation_date: str, blood_group: str, location: str) -> str:
         self._ensure_output_dir()
-
-        
-        content = f"""
-        BLOOD DONATION CERTIFICATE
-        
-        This certifies that {donor_name} has donated blood.
-        
-        Note: Image generation requires Pillow package.
-        Install with: pip install pillow
-        """
-        
-        # Explicit encoding: the platform default (cp1252 on Windows) cannot represent every donor name.
+        content = (f"BLOOD DONATION CERTIFICATE\n\n{donor_name}\nDonation date: {donation_date}\n"
+                   f"Blood group: {blood_group}\nLocation: {location}\n")
+        if any(ord(c) < 32 and c not in "\r\n\t" for c in content):
+            raise ValueError("Invalid certificate text")
         return self._publish_certificate("txt", lambda stream: stream.write(content.encode("utf-8")))
 
     def _resolve_safe(self, filename: str) -> Optional[Path]:
@@ -338,10 +314,13 @@ class CertificateService:
     async def delete_certificate(self, filename: str) -> bool:
         """Delete a certificate file."""
         file_path = self._resolve_safe(filename)
-        if file_path and file_path.is_file():
+        if file_path is None:
+            return False
+        try:
             file_path.unlink()
-            return True
-        return False
+        except FileNotFoundError:
+            return False
+        return True
 
 
 # Global service instance

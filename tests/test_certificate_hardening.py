@@ -41,7 +41,7 @@ def test_a_trailing_newline_is_not_a_valid_filename(service):
 
 
 def test_non_ascii_digits_are_not_valid_in_the_timestamp(service):
-    assert service._resolve_safe("Asha_٢٠٢٦١٠٠٥_120000_certificate.png") is None
+    assert service._resolve_safe("Asha_Ù¢Ù Ù¢Ù¦Ù¡Ù Ù Ù¥_120000_certificate.png") is None
 
 
 @pytest.mark.parametrize("name", [
@@ -94,7 +94,7 @@ async def test_placeholder_certificates_are_unique_too(service, monkeypatch):
 @pytest.mark.asyncio
 async def test_placeholder_is_written_as_utf8_whatever_the_platform_default(service, monkeypatch):
     monkeypatch.setattr(cs, "PILLOW_AVAILABLE", False)
-    name = "中文 नाम Zoë"  # not representable in cp1252
+    name = "ä¸­æ–‡ à¤¨à¤¾à¤® ZoÃ«"  # not representable in cp1252
 
     path = await service.generate_certificate(name, "2026-10-05", "O+", "Chennai")
 

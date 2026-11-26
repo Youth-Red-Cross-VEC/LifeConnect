@@ -6,7 +6,6 @@ FastAPI application factory and main entry point.
 
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
-from app.core.api_limits import ApiRequestLimits
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -14,11 +13,12 @@ import logging
 import uuid
 
 from app.config import get_settings
-from app.core.database import init_db, db
+from app.core.api_limits import ApiRequestLimits
+from app.core.database import init_db
 from app.core.scheduler import start_scheduler_if_enabled
 from app.core.logging import setup_logging
 from app.core.exceptions import LifeConnectException
-from app.core.rate_limiter import setup_rate_limiting
+from app.core.rate_limiter import close_rate_storage, setup_rate_limiting
 from app.api.v1 import router as v1_router
 
 logger = logging.getLogger(__name__)
@@ -36,7 +36,7 @@ async def lifeconnect_exception_handler(
     error_id = uuid.uuid4().hex
     logger.warning("Application error error_id=%s type=%s", error_id, type(exc).__name__)
     content = {"detail": exc.message, "error_id": error_id}
-    return JSONResponse(status_code=400, content=content)
+    return JSONResponse(status_code=exc.status_code, content=content)
 
 
 @asynccontextmanager
@@ -65,21 +65,18 @@ async def lifespan(app: FastAPI):
     logger.info("Database connection pool initialized")
 
     # Jobs run in a dedicated process (python -m app.scheduler_worker), not in web workers
-    scheduler = start_scheduler_if_enabled(settings, database)
-
-    yield
-
-    # Shutdown
-    logger.info("Shutting down LifeConnect API...")
-
-    if scheduler:
-        scheduler.shutdown()
-        logger.info("Scheduler stopped")
-
-    # Close database connections
-    if db:
-        await db.close()
-    logger.info("Database connections closed")
+    try:
+        scheduler = start_scheduler_if_enabled(settings, database)
+        try:
+            yield
+        finally:
+            if scheduler:
+                scheduler.shutdown()
+    finally:
+        try:
+            close_rate_storage(app.state.limiter)
+        finally:
+            await database.close()
 
 
 def create_app() -> FastAPI:

@@ -112,6 +112,7 @@ class _SmtpSpy:
 
     async def send_message(self, message, **kwargs):
         self.sent.append((message, kwargs))
+        return {}, "accepted"
 
     async def quit(self):
         return None

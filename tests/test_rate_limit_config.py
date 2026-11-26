@@ -37,7 +37,7 @@ def test_app_limiter_has_default_limit_from_settings():
     assert configured == [f"{get_settings().RATE_LIMIT_PER_MINUTE} per 1 minute"]
 
 
-@pytest.mark.parametrize("bad_uri", ["memory://", "memory://custom", ""])
+@pytest.mark.parametrize("bad_uri", ["memory://", "memory://custom", "", "unknown://localhost"])
 def test_production_refuses_per_process_rate_limit_storage(bad_uri):
     with pytest.raises(ValidationError, match="RATE_LIMIT_STORAGE_URI"):
         Settings(_env_file=None, **{**PRODUCTION, "RATE_LIMIT_STORAGE_URI": bad_uri})
@@ -65,3 +65,14 @@ async def test_default_limit_applies_to_undecorated_routes():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
         codes = [(await c.get("/ping")).status_code for _ in range(3)]
     assert codes == [200, 200, 429]
+
+
+@pytest.mark.parametrize("policy", ["bad policy", "0/minute", ""])
+def test_invalid_account_window_fails_startup(policy):
+    with pytest.raises(ValidationError):
+        Settings(ACCOUNT_AUTH_RATE_LIMIT=policy)
+
+
+def test_staging_requires_shared_redis():
+    with pytest.raises(ValidationError, match="RATE_LIMIT_STORAGE_URI"):
+        Settings(APP_ENV="staging", RATE_LIMIT_STORAGE_URI="memory://")

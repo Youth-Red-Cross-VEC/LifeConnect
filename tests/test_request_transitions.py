@@ -152,3 +152,26 @@ async def test_a_plain_second_approve_returns_conflict(admin_client: AsyncClient
     again = await admin_client.post("/api/v1/blood-requests/REQ-1/approve")
     assert again.status_code == 409
     assert "changed" in again.json()["detail"].lower()
+
+@pytest.mark.parametrize("accepted,expected", [(True, "Sent"), (False, "Failed")])
+async def test_close_records_relay_outcome(
+    admin_client, test_session, monkeypatch, tmp_path, accepted, expected
+):
+    from importlib import import_module
+    from unittest.mock import AsyncMock
+    from app.models.blood_request import ResponseDetails
+    from app.services.certificate_service import CertificateService
+
+    routes = import_module("app.api.v1.blood_requests")
+    service = CertificateService(template_dir=str(tmp_path / "templates"), output_dir=str(tmp_path / "out"))
+    monkeypatch.setattr(routes, "get_certificate_service", lambda: service)
+    send = AsyncMock(return_value=accepted)
+    monkeypatch.setattr(EmailService, "send_certificate", send)
+    await insert_donor(test_session)
+    await insert_request(test_session)
+    response = await admin_client.post("/api/v1/blood-requests/REQ-1/close",
+                                       json={**_close_body(), "send_certificates": True})
+    assert response.status_code == 200
+    send.assert_awaited_once()
+    assert await test_session.scalar(select(ResponseDetails.certificate_status)) == expected
+    assert bool(await service.list_certificates()) is (not accepted)

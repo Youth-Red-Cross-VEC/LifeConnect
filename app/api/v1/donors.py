@@ -14,7 +14,7 @@ from typing import Optional
 import logging
 
 from app.config import get_settings
-from app.core.rate_limiter import check_account_limit, limiter
+from app.core.rate_limiter import enforce_account_limit, limiter
 from app.services.email_service import get_email_service
 from app.services.otp_service import PURPOSE_DONOR_ENROLLMENT, generate_otp, store_otp, verify_otp
 from app.core.database import get_db
@@ -59,7 +59,7 @@ async def request_enrollment_code(
     request: Request, data: EnrollmentCodeRequest,
     session: AsyncSession = Depends(get_db, scope="function"),
 ) -> MessageResponse:
-    check_account_limit(request, data.email, get_settings().ACCOUNT_CODE_SEND_RATE_LIMIT)
+    await enforce_account_limit(request, data.email, get_settings().ACCOUNT_CODE_SEND_RATE_LIMIT)
     email = normalize_email(data.email)
     code = generate_otp()
     await store_otp(session, email, code, PURPOSE_DONOR_ENROLLMENT)
@@ -81,7 +81,7 @@ async def register_donor(
     This is a public endpoint - no authentication required.
     Password will be hashed before storage.
     """
-    check_account_limit(request, data.email, get_settings().ACCOUNT_AUTH_RATE_LIMIT)
+    await enforce_account_limit(request, data.email, get_settings().ACCOUNT_AUTH_RATE_LIMIT)
     repo = DonorRepository(session)
 
     # One identity per address, whatever the letter case, and never an address an admin already uses.
@@ -247,7 +247,7 @@ async def update_donor(
     """
     Update donor profile.
 
-    Donors can only update their own profile — verifies caller is the same donor.
+    Donors can only update their own profile â€” verifies caller is the same donor.
     """
     from fastapi import HTTPException, status as http_status
     if current_donor.id != donor_id:

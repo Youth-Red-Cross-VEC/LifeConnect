@@ -1,7 +1,7 @@
 from app.utils.emails import normalize_email
 from app.utils.search import LIKE_ESCAPE, escape_like
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, or_, func, update, delete
+from sqlalchemy import case, select, and_, or_, func, update, delete
 from sqlalchemy.orm import selectinload
 from app.models.donor import (
     DonorDetail,
@@ -174,7 +174,10 @@ class DonorRepository:
             update(DonorDetail)
             .where(DonorDetail.id == donor_id)
             .values(
-                last_donated_date=donation_date,
+                last_donated_date=case(
+                    (DonorDetail.last_donated_date > donation_date, DonorDetail.last_donated_date),
+                    else_=donation_date,
+                ),
                 number_of_times_donated=DonorDetail.number_of_times_donated + 1,
                 is_available=False,  # Cooldown starts; the account itself stays enabled.
             )
@@ -215,6 +218,7 @@ class DonorRepository:
                 )
             )
             .values(is_available=True)
+            .execution_options(synchronize_session=False)
         )
         result = await self.session.execute(stmt)
         return result.rowcount

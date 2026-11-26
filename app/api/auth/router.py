@@ -13,7 +13,7 @@ from pydantic import BaseModel, EmailStr, Field, field_validator
 
 from app.core.database import get_db
 from app.config import get_settings
-from app.core.rate_limiter import check_account_limit, limiter
+from app.core.rate_limiter import enforce_account_limit, limiter
 from app.core.recaptcha import verify_recaptcha
 from app.models.donor import DonorDetail
 from app.models.admin import AdminDetails
@@ -228,7 +228,7 @@ async def donor_login(
     Raises:
         HTTPException: 401 if credentials are invalid
     """
-    check_account_limit(request, credentials.email, get_settings().ACCOUNT_AUTH_RATE_LIMIT)
+    await enforce_account_limit(request, credentials.email, get_settings().ACCOUNT_AUTH_RATE_LIMIT)
     await enforce_recaptcha(credentials.recaptcha_token, "donor_login")
     try:
         # Get donor by email
@@ -266,7 +266,7 @@ async def donor_login(
         if needs_rehash(donor.password):
             donor.password = await hash_password_async(credentials.password)
 
-        # Update last login — store full datetime
+        # Update last login â€” store full datetime
         donor.last_login_date = utcnow()
         
         logger.info("Donor logged in successfully")
@@ -325,7 +325,7 @@ async def admin_login(
     Raises:
         HTTPException: 401 if credentials are invalid
     """
-    check_account_limit(request, credentials.email, get_settings().ACCOUNT_AUTH_RATE_LIMIT)
+    await enforce_account_limit(request, credentials.email, get_settings().ACCOUNT_AUTH_RATE_LIMIT)
     await enforce_recaptcha(credentials.recaptcha_token, "admin_login")
     try:
         # Get admin by email
@@ -362,7 +362,7 @@ async def admin_login(
         if needs_rehash(admin.password):
             admin.password = await hash_password_async(credentials.password)
 
-        # Update last login — store full datetime
+        # Update last login â€” store full datetime
         admin.last_login_date = utcnow()
         
         logger.info("Admin logged in successfully")
@@ -590,7 +590,7 @@ async def request_donor_password_reset(
     session: AsyncSession = Depends(get_db, scope="function")
 ):
     """Request a donor reset without disclosing whether the account exists."""
-    check_account_limit(request, data.email, get_settings().ACCOUNT_CODE_SEND_RATE_LIMIT)
+    await enforce_account_limit(request, data.email, get_settings().ACCOUNT_CODE_SEND_RATE_LIMIT)
     try:
         # Check if donor exists
         result = await session.execute(
@@ -618,6 +618,7 @@ async def request_donor_password_reset(
         )
         
     except Exception as e:
+        await session.rollback()
         logger.error(f"Error requesting password reset: {type(e).__name__}")
         # Return generic message for security
         return MessageResponse(
@@ -645,7 +646,7 @@ async def confirm_donor_password_reset(
     Raises:
         HTTPException: 400 if OTP is invalid
     """
-    check_account_limit(request, data.email, get_settings().ACCOUNT_AUTH_RATE_LIMIT)
+    await enforce_account_limit(request, data.email, get_settings().ACCOUNT_AUTH_RATE_LIMIT)
     try:
         # Find donor
         result = await session.execute(
@@ -696,7 +697,7 @@ async def request_admin_password_reset(
     session: AsyncSession = Depends(get_db, scope="function")
 ):
     """Request password reset for an admin."""
-    check_account_limit(request, data.email, get_settings().ACCOUNT_CODE_SEND_RATE_LIMIT)
+    await enforce_account_limit(request, data.email, get_settings().ACCOUNT_CODE_SEND_RATE_LIMIT)
     try:
         result = await session.execute(
             select(AdminDetails).where(func.lower(AdminDetails.email) == normalize_email(data.email))
@@ -717,6 +718,7 @@ async def request_admin_password_reset(
         )
         
     except Exception as e:
+        await session.rollback()
         logger.error(f"Error requesting admin password reset: {type(e).__name__}")
         return MessageResponse(
             message="If this email exists, you will receive a reset link"
@@ -731,7 +733,7 @@ async def confirm_admin_password_reset(
     session: AsyncSession = Depends(get_db, scope="function")
 ):
     """Confirm password reset for admin."""
-    check_account_limit(request, data.email, get_settings().ACCOUNT_AUTH_RATE_LIMIT)
+    await enforce_account_limit(request, data.email, get_settings().ACCOUNT_AUTH_RATE_LIMIT)
     try:
         result = await session.execute(
             select(AdminDetails).where(func.lower(AdminDetails.email) == normalize_email(data.email))

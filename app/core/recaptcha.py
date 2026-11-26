@@ -41,29 +41,21 @@ async def verify_recaptcha(token: str, action: str | None = None) -> bool:
             response.raise_for_status()
             result = response.json()
 
-        if not result.get("success", False):
+        if not isinstance(result, dict) or result.get("success") is not True:
             logger.warning("reCAPTCHA verification rejected")
             return False
 
-        score: float = result.get("score", 0.0)
-        returned_action: str = result.get("action", "")
-
-        if action and returned_action != action:
-            logger.warning(
-                "reCAPTCHA action mismatch"
-            )
+        score = result.get("score")
+        if isinstance(score, bool) or not isinstance(score, (int, float)) or not MINIMUM_SCORE <= score <= 1:
+            logger.warning("reCAPTCHA score missing or below threshold")
             return False
-
-        if score < MINIMUM_SCORE:
-            logger.warning(
-                "reCAPTCHA v3 score too low: %.2f (minimum %.2f)",
-                score, MINIMUM_SCORE
-            )
+        if action and result.get("action") != action:
+            logger.warning("reCAPTCHA action mismatch")
             return False
 
         logger.info("reCAPTCHA v3 passed — score: %.2f, action: %s", score, action)
         return True
 
-    except Exception as e:
-        logger.error("Error verifying reCAPTCHA: %s", type(e).__name__)
+    except (httpx.HTTPError, ValueError) as exc:
+        logger.warning("reCAPTCHA verification unavailable or malformed: %s", type(exc).__name__)
         return False

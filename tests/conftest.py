@@ -8,6 +8,8 @@ import os
 # (including a real secret, or a placeholder after `cp .env.example .env`). Pin the security-relevant values
 # here, before any app import, so the suite neither depends on nor reads a local secret.
 os.environ["SECRET_KEY"] = "test-only-" + "0123456789abcdef" * 4
+# The autouse fixture resets the global limiter. Keep it isolated from operator Redis.
+os.environ["RATE_LIMIT_STORAGE_URI"] = "memory://"
 os.environ["APP_ENV"] = "development"
 os.environ["RECAPTCHA_ENFORCED"] = "false"
 

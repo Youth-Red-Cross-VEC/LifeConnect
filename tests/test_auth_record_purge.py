@@ -43,3 +43,18 @@ def test_job_is_registered():
     sched = Scheduler()
     scheduled_jobs.setup_scheduled_jobs(sched, object())
     assert "purge_expired_auth_records" in sched.get_jobs()
+
+async def test_purge_preserves_replay_evidence_and_expiry_boundary(test_session, monkeypatch):
+    now = datetime(2026, 11, 26, 12)
+    monkeypatch.setattr(scheduled_jobs, "utcnow", lambda: now)
+    test_session.add_all([
+        RefreshSession(jti="revoked-live", user_id="DON-1", role="donor",
+                       revoked_at=now, replaced_by="successor", expires_at=now + timedelta(minutes=10)),
+        RefreshSession(jti="boundary", user_id="DON-1", role="donor", expires_at=now),
+        OtpCode(purpose="admin_invite", email="boundary@example.com", code_hmac="h", expires_at=now),
+    ])
+    await test_session.commit()
+    for _ in range(2):
+        await scheduled_jobs.purge_expired_auth_records(_FakeDb(test_session))
+    assert list(await test_session.scalars(select(RefreshSession.jti))) == ["revoked-live"]
+    assert list(await test_session.scalars(select(OtpCode))) == []
