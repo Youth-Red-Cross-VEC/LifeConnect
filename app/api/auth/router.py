@@ -230,75 +230,65 @@ async def donor_login(
     """
     await enforce_account_limit(request, credentials.email, get_settings().ACCOUNT_AUTH_RATE_LIMIT)
     await enforce_recaptcha(credentials.recaptcha_token, "donor_login")
-    try:
-        # Get donor by email
-        result = await session.execute(
-            select(DonorDetail).where(func.lower(DonorDetail.email) == normalize_email(credentials.email))
-            .with_for_update(of=DonorDetail)
-        )
-        donor = result.scalar_one_or_none()
-        
-        # Check if donor exists
-        if not donor:
-            # Same bcrypt cost as a wrong password, so response time does not reveal which emails exist.
-            await verify_password_async(credentials.password, DUMMY_PASSWORD_HASH)
-            logger.warning("Login attempt with unknown email")
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid email or password",
-            )
-        
-        # Verify password
-        if not await verify_password_async(credentials.password, donor.password):
-            logger.warning("Failed login attempt for donor")
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid email or password",
-            )
-        
-        if not donor.active_status:
-            logger.warning("Login blocked for inactive donor")
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid email or password",
-            )
-
-        if needs_rehash(donor.password):
-            donor.password = await hash_password_async(credentials.password)
-
-        # Update last login â€” store full datetime
-        donor.last_login_date = utcnow()
-        
-        logger.info("Donor logged in successfully")
-        
-        # Create tokens
-        token_data = {
-            "sub": donor.id,
-            "user_type": "donor",
-            "email": donor.email,
-            "tv": donor.token_version,
-        }
-        
-        access_token = create_access_token(token_data)
-        refresh_token, _ = await issue_refresh_token(session, token_data)
-        _set_refresh_cookie(response, refresh_token)
-        
-        return TokenResponse(
-            access_token=access_token,
-            token_type="bearer",
-            user_id=donor.id,
-            user_type="donor",
-            username=donor.name
-        )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error during donor login: {type(e).__name__}")
+    # Get donor by email
+    result = await session.execute(
+        select(DonorDetail).where(func.lower(DonorDetail.email) == normalize_email(credentials.email))
+        .with_for_update(of=DonorDetail)
+    )
+    donor = result.scalar_one_or_none()
+    
+    # Check if donor exists
+    if not donor:
+        # Same bcrypt cost as a wrong password, so response time does not reveal which emails exist.
+        await verify_password_async(credentials.password, DUMMY_PASSWORD_HASH)
+        logger.warning("Login attempt with unknown email")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An error occurred during login",
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password",
         )
+    
+    # Verify password
+    if not await verify_password_async(credentials.password, donor.password):
+        logger.warning("Failed login attempt for donor")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password",
+        )
+    
+    if not donor.active_status:
+        logger.warning("Login blocked for inactive donor")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password",
+        )
+
+    if needs_rehash(donor.password):
+        donor.password = await hash_password_async(credentials.password)
+
+    # Update last login â€” store full datetime
+    donor.last_login_date = utcnow()
+    
+    logger.info("Donor logged in successfully")
+    
+    # Create tokens
+    token_data = {
+        "sub": donor.id,
+        "user_type": "donor",
+        "email": donor.email,
+        "tv": donor.token_version,
+    }
+    
+    access_token = create_access_token(token_data)
+    refresh_token, _ = await issue_refresh_token(session, token_data)
+    _set_refresh_cookie(response, refresh_token)
+    
+    return TokenResponse(
+        access_token=access_token,
+        token_type="bearer",
+        user_id=donor.id,
+        user_type="donor",
+        username=donor.name
+    )
 
 
 @router.post("/admin/login", response_model=TokenResponse)
@@ -327,75 +317,65 @@ async def admin_login(
     """
     await enforce_account_limit(request, credentials.email, get_settings().ACCOUNT_AUTH_RATE_LIMIT)
     await enforce_recaptcha(credentials.recaptcha_token, "admin_login")
-    try:
-        # Get admin by email
-        result = await session.execute(
-            select(AdminDetails).where(func.lower(AdminDetails.email) == normalize_email(credentials.email))
-            .with_for_update(of=AdminDetails)
-        )
-        admin = result.scalar_one_or_none()
-        
-        # Check if admin exists
-        if not admin:
-            await verify_password_async(credentials.password, DUMMY_PASSWORD_HASH)
-            logger.warning("Admin login attempt with unknown email")
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid email or password",
-            )
-        
-        # Verify password
-        if not await verify_password_async(credentials.password, admin.password):
-            logger.warning("Failed admin login attempt")
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid email or password",
-            )
-
-        if admin.active_status != AdminStatus.ACTIVE:
-            logger.warning("Login blocked for inactive admin")
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid email or password",
-            )
-        
-        if needs_rehash(admin.password):
-            admin.password = await hash_password_async(credentials.password)
-
-        # Update last login â€” store full datetime
-        admin.last_login_date = utcnow()
-        
-        logger.info("Admin logged in successfully")
-        
-        # Create tokens
-        token_data = {
-            "sub": admin.id,
-            "user_type": "admin",
-            "email": admin.email,
-            "tv": admin.token_version,
-            "role": admin.role,
-        }
-        
-        access_token = create_access_token(token_data)
-        refresh_token, _ = await issue_refresh_token(session, token_data)
-        _set_refresh_cookie(response, refresh_token)
-        
-        return TokenResponse(
-            access_token=access_token,
-            token_type="bearer",
-            user_id=admin.id,
-            user_type="admin",
-            username=admin.username
-        )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error during admin login: {type(e).__name__}")
+    # Get admin by email
+    result = await session.execute(
+        select(AdminDetails).where(func.lower(AdminDetails.email) == normalize_email(credentials.email))
+        .with_for_update(of=AdminDetails)
+    )
+    admin = result.scalar_one_or_none()
+    
+    # Check if admin exists
+    if not admin:
+        await verify_password_async(credentials.password, DUMMY_PASSWORD_HASH)
+        logger.warning("Admin login attempt with unknown email")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An error occurred during login",
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password",
         )
+    
+    # Verify password
+    if not await verify_password_async(credentials.password, admin.password):
+        logger.warning("Failed admin login attempt")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password",
+        )
+
+    if admin.active_status != AdminStatus.ACTIVE:
+        logger.warning("Login blocked for inactive admin")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password",
+        )
+    
+    if needs_rehash(admin.password):
+        admin.password = await hash_password_async(credentials.password)
+
+    # Update last login â€” store full datetime
+    admin.last_login_date = utcnow()
+    
+    logger.info("Admin logged in successfully")
+    
+    # Create tokens
+    token_data = {
+        "sub": admin.id,
+        "user_type": "admin",
+        "email": admin.email,
+        "tv": admin.token_version,
+        "role": admin.role,
+    }
+    
+    access_token = create_access_token(token_data)
+    refresh_token, _ = await issue_refresh_token(session, token_data)
+    _set_refresh_cookie(response, refresh_token)
+    
+    return TokenResponse(
+        access_token=access_token,
+        token_type="bearer",
+        user_id=admin.id,
+        user_type="admin",
+        username=admin.username
+    )
 
 
 # ============================================================
@@ -423,115 +403,105 @@ async def refresh_token(
     Raises:
         HTTPException: 401 if refresh token is invalid or expired
     """
-    try:
-        # Decode refresh token
-        presented_token = request.cookies.get(_refresh_cookie_name())
-        if not presented_token:
-            raise HTTPException(401, "Invalid or expired refresh token")
-        payload = decode_token(presented_token)
-        if payload is None:
-            raise _invalid_refresh(response)
-        
-        # Verify it's a refresh token
-        if payload.get("type") != "refresh":
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token type",
-            )
-        
-        # The token must match a live server-side session (rotation + reuse detection)
-        old_session = await session.get(RefreshSession, payload.get("jti") or "")
-        if old_session is None:
-            await revoke_all_for_user(session, payload.get("sub"), payload.get("user_type"))
-            await session.commit()
-            raise _invalid_refresh(response)
-        if (
-            old_session.user_id != payload.get("sub")
-            or old_session.role != payload.get("user_type")
-        ):
-            raise _invalid_refresh(response)
-        if old_session.revoked_at is not None:
-            await _reject_reused_refresh_token(session, old_session, response)
-        if old_session.expires_at < utcnow():
-            raise _invalid_refresh(response)
-
-        # Extract user info
-        user_id = payload.get("sub")
-        user_type = payload.get("user_type")
-        
-        # Fetch updated user from database
-        if user_type == "donor":
-            user = await lock_donor(session, user_id)
-            if not user:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Donor not found",
-                )
-        elif user_type == "admin":
-            user = await session.get(AdminDetails, user_id, with_for_update=True)
-            if not user:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Admin not found",
-                )
-        else:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid user type",
-            )
-        
-        is_active = (
-            bool(user.active_status) if user_type == "donor"
-            else user.active_status == AdminStatus.ACTIVE
-        )
-        if not is_active:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Account is inactive",
-            )
-
-        if payload.get("tv") != user.token_version:
-            raise _invalid_refresh(response)
-
-        # Create new tokens
-        token_data = {
-            "sub": user.id,
-            "user_type": user_type,
-            "email": user.email,
-            "tv": user.token_version,
-        }
-        if user_type == "admin":
-            token_data["role"] = user.role
-        
-        # Spend the old token atomically. If a concurrent request already did, this one is a replay.
-        if not await claim_session(session, old_session.jti):
-            await _reject_reused_refresh_token(session, old_session, response)
-
-        access_token = create_access_token(token_data)
-        refresh_token, new_jti = await issue_refresh_token(session, token_data)
-        _set_refresh_cookie(response, refresh_token)
-        old_session.replaced_by = new_jti
-        
-        logger.info("Token refreshed for account")
-        
-        username = user.name if user_type == "donor" else user.username  # type: ignore[union-attr]
-        
-        return TokenResponse(
-            access_token=access_token,
-            token_type="bearer",
-            user_id=user.id,
-            user_type=user_type,
-            username=username
-        )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error refreshing token: {type(e).__name__}")
+    # Decode refresh token
+    presented_token = request.cookies.get(_refresh_cookie_name())
+    if not presented_token:
+        raise HTTPException(401, "Invalid or expired refresh token")
+    payload = decode_token(presented_token)
+    if payload is None:
+        raise _invalid_refresh(response)
+    
+    # Verify it's a refresh token
+    if payload.get("type") != "refresh":
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An error occurred during token refresh",
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token type",
         )
+    
+    # The token must match a live server-side session (rotation + reuse detection)
+    old_session = await session.get(RefreshSession, payload.get("jti") or "")
+    if old_session is None:
+        await revoke_all_for_user(session, payload.get("sub"), payload.get("user_type"))
+        await session.commit()
+        raise _invalid_refresh(response)
+    if (
+        old_session.user_id != payload.get("sub")
+        or old_session.role != payload.get("user_type")
+    ):
+        raise _invalid_refresh(response)
+    if old_session.revoked_at is not None:
+        await _reject_reused_refresh_token(session, old_session, response)
+    if old_session.expires_at < utcnow():
+        raise _invalid_refresh(response)
+
+    # Extract user info
+    user_id = payload.get("sub")
+    user_type = payload.get("user_type")
+    
+    # Fetch updated user from database
+    if user_type == "donor":
+        user = await lock_donor(session, user_id)
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Donor not found",
+            )
+    elif user_type == "admin":
+        user = await session.get(AdminDetails, user_id, with_for_update=True)
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Admin not found",
+            )
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid user type",
+        )
+    
+    is_active = (
+        bool(user.active_status) if user_type == "donor"
+        else user.active_status == AdminStatus.ACTIVE
+    )
+    if not is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Account is inactive",
+        )
+
+    if payload.get("tv") != user.token_version:
+        raise _invalid_refresh(response)
+
+    # Create new tokens
+    token_data = {
+        "sub": user.id,
+        "user_type": user_type,
+        "email": user.email,
+        "tv": user.token_version,
+    }
+    if user_type == "admin":
+        token_data["role"] = user.role
+    
+    # Spend the old token atomically. If a concurrent request already did, this one is a replay.
+    if not await claim_session(session, old_session.jti):
+        await _reject_reused_refresh_token(session, old_session, response)
+
+    access_token = create_access_token(token_data)
+    refresh_token, new_jti = await issue_refresh_token(session, token_data)
+    _set_refresh_cookie(response, refresh_token)
+    old_session.replaced_by = new_jti
+    
+    logger.info("Token refreshed for account")
+    
+    username = user.name if user_type == "donor" else user.username  # type: ignore[union-attr]
+    
+    return TokenResponse(
+        access_token=access_token,
+        token_type="bearer",
+        user_id=user.id,
+        user_type=user_type,
+        username=username
+    )
 
 
 @router.post("/logout", response_model=MessageResponse)

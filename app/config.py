@@ -16,6 +16,19 @@ _PLACEHOLDER_SECRET = re.compile(
 _GENERATE_HINT = 'python -c "import secrets; print(secrets.token_urlsafe(48))"'
 
 
+def _require_shared_rate_limit_store(uri: str) -> None:
+    """memory:// keeps one counter per process, so with N workers/replicas the effective
+    limit is N times the configured one. Refuse it in production/staging instead of
+    silently weakening brute-force protection."""
+    if not uri.strip().lower().startswith(("redis://", "rediss://", "redis+unix://")):
+        raise ValueError(
+            "RATE_LIMIT_STORAGE_URI must be a shared store (e.g. redis://redis:6379/0) when "
+            "APP_ENV=production or staging: memory:// counts per process, so the effective "
+            "limit is multiplied by the number of web workers/replicas. Install the optional "
+            "client with: pip install -r requirements-redis.txt"
+        )
+
+
 class Settings(BaseSettings):
     """
     Application settings loaded from environment variables.
@@ -135,6 +148,10 @@ class Settings(BaseSettings):
         if any(origin in {"*", "null"} for origin in self.ALLOWED_ORIGINS):
             raise ValueError("ALLOWED_ORIGINS must contain exact HTTPS origins in production and explicit trusted origins in development")
         if production:
+            # Staging gates on the shared store first; production keeps the application-config
+            # checks first. Both environments enforce every check below.
+            if self.APP_ENV == "staging":
+                _require_shared_rate_limit_store(self.RATE_LIMIT_STORAGE_URI)
             if self.DEBUG:
                 raise ValueError("DEBUG must be false when APP_ENV=production")
             for origin in self.ALLOWED_ORIGINS:
@@ -155,17 +172,8 @@ class Settings(BaseSettings):
                 raise ValueError("RECAPTCHA_SECRET_KEY must be set when APP_ENV=production")
             if not self.RECAPTCHA_ENFORCED:
                 raise ValueError("RECAPTCHA_ENFORCED must be true when APP_ENV=production")
-            # memory:// keeps one counter per process, so with N workers/replicas the effective
-            # limit is N times the configured one. Refuse it in production instead of silently
-            # weakening brute-force protection.
-            storage_uri = self.RATE_LIMIT_STORAGE_URI.strip().lower()
-            if not storage_uri.startswith(("redis://", "rediss://", "redis+unix://")):
-                raise ValueError(
-                    "RATE_LIMIT_STORAGE_URI must be a shared store (e.g. redis://redis:6379/0) when "
-                    "APP_ENV=production: memory:// counts per process, so the effective limit is "
-                    "multiplied by the number of web workers/replicas. Install the optional client "
-                    "with: pip install -r requirements-redis.txt"
-                )
+            if self.APP_ENV == "production":
+                _require_shared_rate_limit_store(self.RATE_LIMIT_STORAGE_URI)
         return self
 
     class Config:
