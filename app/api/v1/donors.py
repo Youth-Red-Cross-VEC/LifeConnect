@@ -247,7 +247,7 @@ async def update_donor(
     """
     Update donor profile.
 
-    Donors can only update their own profile â€” verifies caller is the same donor.
+    Donors can only update their own profile — verifies caller is the same donor.
     """
     from fastapi import HTTPException, status as http_status
     if current_donor.id != donor_id:

@@ -236,7 +236,7 @@ async def donor_login(
         .with_for_update(of=DonorDetail)
     )
     donor = result.scalar_one_or_none()
-    
+
     # Check if donor exists
     if not donor:
         # Same bcrypt cost as a wrong password, so response time does not reveal which emails exist.
@@ -246,7 +246,7 @@ async def donor_login(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",
         )
-    
+
     # Verify password
     if not await verify_password_async(credentials.password, donor.password):
         logger.warning("Failed login attempt for donor")
@@ -254,7 +254,7 @@ async def donor_login(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",
         )
-    
+
     if not donor.active_status:
         logger.warning("Login blocked for inactive donor")
         raise HTTPException(
@@ -265,11 +265,11 @@ async def donor_login(
     if needs_rehash(donor.password):
         donor.password = await hash_password_async(credentials.password)
 
-    # Update last login â€” store full datetime
+    # Update last login — store full datetime
     donor.last_login_date = utcnow()
-    
+
     logger.info("Donor logged in successfully")
-    
+
     # Create tokens
     token_data = {
         "sub": donor.id,
@@ -277,11 +277,11 @@ async def donor_login(
         "email": donor.email,
         "tv": donor.token_version,
     }
-    
+
     access_token = create_access_token(token_data)
     refresh_token, _ = await issue_refresh_token(session, token_data)
     _set_refresh_cookie(response, refresh_token)
-    
+
     return TokenResponse(
         access_token=access_token,
         token_type="bearer",
@@ -323,7 +323,7 @@ async def admin_login(
         .with_for_update(of=AdminDetails)
     )
     admin = result.scalar_one_or_none()
-    
+
     # Check if admin exists
     if not admin:
         await verify_password_async(credentials.password, DUMMY_PASSWORD_HASH)
@@ -332,7 +332,7 @@ async def admin_login(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",
         )
-    
+
     # Verify password
     if not await verify_password_async(credentials.password, admin.password):
         logger.warning("Failed admin login attempt")
@@ -347,15 +347,15 @@ async def admin_login(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",
         )
-    
+
     if needs_rehash(admin.password):
         admin.password = await hash_password_async(credentials.password)
 
-    # Update last login â€” store full datetime
+    # Update last login — store full datetime
     admin.last_login_date = utcnow()
-    
+
     logger.info("Admin logged in successfully")
-    
+
     # Create tokens
     token_data = {
         "sub": admin.id,
@@ -364,11 +364,11 @@ async def admin_login(
         "tv": admin.token_version,
         "role": admin.role,
     }
-    
+
     access_token = create_access_token(token_data)
     refresh_token, _ = await issue_refresh_token(session, token_data)
     _set_refresh_cookie(response, refresh_token)
-    
+
     return TokenResponse(
         access_token=access_token,
         token_type="bearer",
@@ -410,14 +410,14 @@ async def refresh_token(
     payload = decode_token(presented_token)
     if payload is None:
         raise _invalid_refresh(response)
-    
+
     # Verify it's a refresh token
     if payload.get("type") != "refresh":
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token type",
         )
-    
+
     # The token must match a live server-side session (rotation + reuse detection)
     old_session = await session.get(RefreshSession, payload.get("jti") or "")
     if old_session is None:
@@ -437,7 +437,7 @@ async def refresh_token(
     # Extract user info
     user_id = payload.get("sub")
     user_type = payload.get("user_type")
-    
+
     # Fetch updated user from database
     if user_type == "donor":
         user = await lock_donor(session, user_id)
@@ -458,7 +458,7 @@ async def refresh_token(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid user type",
         )
-    
+
     is_active = (
         bool(user.active_status) if user_type == "donor"
         else user.active_status == AdminStatus.ACTIVE
@@ -481,7 +481,7 @@ async def refresh_token(
     }
     if user_type == "admin":
         token_data["role"] = user.role
-    
+
     # Spend the old token atomically. If a concurrent request already did, this one is a replay.
     if not await claim_session(session, old_session.jti):
         await _reject_reused_refresh_token(session, old_session, response)
@@ -490,11 +490,11 @@ async def refresh_token(
     refresh_token, new_jti = await issue_refresh_token(session, token_data)
     _set_refresh_cookie(response, refresh_token)
     old_session.replaced_by = new_jti
-    
+
     logger.info("Token refreshed for account")
-    
+
     username = user.name if user_type == "donor" else user.username  # type: ignore[union-attr]
-    
+
     return TokenResponse(
         access_token=access_token,
         token_type="bearer",
@@ -617,45 +617,36 @@ async def confirm_donor_password_reset(
         HTTPException: 400 if OTP is invalid
     """
     await enforce_account_limit(request, data.email, get_settings().ACCOUNT_AUTH_RATE_LIMIT)
-    try:
-        # Find donor
-        result = await session.execute(
-            select(DonorDetail).where(func.lower(DonorDetail.email) == normalize_email(data.email))
-            .with_for_update(of=DonorDetail)
-        )
-        donor = result.scalar_one_or_none()
+    # Find donor
+    result = await session.execute(
+        select(DonorDetail).where(func.lower(DonorDetail.email) == normalize_email(data.email))
+        .with_for_update(of=DonorDetail)
+    )
+    donor = result.scalar_one_or_none()
 
-        if await failed_confirmation_count(session, data.email, PURPOSE_DONOR_RESET) >= 10:
-            raise HTTPException(status_code=429, detail="Too many failed code attempts; try again later")
+    if await failed_confirmation_count(session, data.email, PURPOSE_DONOR_RESET) >= 10:
+        raise HTTPException(status_code=429, detail="Too many failed code attempts; try again later")
 
-        # Use the same public error for unknown accounts and unusable codes.
-        otp_ok = await verify_otp(
-            session, data.email, data.otp, PURPOSE_DONOR_RESET, commit_success=False,
-        )
-        if donor is None or not otp_ok:
-            if otp_ok:
-                # An orphaned code must not authorize an update or be committed by the failure counter.
-                await session.rollback()
-            await record_failed_confirmation(session, data.email, PURPOSE_DONOR_RESET)
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired code")
-        await clear_failed_confirmations(session, data.email, PURPOSE_DONOR_RESET)
-        # Hash new password
-        donor.password = await hash_password_async(data.new_password)
-        donor.token_version += 1
-        await revoke_all_for_user(session, donor.id, "donor")
-        
-        logger.info("Password reset for donor")
-        
-        return MessageResponse(message="Password reset successful. Please login")
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error confirming password reset: {type(e).__name__}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An error occurred during password reset",
-        )
+    # Use the same public error for unknown accounts and unusable codes.
+    otp_ok = await verify_otp(
+        session, data.email, data.otp, PURPOSE_DONOR_RESET, commit_success=False,
+    )
+    if donor is None or not otp_ok:
+        if otp_ok:
+            # An orphaned code must not authorize an update or be committed by the failure counter.
+            await session.rollback()
+        await record_failed_confirmation(session, data.email, PURPOSE_DONOR_RESET)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired code")
+    await clear_failed_confirmations(session, data.email, PURPOSE_DONOR_RESET)
+    # Hash new password
+    donor.password = await hash_password_async(data.new_password)
+    donor.token_version += 1
+    await revoke_all_for_user(session, donor.id, "donor")
+
+    logger.info("Password reset for donor")
+
+    return MessageResponse(message="Password reset successful. Please login")
+
 
 
 @router.post("/admin/password-reset/request", response_model=MessageResponse)
@@ -704,40 +695,30 @@ async def confirm_admin_password_reset(
 ):
     """Confirm password reset for admin."""
     await enforce_account_limit(request, data.email, get_settings().ACCOUNT_AUTH_RATE_LIMIT)
-    try:
-        result = await session.execute(
-            select(AdminDetails).where(func.lower(AdminDetails.email) == normalize_email(data.email))
-            .with_for_update(of=AdminDetails)
-        )
-        admin = result.scalar_one_or_none()
+    result = await session.execute(
+        select(AdminDetails).where(func.lower(AdminDetails.email) == normalize_email(data.email))
+        .with_for_update(of=AdminDetails)
+    )
+    admin = result.scalar_one_or_none()
 
-        if await failed_confirmation_count(session, data.email, PURPOSE_ADMIN_RESET) >= 10:
-            raise HTTPException(status_code=429, detail="Too many failed code attempts; try again later")
+    if await failed_confirmation_count(session, data.email, PURPOSE_ADMIN_RESET) >= 10:
+        raise HTTPException(status_code=429, detail="Too many failed code attempts; try again later")
 
-        # Consume the code in the same transaction as the credential and session changes.
-        otp_ok = await verify_otp(
-            session, data.email, data.otp, PURPOSE_ADMIN_RESET, commit_success=False,
-        )
-        if admin is None or not otp_ok:
-            if otp_ok:
-                await session.rollback()
-            await record_failed_confirmation(session, data.email, PURPOSE_ADMIN_RESET)
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired code")
-        await clear_failed_confirmations(session, data.email, PURPOSE_ADMIN_RESET)
-        # Hash new password
-        admin.password = await hash_password_async(data.new_password)
-        admin.token_version += 1
-        await revoke_all_for_user(session, admin.id, "admin")
-        
-        logger.info("Password reset for admin")
-        
-        return MessageResponse(message="Password reset successful. Please login")
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error confirming admin password reset: {type(e).__name__}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An error occurred during password reset",
-        )
+    # Consume the code in the same transaction as the credential and session changes.
+    otp_ok = await verify_otp(
+        session, data.email, data.otp, PURPOSE_ADMIN_RESET, commit_success=False,
+    )
+    if admin is None or not otp_ok:
+        if otp_ok:
+            await session.rollback()
+        await record_failed_confirmation(session, data.email, PURPOSE_ADMIN_RESET)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired code")
+    await clear_failed_confirmations(session, data.email, PURPOSE_ADMIN_RESET)
+    # Hash new password
+    admin.password = await hash_password_async(data.new_password)
+    admin.token_version += 1
+    await revoke_all_for_user(session, admin.id, "admin")
+
+    logger.info("Password reset for admin")
+
+    return MessageResponse(message="Password reset successful. Please login")

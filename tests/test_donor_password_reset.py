@@ -70,7 +70,10 @@ async def test_failed_password_update_does_not_spend_code(client, test_session, 
 
     with monkeypatch.context() as patch:
         patch.setattr(auth_router, "hash_password_async", fail_hash)
-        assert (await client.post(f"{RESET}/confirm", json=BODY)).status_code == 500
+        failed = await client.post(f"{RESET}/confirm", json=BODY)
+        assert failed.status_code == 500
+        assert failed.json()["error_id"]
+        assert "Synthetic failure" not in failed.text
     assert (await client.post(f"{RESET}/confirm", json=BODY)).status_code == 200
 
 
